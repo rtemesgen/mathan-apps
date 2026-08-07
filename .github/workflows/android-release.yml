@@ -66,7 +66,17 @@ jobs:
           EOF
 
       - name: Build standalone web assets and sync Capacitor
-        run: VITE_APP_VERSION="${VERSION_NAME#v}" VITE_BUILD_NUMBER="$GITHUB_RUN_NUMBER" npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL"
+          test -n "$VITE_SUPABASE_ANON_KEY"
+          VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
+          VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
+          VITE_STANDALONE=false \
+          VITE_APP_VERSION="${VERSION_NAME#v}" \
+          VITE_BUILD_NUMBER="$GITHUB_RUN_NUMBER" npm run build
         working-directory: mobile
 
       - name: Build signed release APK
