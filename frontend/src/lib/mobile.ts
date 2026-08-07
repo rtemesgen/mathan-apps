@@ -1,9 +1,18 @@
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
+import { Toast } from '@capacitor/toast';
 import { registerPlugin } from '@capacitor/core';
 import { jsPDF } from 'jspdf';
 
 export const isNativeMobile = () => Capacitor.isNativePlatform();
+
+export function showAppToast(message: string) {
+  if (isNativeMobile()) {
+    void Toast.show({ text: message, duration: 'short' });
+    return;
+  }
+  window.dispatchEvent(new CustomEvent('mathan:toast', { detail: message }));
+}
 const FileSaver = registerPlugin<{ saveAndOpen(options: { filename: string; mimeType: string; data: string }): Promise<void> }>('FileSaver');
 
 function toSafeFilename(filename: string) {

@@ -14,7 +14,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ isOpen, onCl
 
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('2025-01-01'); // Convenient default past date as requested in prompt example
-  const [initialSalary, setInitialSalary] = useState('3500');
+  const [initialSalary, setInitialSalary] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,9 +102,9 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ isOpen, onCl
                 <input
                   type="number"
                   min="0"
-                  step="50"
+                step="any"
                   required
-                  placeholder="3500"
+                placeholder="Enter monthly salary"
                   value={initialSalary}
                   onChange={(e) => setInitialSalary(e.target.value)}
                   className="w-full pl-7 pr-3 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs text-slate-900 font-bold"

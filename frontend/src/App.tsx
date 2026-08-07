@@ -7,6 +7,7 @@ import { AuthProvider } from './auth/AuthProvider';
 import { AuthGate } from './auth/AuthGate';
 import { useAndroidBackButton } from './hooks/useAndroidBackButton';
 import { AppUpdateNotice } from './components/AppUpdateNotice';
+import { AppToast } from './components/AppToast';
 
 function AndroidNavigationBridge() {
   useAndroidBackButton();
@@ -19,6 +20,7 @@ export default function App() {
       <BrowserRouter>
         <AndroidNavigationBridge />
         <AppUpdateNotice />
+        <AppToast />
         <AuthGate>
           <Routes>
             <Route element={<AppShell />}>

@@ -23,7 +23,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState('2025-01-01');
-  const [initialSalary, setInitialSalary] = useState('4200');
+  const [initialSalary, setInitialSalary] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdEmpName, setCreatedEmpName] = useState('');
 
@@ -150,9 +150,9 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="50"
+                    step="any"
                     required
-                    placeholder="4200"
+                    placeholder="Enter monthly salary"
                     value={initialSalary}
                     onChange={(e) => setInitialSalary(e.target.value)}
                     className="w-full pl-6 pr-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs text-zinc-900 font-bold"
@@ -225,4 +225,3 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
     </div>
   );
 };
-

@@ -13,7 +13,6 @@ export function AppLauncher() {
           <Sparkles className="h-3 w-3" /> Your workspace
         </div>
         <h1 className="font-serif text-4xl font-bold tracking-tight text-zinc-900 sm:text-6xl">Choose an app to get started.</h1>
-        <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-500 sm:text-base">Mathan ERP brings focused business tools into one workspace. Each app keeps its own records and accounting logic.</p>
         <div className="mt-5 flex flex-wrap gap-2">
           <button onClick={() => void shareApp()} className="inline-flex items-center gap-2 rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm hover:border-zinc-300"><Share2 className="h-4 w-4" /> Share app</button>
           <button disabled={status === 'checking'} onClick={() => void (update ? installUpdate() : checkForUpdate())} className="inline-flex items-center gap-2 rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm transition hover:border-zinc-300 disabled:cursor-wait disabled:opacity-70">{status === 'checking' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 transition-transform hover:rotate-180" />}{status === 'checking' ? 'Searching…' : update ? `Install update ${update.version}` : 'Check for updates'}</button>
@@ -31,7 +30,6 @@ export function AppLauncher() {
                 <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-extrabold uppercase tracking-wider text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Available</span>
               </div>
               <h2 className="mt-8 font-serif text-2xl font-bold text-zinc-900">{app.name}</h2>
-              <p className="mt-2 min-h-12 text-sm leading-6 text-zinc-500">{app.description}</p>
               <span className="mt-7 inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-zinc-900">Open app <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" /></span>
             </Link>
           );
