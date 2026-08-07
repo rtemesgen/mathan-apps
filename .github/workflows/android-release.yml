@@ -72,11 +72,14 @@ jobs:
         run: |
           test -n "$VITE_SUPABASE_URL"
           test -n "$VITE_SUPABASE_ANON_KEY"
-          VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
-          VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
-          VITE_STANDALONE=false \
-          VITE_APP_VERSION="${VERSION_NAME#v}" \
-          VITE_BUILD_NUMBER="$GITHUB_RUN_NUMBER" npm run build
+          trap 'rm -f ../frontend/.env.mobile.local' EXIT
+          {
+            printf 'VITE_SUPABASE_URL=%s\n' "$VITE_SUPABASE_URL"
+            printf 'VITE_SUPABASE_ANON_KEY=%s\n' "$VITE_SUPABASE_ANON_KEY"
+            printf 'VITE_STANDALONE=false\n'
+          } > ../frontend/.env.mobile.local
+          VITE_APP_VERSION="${VERSION_NAME#v}" VITE_BUILD_NUMBER="$GITHUB_RUN_NUMBER" npm run build
+          grep -R -F -q -- "$VITE_SUPABASE_URL" ../frontend/dist/assets
         working-directory: mobile
 
       - name: Build signed release APK
