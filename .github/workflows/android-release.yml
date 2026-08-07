@@ -66,7 +66,7 @@ jobs:
           EOF
 
       - name: Build standalone web assets and sync Capacitor
-        run: VITE_APP_VERSION="${VERSION_NAME#v}" npm run build
+        run: VITE_APP_VERSION="${VERSION_NAME#v}" VITE_BUILD_NUMBER="$GITHUB_RUN_NUMBER" npm run build
         working-directory: mobile
 
       - name: Build signed release APK
@@ -80,6 +80,18 @@ jobs:
           "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "versionName='${VERSION_NAME#v}'"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee mobile/android/app/build/outputs/apk/release/signing-certificate.txt
           sha256sum "$APK" > mobile/android/app/build/outputs/apk/release/app-release.apk.sha256
+          APK_SHA256=$(cut -d' ' -f1 mobile/android/app/build/outputs/apk/release/app-release.apk.sha256)
+          cat > mobile/android/app/build/outputs/apk/release/release-manifest.json <<EOF
+          {
+            "app": "Mathan ERP",
+            "version": "${VERSION_NAME#v}",
+            "tag": "$GITHUB_REF_NAME",
+            "commit": "$GITHUB_SHA",
+            "versionCode": "$GITHUB_RUN_NUMBER",
+            "apk": "app-release.apk",
+            "sha256": "$APK_SHA256"
+          }
+          EOF
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v6
@@ -89,6 +101,7 @@ jobs:
             mobile/android/app/build/outputs/apk/release/app-release.apk
             mobile/android/app/build/outputs/apk/release/app-release.apk.sha256
             mobile/android/app/build/outputs/apk/release/signing-certificate.txt
+            mobile/android/app/build/outputs/apk/release/release-manifest.json
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
@@ -102,3 +115,4 @@ jobs:
             mobile/android/app/build/outputs/apk/release/app-release.apk
             mobile/android/app/build/outputs/apk/release/app-release.apk.sha256
             mobile/android/app/build/outputs/apk/release/signing-certificate.txt
+            mobile/android/app/build/outputs/apk/release/release-manifest.json
