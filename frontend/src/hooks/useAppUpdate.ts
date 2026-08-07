@@ -26,18 +26,21 @@ function isNewerVersion(latest: string, current: string) {
 
 export function useAppUpdate() {
   const [update, setUpdate] = useState<{ version: string; url: string; downloadUrl: string } | null>(null);
+  const [status, setStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'error'>('idle');
 
   const checkForUpdate = async () => {
     if (Capacitor.getPlatform() !== 'android') return null;
+    setStatus('checking');
     try {
       const info = await CapacitorApp.getInfo();
       const response = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
-      if (!response.ok) return null;
+      if (!response.ok) { setStatus('error'); return null; }
       const release = await response.json() as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean; assets?: Array<{ name?: string; browser_download_url?: string }> };
       const apk = release.assets?.find((asset) => asset.name?.endsWith('.apk'));
       if (release.tag_name && release.html_url && apk?.browser_download_url && !release.draft && !release.prerelease && isNewerVersion(release.tag_name, info.version)) {
         const next = { version: release.tag_name.replace(/^v/i, ''), url: release.html_url, downloadUrl: apk.browser_download_url };
         setUpdate(next);
+        setStatus('available');
         const downloadKey = `mathan_update_download_started_${next.version}`;
         if (!localStorage.getItem(downloadKey)) {
           localStorage.setItem(downloadKey, 'true');
@@ -48,8 +51,10 @@ export function useAppUpdate() {
         return next;
       }
       setUpdate(null);
+      setStatus('up-to-date');
       return null;
     } catch {
+      setStatus('error');
       return null;
     }
   };
@@ -69,6 +74,7 @@ export function useAppUpdate() {
 
   return {
     update,
+    status,
     checkForUpdate,
     openUpdate: () => update ? void Browser.open({ url: update.url }) : undefined,
     dismissUpdate: () => setUpdate(null),

@@ -1,11 +1,11 @@
-import { ArrowRight, CheckCircle2, Share2, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, LoaderCircle, RefreshCw, Share2, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ERP_APPS } from '../appRegistry';
 import { shareApp } from '../lib/mobile';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 
 export function AppLauncher() {
-  const { update, checkForUpdate } = useAppUpdate();
+  const { update, status, checkForUpdate } = useAppUpdate();
   return (
     <main className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-20">
       <section className="max-w-2xl">
@@ -16,8 +16,10 @@ export function AppLauncher() {
         <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-500 sm:text-base">Mathan ERP brings focused business tools into one workspace. Each app keeps its own records and accounting logic.</p>
         <div className="mt-5 flex flex-wrap gap-2">
           <button onClick={() => void shareApp()} className="inline-flex items-center gap-2 rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm hover:border-zinc-300"><Share2 className="h-4 w-4" /> Share app</button>
-          <button onClick={() => void checkForUpdate()} className="rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm hover:border-zinc-300">{update ? `Update ${update.version} available` : 'Check for updates'}</button>
+          <button disabled={status === 'checking'} onClick={() => void checkForUpdate()} className="inline-flex items-center gap-2 rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm transition hover:border-zinc-300 disabled:cursor-wait disabled:opacity-70">{status === 'checking' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 transition-transform hover:rotate-180" />}{status === 'checking' ? 'Searching…' : update ? `Update ${update.version} available` : 'Check for updates'}</button>
         </div>
+        {status === 'up-to-date' && <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> You’re up to date.</p>}
+        {status === 'error' && <p className="mt-2 text-[11px] font-semibold text-zinc-500">Could not check right now. Try again when you’re online.</p>}
       </section>
       <section className="mt-10 grid gap-4 md:grid-cols-2">
         {ERP_APPS.map((app) => {
