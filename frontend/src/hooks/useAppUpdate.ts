@@ -75,11 +75,13 @@ function useUpdateController() {
     setNoticeVisible(false);
     try {
       const info = await CapacitorApp.getInfo();
+      const bundledVersion = (import.meta.env.VITE_APP_VERSION as string | undefined)?.trim();
+      const installedVersion = bundledVersion || info.version;
       const response = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
       if (!response.ok) { setStatus('error'); return null; }
       const release = await response.json() as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean; assets?: Array<{ name?: string; browser_download_url?: string }> };
       const apk = release.assets?.find((asset) => asset.name?.toLowerCase().endsWith('.apk'));
-      if (release.tag_name && release.html_url && apk?.browser_download_url && !release.draft && !release.prerelease && isNewerVersion(release.tag_name, info.version)) {
+      if (release.tag_name && release.html_url && apk?.browser_download_url && !release.draft && !release.prerelease && isNewerVersion(release.tag_name, installedVersion)) {
         const next = { version: release.tag_name.replace(/^v/i, ''), url: release.html_url, downloadUrl: apk.browser_download_url };
         setUpdate(next);
         setStatus('available');

@@ -66,7 +66,7 @@ jobs:
           EOF
 
       - name: Build standalone web assets and sync Capacitor
-        run: npm run build
+        run: VITE_APP_VERSION="${VERSION_NAME#v}" npm run build
         working-directory: mobile
 
       - name: Build signed release APK
@@ -77,6 +77,7 @@ jobs:
         run: |
           APK=mobile/android/app/build/outputs/apk/release/app-release.apk
           BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "versionName='${VERSION_NAME#v}'"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee mobile/android/app/build/outputs/apk/release/signing-certificate.txt
           sha256sum "$APK" > mobile/android/app/build/outputs/apk/release/app-release.apk.sha256
 

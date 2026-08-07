@@ -16,7 +16,7 @@ import {
   FileText,
   X
 } from 'lucide-react';
-import { exportPdfFile } from '../../../lib/mobile';
+import { exportPdfFile, showAppToast } from '../../../lib/mobile';
 
 interface BookDetailViewProps {
   book: Book;
@@ -103,7 +103,6 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   }, [bookTransactions, typeFilter, searchQuery, sortBy]);
 
   const handleExportPDF = () => {
-    if (bookTransactions.length === 0) return;
     const lines = [
       `Book: ${book.name}`,
       `Currency: ${book.currency}`,
@@ -123,7 +122,9 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           transaction.paymentMode || '—',
         ].join(' | ')),
     ];
-    void exportPdfFile(`${book.name.replace(/\s+/g, '_')}_transactions.pdf`, `Cash Book Transactions — ${book.name}`, lines);
+    void exportPdfFile(`${book.name.replace(/\s+/g, '_')}_transactions.pdf`, `Cash Book Transactions — ${book.name}`, lines)
+      .then(() => showAppToast('Cash Book PDF saved'))
+      .catch(() => showAppToast('Could not save the Cash Book PDF'));
   };
 
   return (
