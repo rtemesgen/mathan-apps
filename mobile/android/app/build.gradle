@@ -6,6 +6,11 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+def suppliedVersionCode = project.findProperty('versionCode')?.toString()?.trim()
+def suppliedVersionName = project.findProperty('versionName')?.toString()?.trim()
+def buildVersionCode = suppliedVersionCode ? suppliedVersionCode.toInteger() : 1
+def buildVersionName = suppliedVersionName ?: '1.0.0'
+
 android {
     namespace "com.mathan.erp"
     compileSdk rootProject.ext.compileSdkVersion
@@ -13,8 +18,8 @@ android {
         applicationId "com.mathan.erp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode (project.findProperty('versionCode') ?: 1).toInteger()
-        versionName (project.findProperty('versionName') ?: "1.0.0").toString()
+        versionCode buildVersionCode
+        versionName buildVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
