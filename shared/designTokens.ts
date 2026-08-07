@@ -1,0 +1,37 @@
+export const designTokens = {
+  colors: {
+    canvas: '#F6F5EF',
+    canvasAlt: '#F7F5EE',
+    card: '#FFFFFF',
+    cardMuted: '#FBFAF6',
+    input: '#F2F0E6',
+    border: '#E8E6DC',
+    borderStrong: '#D8D3C5',
+    ink: '#1C1D1B',
+    inkMuted: '#6B6A64',
+    inkSubtle: '#92918A',
+    moss: '#54623E',
+    mossDark: '#455231',
+    mossTint: '#F1F5EB',
+    mossBorder: '#CBD9B8',
+    cashIn: '#15803D',
+    cashInTint: '#F0FDF4',
+    cashInBorder: '#BBF7D0',
+    cashOut: '#DC2626',
+    cashOutTint: '#FEF2F2',
+    cashOutBorder: '#FECACA',
+    danger: '#B42318',
+    dangerTint: '#FFF1F0',
+    dangerBorder: '#FFD1CC',
+    white: '#FFFFFF',
+  },
+  fonts: {
+    sans: 'PlusJakartaSans',
+    serif: 'PlayfairDisplay',
+  },
+  spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 },
+  radius: { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 },
+  controlHeight: 48,
+} as const;
+
+export type DesignTokens = typeof designTokens;

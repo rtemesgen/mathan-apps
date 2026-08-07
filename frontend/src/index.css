@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+  --color-warm-canvas: #F6F5EF;
+  --color-warm-card: #FFFFFF;
+  --color-warm-card-muted: #FBFAF6;
+  --color-warm-input: #F2F0E6;
+  --color-warm-border: #E8E6DC;
+  --color-warm-border-strong: #D8D3C5;
+  --color-ink: #1C1D1B;
+  --color-ink-muted: #6B6A64;
+  --color-moss: #54623E;
+  --color-moss-dark: #455231;
+  --color-moss-tint: #F1F5EB;
+  --color-cash-in: #15803D;
+  --color-cash-out: #DC2626;
+}
+
+body { margin: 0; font-family: var(--font-sans); background: #F6F5EF; color: #1C1D1B; }
+summary::-webkit-details-marker { display: none; }

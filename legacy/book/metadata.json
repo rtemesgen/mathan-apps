@@ -1,0 +1,6 @@
+{
+  "name": "Cash Book Manager",
+  "description": "Multi-book cash in and cash out recording application with dashboard and custom date-time transactions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+  --color-warm-bg: #F7F5EE;
+  --color-warm-card: #FFFFFF;
+  --color-warm-border: #E6E2D6;
+  --color-warm-muted: #EFECE3;
+  --color-brand-dark: #18181B;
+  --color-cash-in: #15803D;
+  --color-cash-out: #DC2626;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #F7F5EE;
+  color: #18181B;
+}
+
+/* Custom scrollbar styling for clean accounting lists */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8D3C5;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B0A997;
+}

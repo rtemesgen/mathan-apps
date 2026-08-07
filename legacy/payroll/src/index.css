@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #f6f5ef;
+    color: #1e201d;
+  }
+
+  /* Hide scrollbars globally while preserving scroll functionality */
+  * {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  *::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }
+}
+
+.font-serif-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+}
+
+.bg-warm-canvas {
+  background-color: #f6f5ef;
+}
+
+.bg-warm-card {
+  background-color: #ffffff;
+}
+
+.bg-warm-input {
+  background-color: #f2f0e6;
+}
+
+.bg-moss {
+  background-color: #54623e;
+}
+
+.bg-moss:hover {
+  background-color: #455231;
+}
+
+.text-moss {
+  color: #54623e;
+}
+
+.border-moss {
+  border-color: #54623e;
+}

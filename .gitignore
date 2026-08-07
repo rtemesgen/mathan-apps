@@ -1,0 +1,39 @@
+# Secrets and local environment configuration
+.env
+.env.local
+.env.*.local
+mobile/.env
+mobile/.env.local
+mobile/.env.*.local
+!frontend/.env.example
+!mobile/.env.example
+
+# Dependencies and generated web output
+node_modules/
+mobile/node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+
+# Expo / React Native generated files
+mobile/
+mobile/.expo/
+mobile/android/
+mobile/ios/
+mobile/web-build/
+mobile/*.db
+mobile/*.sqlite
+
+# Supabase CLI state and local service data
+backend/supabase/.temp/
+backend/supabase/.branches/
+
+# Credentials, signing material, logs, and OS files
+*.keystore
+*.jks
+*.pem
+*.p8
+*.mobileprovision
+*.log
+.DS_Store
