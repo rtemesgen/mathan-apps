@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { App as CapacitorApp } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { disableGuestMode, enableGuestMode, isGuestMode } from './guestMode';
@@ -10,6 +11,10 @@ export interface Workspace { id: string; name: string; }
 interface AuthState { configured: boolean; loading: boolean; workspaceLoading: boolean; session: Session | null; user: User | null; workspace: Workspace | null; workspaceError: string | null; isGuest: boolean; continueAsGuest: () => void; refreshWorkspace: () => Promise<Workspace | null>; signOut: () => Promise<void>; }
 const AuthContext = createContext<AuthState | null>(null);
 export const standaloneMode = import.meta.env.VITE_STANDALONE === 'true';
+const workspaceCacheKey = (userId: string) => `mathan_workspace_cache_${userId}`;
+function readWorkspaceCache(userId: string): Workspace | null {
+  try { const value = localStorage.getItem(workspaceCacheKey(userId)); return value ? JSON.parse(value) as Workspace : null; } catch { return null; }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -32,12 +37,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const row = data as unknown as { workspaces: Workspace | Workspace[] | null } | null;
     const nextWorkspace = Array.isArray(row?.workspaces) ? row?.workspaces[0] ?? null : row?.workspaces ?? null;
     setWorkspace(nextWorkspace); setWorkspaceError(null); setWorkspaceLoading(false);
-    if (nextWorkspace) await writeOffline(cacheKey, nextWorkspace);
+    if (nextWorkspace) { localStorage.setItem(workspaceCacheKey(session.user.id), JSON.stringify(nextWorkspace)); await writeOffline(cacheKey, nextWorkspace); }
     return nextWorkspace;
   };
   useEffect(() => {
     if (standaloneMode || guest || !isSupabaseConfigured) { setLoading(false); return; }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      if (data.session) {
+        const cached = readWorkspaceCache(data.session.user.id);
+        if (cached) { setWorkspace(cached); setWorkspaceLoading(false); }
+      }
+      setLoading(false);
+    });
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
     return () => subscription.subscription.unsubscribe();
   }, [guest]);
@@ -48,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const callback = new URL(url);
         const code = callback.searchParams.get('code');
-        if (code) await supabase.auth.exchangeCodeForSession(code);
+        if (code) { await supabase.auth.exchangeCodeForSession(code); await Browser.close().catch(() => undefined); }
       } catch {
         setWorkspaceError('Google sign-in could not be completed. Please try again.');
       }
