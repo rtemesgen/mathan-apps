@@ -12,11 +12,21 @@ npm run build
 npm run android
 ```
 
-`npm run build` builds `../frontend` in mobile standalone mode and synchronizes the result into `mobile/android`.
+`npm run build` builds `../frontend` in mobile local-first mode and synchronizes the result into `mobile/android`.
 
 Use `npm run open` to open the native project in Android Studio or `npm run sync` after frontend/native plugin changes.
 
-The Android application is self-contained: it does not require Supabase, a backend, an internet connection, or a runtime environment file. Cash Book and Payroll data are stored locally on the device using the app's offline store. The web app can still use Supabase separately through `../frontend/.env.local`.
+The Android application is local-first. Cash Book and Payroll data are always stored locally on the device using the app's offline store. When a user signs in and internet is available, the workspace snapshots are synchronized with Supabase. Offline changes are queued and retried when connectivity returns. Guests remain local-only and their data does not transfer to another phone.
+
+For a local mobile build, create `../frontend/.env.mobile.local` with:
+
+```text
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_STANDALONE=false
+```
+
+The Supabase migrations in `../backend/supabase/migrations` must be applied to the project, including the `app_state_snapshots` table and its RLS policy.
 
 ## GitHub installation and updates
 

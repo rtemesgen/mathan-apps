@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Employee, SalaryChange } from '../types';
 import { calculateEmployeeAccrual, getTodayString } from '../utils/calc';
+import { showAppToast } from '../../../lib/mobile';
 import {
   TrendingUp,
   DollarSign,
@@ -32,6 +33,8 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const [effectiveDate, setEffectiveDate] = useState<string>(asOfDate || getTodayString());
   const [reason, setReason] = useState<string>('Performance raise');
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [validationMessage, setValidationMessage] = useState('');
+  const [savedRaise, setSavedRaise] = useState<{ employeeName: string; amount: number; effectiveDate: string } | null>(null);
 
   useEffect(() => {
     if (!selectedEmpId && employees.length > 0) {
@@ -58,16 +61,13 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const salaryDiff = numNewSalary - currentRate;
   const percentDiff = currentRate > 0 ? (salaryDiff / currentRate) * 100 : 0;
 
-  // Auto populate salary field when selected employee changes
-  useEffect(() => {
-    if (selectedEmp) {
-      setNewSalary((getCurrentSalaryRate(selectedEmp) + 500).toString());
-    }
-  }, [selectedEmpId]);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEmp || numNewSalary <= 0 || !effectiveDate) return;
+    if (!selectedEmp || !Number.isFinite(numNewSalary) || numNewSalary <= 0 || !effectiveDate) return;
+    if (numNewSalary <= currentRate) {
+      setValidationMessage(`Enter an amount greater than ${formatMoney(currentRate)}.`);
+      return;
+    }
 
     const raise: SalaryChange = {
       id: `sc-${Date.now().toString().slice(-6)}`,
@@ -78,7 +78,10 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
     };
 
     onSaveRaise(selectedEmp.id, raise);
+    setSavedRaise({ employeeName: selectedEmp.name, amount: numNewSalary, effectiveDate });
+    setNewSalary('');
     setIsSuccess(true);
+    showAppToast('Raise saved successfully');
   };
 
   const formatMoney = (val: number) =>
@@ -90,7 +93,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto space-y-3">
-      {isSuccess && selectedEmp && (
+      {isSuccess && savedRaise && (
         <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center space-x-2.5">
             <div className="p-2 bg-emerald-800 text-white rounded-full shrink-0">
@@ -99,8 +102,8 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
             <div>
               <h3 className="font-serif-title text-sm font-bold text-emerald-950">Salary Raise Applied & Recalculated!</h3>
               <p className="text-[11px] text-emerald-800 font-medium">
-                Updated <span className="font-bold text-zinc-900">{selectedEmp.name}</span> base salary to{' '}
-                <span className="font-mono font-bold">{formatMoney(numNewSalary)}/mo</span> effective {effectiveDate}.
+                Updated <span className="font-bold text-zinc-900">{savedRaise.employeeName}</span> base salary to{' '}
+                <span className="font-mono font-bold">{formatMoney(savedRaise.amount)}/mo</span> effective {savedRaise.effectiveDate}.
               </p>
             </div>
           </div>
@@ -159,15 +162,16 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
                   <span className="absolute left-2.5 top-1.5 text-zinc-400 font-mono text-xs">$</span>
                   <input
                     type="number"
-                    min="1"
-                    step="50"
+                    step="any"
                     required
-                    placeholder="5000"
+                    min={currentRate}
+                    placeholder="Enter new salary"
                     value={newSalary}
-                    onChange={(e) => setNewSalary(e.target.value)}
+                    onChange={(e) => { setNewSalary(e.target.value); setValidationMessage(''); }}
                     className="w-full pl-6 pr-2.5 py-1 bg-white border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs font-bold text-zinc-900"
                   />
                 </div>
+                {validationMessage && <span className="mt-1 block text-[10px] font-semibold text-red-600">{validationMessage}</span>}
                 <span className="text-[9px] text-zinc-500 font-mono">Daily: ${(numNewSalary * 12 / 365.25).toFixed(2)}/day</span>
               </div>
             </div>
@@ -210,7 +214,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={numNewSalary <= 0}
+                disabled={!selectedEmp || !Number.isFinite(numNewSalary) || numNewSalary <= 0}
                 className="px-3.5 py-1.5 bg-[#54623e] hover:bg-[#435031] disabled:bg-zinc-300 text-white font-bold uppercase tracking-wider rounded-lg text-xs transition shadow-2xs cursor-pointer flex items-center gap-1"
               >
                 <TrendingUp className="w-3.5 h-3.5" /> Save Raise
@@ -251,4 +255,3 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
     </div>
   );
 };
-

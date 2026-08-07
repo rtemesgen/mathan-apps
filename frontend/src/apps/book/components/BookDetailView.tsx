@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Book, Transaction } from '../types';
 import { calculateBookStats, formatCurrency, formatDateTime } from '../utils/formatters';
-import { 
+import {
   ArrowLeft, 
   Search, 
   Plus, 
@@ -16,6 +16,7 @@ import {
   FileText,
   X
 } from 'lucide-react';
+import { exportPdfFile, showAppToast } from '../../../lib/mobile';
 
 interface BookDetailViewProps {
   book: Book;
@@ -101,28 +102,29 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
       });
   }, [bookTransactions, typeFilter, searchQuery, sortBy]);
 
-  // CSV Export helper
-  const handleExportCSV = () => {
-    if (bookTransactions.length === 0) return;
-    
-    const headers = ['Date & Time', 'Type', 'Amount', 'Remark', 'Category', 'Payment Mode'];
-    const rows = bookTransactions.map(t => [
-      t.dateTime,
-      t.type === 'in' ? 'CASH IN' : 'CASH OUT',
-      t.amount.toFixed(2),
-      `"${t.remark.replace(/"/g, '""')}"`,
-      t.category || '',
-      t.paymentMode || '',
-    ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${book.name.replace(/\s+/g, '_')}_records.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportPDF = () => {
+    const lines = [
+      `Book: ${book.name}`,
+      `Currency: ${book.currency}`,
+      `Total cash in: ${formatCurrency(stats.totalIn, book.currency)}`,
+      `Total cash out: ${formatCurrency(stats.totalOut, book.currency)}`,
+      `Net balance: ${formatCurrency(stats.netBalance, book.currency)}`,
+      '',
+      ...bookTransactions
+        .slice()
+        .sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime())
+        .map((transaction) => [
+          formatDateTime(transaction.dateTime).dateStr,
+          transaction.type === 'in' ? 'CASH IN' : 'CASH OUT',
+          `${transaction.type === 'in' ? '+' : '-'}${formatCurrency(transaction.amount, book.currency)}`,
+          transaction.remark,
+          transaction.category || '—',
+          transaction.paymentMode || '—',
+        ].join(' | ')),
+    ];
+    void exportPdfFile(`${book.name.replace(/\s+/g, '_')}_transactions.pdf`, `Cash Book Transactions — ${book.name}`, lines)
+      .then(() => showAppToast('Cash Book PDF saved'))
+      .catch(() => showAppToast('Could not save the Cash Book PDF'));
   };
 
   return (
@@ -151,12 +153,12 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           </div>
 
           <button
-            onClick={handleExportCSV}
-            title="Export Records to CSV"
+            onClick={handleExportPDF}
+            title="Export transactions to PDF"
             className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-[#4B5563] hover:text-[#121212] bg-[#FAF9F5] hover:bg-[#EFECE3] border border-[#E6E2D6] rounded-md transition-colors"
           >
             <Download className="w-2.5 h-2.5" />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">PDF</span>
           </button>
         </div>
       </div>

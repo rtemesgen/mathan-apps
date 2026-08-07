@@ -10,7 +10,6 @@ import {
   Plus,
   FileSpreadsheet,
   Calendar,
-  RotateCcw,
   Receipt,
 } from 'lucide-react';
 
@@ -21,7 +20,6 @@ interface HeaderProps {
   onOpenAddEmployee: () => void;
   onOpenExportModal: () => void;
   onOpenTransactions: () => void;
-  onResetData: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,7 +29,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddEmployee,
   onOpenExportModal,
   onOpenTransactions,
-  onResetData,
 }) => {
   return (
     <header className="native-safe-top bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
@@ -96,13 +93,6 @@ export const Header: React.FC<HeaderProps> = ({
               Export Payroll
             </button>
 
-            <button
-              onClick={onResetData}
-              title="Reset to sample demo data"
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-lg border border-slate-700 transition cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
 

@@ -56,7 +56,7 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
   const handlePrint = () => {
     const lines = filteredEmployees.map((emp) => {
       const employeeStats = calculateEmployeeAccrual(emp, transactions, asOfDate);
-      return `${emp.name} | ${emp.department} | Accrued ${formatCurrency(employeeStats.totalAccruedWages)} | Paid ${formatCurrency(employeeStats.totalWithdrawn)} | Balance ${formatCurrency(employeeStats.remainingBalance)}`;
+      return `${emp.name} | ${emp.department || '—'} | Accrued ${formatCurrency(employeeStats.totalAccruedWages)} | Paid ${formatCurrency(employeeStats.totalWithdrawn)} | Balance ${formatCurrency(employeeStats.remainingBalance)}`;
     });
     void exportPdfFile(`payroll_summary_${selectedDept}_${asOfDate}.pdf`, 'Mathan ERP Payroll Summary', [`As of ${asOfDate}`, `Total liability: ${formatCurrency(stats.totalCompanyLiability)}`, `Total accrued: ${formatCurrency(stats.totalCompanyAccrued)}`, `Total paid: ${formatCurrency(stats.totalCompanyPaidOut)}`, '', ...lines]);
   };

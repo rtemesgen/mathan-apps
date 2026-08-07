@@ -27,7 +27,7 @@ export const RecordWithdrawalModal: React.FC<RecordWithdrawalModalProps> = ({
   const [employeeId, setEmployeeId] = useState<string>(
     selectedEmployee ? selectedEmployee.id : employees[0]?.id || ''
   );
-  const [amount, setAmount] = useState<string>('1000');
+  const [amount, setAmount] = useState<string>('');
   const [date, setDate] = useState<string>(getTodayString());
   const [type, setType] = useState<Transaction['type']>('withdrawal');
   const [referenceNo, setReferenceNo] = useState<string>('');
@@ -151,9 +151,9 @@ export const RecordWithdrawalModal: React.FC<RecordWithdrawalModalProps> = ({
                 <input
                   type="number"
                   min="1"
-                  step="10"
+                  step="any"
                   required
-                  placeholder="1000"
+                  placeholder="Enter amount"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   className="w-full pl-7 pr-3 py-2 bg-white border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-xs text-slate-900 font-bold text-sm"

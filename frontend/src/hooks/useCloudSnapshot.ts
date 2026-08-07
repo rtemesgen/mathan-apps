@@ -17,8 +17,8 @@ async function syncQueue(workspaceId: string) {
 }
 
 export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>, boolean] {
-  const { workspace } = useAuth();
-  const standalone = import.meta.env.VITE_STANDALONE === 'true';
+  const { workspace, isGuest } = useAuth();
+  const standalone = import.meta.env.VITE_STANDALONE === 'true' || isGuest;
   const [value, setValue] = useState<T>(initialValue);
   const [ready, setReady] = useState(false);
   const hydrated = useRef(false);

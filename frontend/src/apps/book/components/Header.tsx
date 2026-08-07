@@ -6,7 +6,6 @@ interface HeaderProps {
   totalBooksCount: number;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
-  onResetDemoData?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -14,7 +13,6 @@ export const Header: React.FC<HeaderProps> = ({
   totalBooksCount,
   isSidebarOpen,
   onToggleSidebar,
-  onResetDemoData,
 }) => {
   const currentDateFormatted = new Date().toLocaleDateString('en-US', {
     month: '2-digit',

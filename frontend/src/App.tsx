@@ -7,6 +7,8 @@ import { AuthProvider } from './auth/AuthProvider';
 import { AuthGate } from './auth/AuthGate';
 import { useAndroidBackButton } from './hooks/useAndroidBackButton';
 import { AppUpdateNotice } from './components/AppUpdateNotice';
+import { AppToast } from './components/AppToast';
+import { AppUpdateProvider } from './hooks/useAppUpdate';
 
 function AndroidNavigationBridge() {
   useAndroidBackButton();
@@ -17,18 +19,21 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <AndroidNavigationBridge />
-        <AppUpdateNotice />
-        <AuthGate>
-          <Routes>
-            <Route element={<AppShell />}>
-              <Route path="/" element={<AppLauncher />} />
-              <Route path="/book" element={<BookApp />} />
-              <Route path="/payroll" element={<PayrollApp />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </AuthGate>
+        <AppUpdateProvider>
+          <AndroidNavigationBridge />
+          <AppUpdateNotice />
+          <AppToast />
+          <AuthGate>
+            <Routes>
+              <Route element={<AppShell />}>
+                <Route path="/" element={<AppLauncher />} />
+                <Route path="/book" element={<BookApp />} />
+                <Route path="/payroll" element={<PayrollApp />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            </Routes>
+          </AuthGate>
+        </AppUpdateProvider>
       </BrowserRouter>
     </AuthProvider>
   );

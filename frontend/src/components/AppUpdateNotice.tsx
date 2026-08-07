@@ -1,15 +1,21 @@
-import { Download, X } from 'lucide-react';
+import { CheckCircle2, Download, LoaderCircle, X } from 'lucide-react';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 
 export function AppUpdateNotice() {
-  const { update, openUpdate, dismissUpdate } = useAppUpdate();
-  if (!update) return null;
+  const { update, downloadStatus, downloadProgress, noticeVisible, downloadUpdate, installUpdate, dismissUpdate } = useAppUpdate();
+  if (!update || !noticeVisible) return null;
+  const downloading = downloadStatus === 'downloading';
+  const ready = downloadStatus === 'ready';
+  const failed = downloadStatus === 'error';
   return (
-    <div className="native-safe-bottom fixed bottom-3 left-3 right-3 z-[200] mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-[#d8d3c5] bg-white p-3 shadow-2xl">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white"><Download className="h-4 w-4" /></div>
-      <div className="min-w-0 flex-1"><p className="text-xs font-extrabold text-zinc-900">Update available</p><p className="mt-0.5 text-[11px] text-zinc-500">Mathan ERP {update.version} is downloading. Android will ask you to install it.</p></div>
-      <button onClick={openUpdate} className="rounded-xl bg-zinc-900 px-3 py-2 text-[11px] font-bold text-white">Open release</button>
-      <button onClick={dismissUpdate} aria-label="Dismiss update" className="rounded-lg p-1 text-zinc-400"><X className="h-4 w-4" /></button>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+      <div className="native-safe-bottom w-full max-w-sm animate-in fade-in zoom-in-95 rounded-3xl border border-[#d8d3c5] bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3"><div className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-900 text-white ${downloading ? 'animate-pulse' : ''}`}>{ready ? <CheckCircle2 className="h-5 w-5" /> : <Download className="h-5 w-5" />}</div><button onClick={dismissUpdate} aria-label="Close update popup" className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100"><X className="h-4 w-4" /></button></div>
+        <h2 className="mt-4 text-base font-extrabold text-zinc-900">Mathan ERP update {update.version}</h2>
+        <p className="mt-1 text-sm leading-6 text-zinc-500">{downloading ? `Downloading the update… ${Math.round(downloadProgress)}% complete.` : ready ? 'Download complete. Install the update when you are ready.' : failed ? 'The download failed. Try again when you are online.' : 'A new version is available.'}</p>
+        {downloading && <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-emerald-600 transition-[width] duration-500" style={{ width: `${Math.max(3, downloadProgress)}%` }} /></div>}
+        <button onClick={downloading ? undefined : ready ? installUpdate : downloadUpdate} disabled={downloading} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 py-3 text-xs font-bold text-white disabled:cursor-wait disabled:opacity-60">{downloading ? <><LoaderCircle className="h-4 w-4 animate-spin" /> Downloading {Math.round(downloadProgress)}%…</> : ready ? 'Install update' : failed ? 'Try download again' : 'Download update'}</button>
+      </div>
     </div>
   );
 }

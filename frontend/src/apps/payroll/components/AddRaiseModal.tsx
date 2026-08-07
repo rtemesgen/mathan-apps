@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Employee, SalaryChange } from '../types';
 import { formatCurrency, formatDate, getTodayString } from '../utils/calc';
 import { X, TrendingUp, Calendar, AlertCircle, Info } from 'lucide-react';
+import { showAppToast } from '../../../lib/mobile';
 
 interface AddRaiseModalProps {
   isOpen: boolean;
@@ -26,26 +27,27 @@ export const AddRaiseModal: React.FC<AddRaiseModalProps> = ({
   const [newSalary, setNewSalary] = useState<string>('');
   const [effectiveDate, setEffectiveDate] = useState<string>(getTodayString());
   const [reason, setReason] = useState<string>('Performance Raise');
+  const [validationMessage, setValidationMessage] = useState('');
 
   const currentEmp = employees.find((e) => e.id === employeeId) || selectedEmployee;
 
   useEffect(() => {
     if (selectedEmployee) {
       setEmployeeId(selectedEmployee.id);
-      // Pre-fill with a default +$500 raise suggestion
-      const currentRate = selectedEmployee.salaryHistory.length > 0
-        ? selectedEmployee.salaryHistory[selectedEmployee.salaryHistory.length - 1].newMonthlySalary
-        : selectedEmployee.initialSalary;
-      setNewSalary((currentRate + 500).toString());
+      setNewSalary('');
     } else if (employees.length > 0) {
       setEmployeeId(employees[0].id);
-      setNewSalary((employees[0].initialSalary + 500).toString());
+      setNewSalary('');
     }
   }, [selectedEmployee, employees]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!employeeId || !newSalary || !effectiveDate) return;
+    if (!employeeId || !newSalary || !effectiveDate || parsedNewSalary <= 0) return;
+    if (parsedNewSalary <= currentBaseRate) {
+      setValidationMessage(`Enter an amount greater than ${formatCurrency(currentBaseRate)}.`);
+      return;
+    }
 
     const raise: SalaryChange = {
       id: `sal-${Date.now().toString().slice(-6)}`,
@@ -56,6 +58,9 @@ export const AddRaiseModal: React.FC<AddRaiseModalProps> = ({
     };
 
     onSaveRaise(employeeId, raise);
+    setNewSalary('');
+    setValidationMessage('');
+    showAppToast('Raise saved successfully');
     onClose();
   };
 
@@ -102,10 +107,7 @@ export const AddRaiseModal: React.FC<AddRaiseModalProps> = ({
                 setEmployeeId(id);
                 const emp = employees.find((item) => item.id === id);
                 if (emp) {
-                  const rate = emp.salaryHistory.length > 0
-                    ? emp.salaryHistory[emp.salaryHistory.length - 1].newMonthlySalary
-                    : emp.initialSalary;
-                  setNewSalary((rate + 500).toString());
+                  setNewSalary('');
                 }
               }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 text-xs font-medium"
@@ -148,14 +150,15 @@ export const AddRaiseModal: React.FC<AddRaiseModalProps> = ({
               <span className="absolute left-3 top-2.5 text-slate-400 font-mono text-xs">$</span>
               <input
                 type="number"
-                min="0"
-                step="50"
+                step="any"
                 required
+                min="0"
                 value={newSalary}
-                onChange={(e) => setNewSalary(e.target.value)}
+                onChange={(e) => { setNewSalary(e.target.value); setValidationMessage(''); }}
                 className="w-full pl-7 pr-3 py-2 bg-white border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs text-slate-900 font-bold text-sm"
               />
             </div>
+            {validationMessage && <p className="mt-1 text-[10px] font-semibold text-red-600">{validationMessage}</p>}
           </div>
 
           {/* Effective Start Date of Raise (Past or Future) */}

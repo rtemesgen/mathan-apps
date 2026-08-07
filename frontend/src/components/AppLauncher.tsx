@@ -1,11 +1,13 @@
-import { ArrowRight, CheckCircle2, Share2, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, LoaderCircle, RefreshCw, Share2, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ERP_APPS } from '../appRegistry';
 import { shareApp } from '../lib/mobile';
 import { useAppUpdate } from '../hooks/useAppUpdate';
+import { AppVersionPanel } from './AppVersionPanel';
 
 export function AppLauncher() {
-  const { update, checkForUpdate } = useAppUpdate();
+  const { update, status, downloadStatus, checkForUpdate, downloadUpdate, installUpdate } = useAppUpdate();
+  const downloading = downloadStatus === 'downloading';
   return (
     <main className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-20">
       <section className="max-w-2xl">
@@ -13,11 +15,13 @@ export function AppLauncher() {
           <Sparkles className="h-3 w-3" /> Your workspace
         </div>
         <h1 className="font-serif text-4xl font-bold tracking-tight text-zinc-900 sm:text-6xl">Choose an app to get started.</h1>
-        <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-500 sm:text-base">Mathan ERP brings focused business tools into one workspace. Each app keeps its own records and accounting logic.</p>
         <div className="mt-5 flex flex-wrap gap-2">
           <button onClick={() => void shareApp()} className="inline-flex items-center gap-2 rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm hover:border-zinc-300"><Share2 className="h-4 w-4" /> Share app</button>
-          <button onClick={() => void checkForUpdate()} className="rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm hover:border-zinc-300">{update ? `Update ${update.version} available` : 'Check for updates'}</button>
+          <button disabled={status === 'checking' || downloading} onClick={() => void (update ? downloadStatus === 'ready' ? installUpdate() : downloadUpdate() : checkForUpdate())} className="inline-flex items-center gap-2 rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm transition hover:border-zinc-300 disabled:cursor-wait disabled:opacity-70">{status === 'checking' || downloading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 transition-transform hover:rotate-180" />}{status === 'checking' ? 'Checking…' : downloading ? 'Downloading update…' : update ? downloadStatus === 'ready' ? `Install update ${update.version}` : `Download update ${update.version}` : 'Check for updates'}</button>
         </div>
+        {status === 'up-to-date' && <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> You’re up to date.</p>}
+        {status === 'error' && <p className="mt-2 text-[11px] font-semibold text-zinc-500">Could not check right now. Try again when you’re online.</p>}
+        <AppVersionPanel />
       </section>
       <section className="mt-10 grid gap-4 md:grid-cols-2">
         {ERP_APPS.map((app) => {
@@ -29,7 +33,6 @@ export function AppLauncher() {
                 <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-extrabold uppercase tracking-wider text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Available</span>
               </div>
               <h2 className="mt-8 font-serif text-2xl font-bold text-zinc-900">{app.name}</h2>
-              <p className="mt-2 min-h-12 text-sm leading-6 text-zinc-500">{app.description}</p>
               <span className="mt-7 inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-zinc-900">Open app <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" /></span>
             </Link>
           );
