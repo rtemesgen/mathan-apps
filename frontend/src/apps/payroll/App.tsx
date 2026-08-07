@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, Transaction, SalaryChange } from './types';
-import { INITIAL_EMPLOYEES, INITIAL_TRANSACTIONS } from './data/mockData';
 import { calculateCompanyStats, getTodayString } from './utils/calc';
 
 import { Sidebar, ActiveTab } from './components/Sidebar';
@@ -51,8 +50,8 @@ export default function App() {
     };
   }, [isSidebarOpen]);
 
-  const [employees, setEmployees] = useCloudSnapshot<Employee[]>('payroll', 'employees', INITIAL_EMPLOYEES);
-  const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('payroll', 'transactions', INITIAL_TRANSACTIONS);
+  const [employees, setEmployees] = useCloudSnapshot<Employee[]>('payroll', 'employees', []);
+  const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('payroll', 'transactions', []);
 
   // Global evaluation as-of date (defaults to today)
   const [asOfDate, setAsOfDate] = useState<string>(getTodayString());
@@ -117,14 +116,6 @@ export default function App() {
     }
   };
 
-  const handleResetData = () => {
-    if (window.confirm('Reset all employee records and transaction logs to sample demo data?')) {
-      setEmployees(INITIAL_EMPLOYEES);
-      setTransactions(INITIAL_TRANSACTIONS);
-      setAsOfDate(getTodayString());
-    }
-  };
-
   const stats = calculateCompanyStats(employees, transactions, asOfDate);
 
   return (
@@ -141,7 +132,6 @@ export default function App() {
             stats={stats}
             asOfDate={asOfDate}
             onAsOfDateChange={setAsOfDate}
-            onResetData={handleResetData}
             employeeCount={employees.length}
             onClose={() => setIsSidebarOpen(false)}
           />
@@ -166,7 +156,6 @@ export default function App() {
               stats={stats}
               asOfDate={asOfDate}
               onAsOfDateChange={setAsOfDate}
-              onResetData={handleResetData}
               employeeCount={employees.length}
               onClose={() => setIsSidebarOpen(false)}
             />

@@ -6,7 +6,6 @@ import {
   TrendingUp,
   FileSpreadsheet,
   Receipt,
-  RotateCcw,
   Calendar,
   ChevronRight,
   ShieldCheck,
@@ -36,7 +35,6 @@ interface SidebarProps {
   stats: CompanyStats;
   asOfDate: string;
   onAsOfDateChange: (date: string) => void;
-  onResetData: () => void;
   employeeCount: number;
   onClose?: () => void;
   currentAppName?: string;
@@ -48,7 +46,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   stats,
   asOfDate,
   onAsOfDateChange,
-  onResetData,
   employeeCount,
   onClose,
   currentAppName = 'Payroll Tracker',
@@ -223,13 +220,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           />
         </div>
 
-        <button
-          onClick={onResetData}
-          className="w-full px-2 py-1 bg-white hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 text-[10px] font-bold rounded-lg border border-zinc-200 flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
-        >
-          <RotateCcw className="w-3 h-3" />
-          Reset Demo Records
-        </button>
       </div>
     </aside>
   );

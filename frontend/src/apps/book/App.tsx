@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Book, Transaction, TransactionType } from './types';
-import { INITIAL_BOOKS, INITIAL_TRANSACTIONS } from './data/initialData';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { BookDetailView } from './components/BookDetailView';
@@ -11,8 +10,8 @@ import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 
 export default function App() {
-  const [books, setBooks] = useCloudSnapshot<Book[]>('cash_book', 'books', INITIAL_BOOKS);
-  const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('cash_book', 'transactions', INITIAL_TRANSACTIONS);
+  const [books, setBooks] = useCloudSnapshot<Book[]>('cash_book', 'books', []);
+  const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('cash_book', 'transactions', []);
 
   // Active Selected Book (null = Dashboard, string = Book Detail View)
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
@@ -127,29 +126,19 @@ export default function App() {
     }
   };
 
-  // Reset Demo Records Handler
-  const handleResetDemoData = () => {
-    if (confirm('Reset all books and transactions to initial demo records?')) {
-      setBooks(INITIAL_BOOKS);
-      setTransactions(INITIAL_TRANSACTIONS);
-      setActiveBookId(null);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[#F7F5EE] text-[#18181B] flex flex-col font-sans">
       {/* Top Header Bar */}
       <Header
         activeBookName={activeBook?.name}
         totalBooksCount={books.length}
-        onResetDemoData={handleResetDemoData}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(value => !value)}
       />
 
       <div className="flex flex-1 min-h-0">
-        {isSidebarOpen && <div className="hidden lg:block shrink-0"><CashBookSidebar bookCount={books.length} onResetData={handleResetDemoData} onClose={() => setIsSidebarOpen(false)} /></div>}
-        {isSidebarOpen && <div className="lg:hidden fixed inset-0 z-[100] flex"><button aria-label="Close Cash Book menu" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/40" /><div className="relative z-10 h-full w-56 shadow-2xl"><CashBookSidebar bookCount={books.length} onResetData={handleResetDemoData} onClose={() => setIsSidebarOpen(false)} /></div></div>}
+        {isSidebarOpen && <div className="hidden lg:block shrink-0"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div>}
+        {isSidebarOpen && <div className="lg:hidden fixed inset-0 z-[100] flex"><button aria-label="Close Cash Book menu" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/40" /><div className="relative z-10 h-full w-56 shadow-2xl"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div></div>}
         <main className="flex-1 min-w-0">
           {activeBookId && activeBook ? (
             <BookDetailView

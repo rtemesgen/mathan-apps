@@ -29,7 +29,7 @@ export async function saveTextFile(filename: string, content: string, type = 'te
   const result = await Filesystem.writeFile({
     path: safeFilename,
     data: content,
-    directory: Directory.Cache,
+    directory: Directory.Documents,
     encoding: Encoding.UTF8,
     recursive: true,
   });
@@ -71,7 +71,7 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
     return;
   }
   const data = pdf.output('datauristring').split(',')[1];
-  const result = await Filesystem.writeFile({ path: toSafeFilename(filename), data, directory: Directory.Cache, recursive: true });
+  const result = await Filesystem.writeFile({ path: toSafeFilename(filename), data, directory: Directory.Documents, recursive: true });
   await Share.share({ title: filename, url: result.uri, dialogTitle: 'Share PDF report' });
 }
 
