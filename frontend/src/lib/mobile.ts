@@ -152,7 +152,9 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
   const firstRow = rows.find((line) => line.includes('|'));
   if (firstRow) {
     const columnCount = firstRow.split('|').length;
-    const labels = title.toLowerCase().includes('transaction')
+    const labels = title.toLowerCase().includes('cash book')
+      ? ['Date & Time', 'Type', 'Amount', 'Remark', 'Category', 'Payment']
+      : title.toLowerCase().includes('transaction')
       ? ['Date', 'Employee', 'Amount', 'Notes']
       : columnCount >= 5
         ? ['Employee', 'Department', 'Accrued', 'Paid', 'Balance']
