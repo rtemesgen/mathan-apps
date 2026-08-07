@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Employee, Transaction } from '../types';
-import { calculateCompanyStats, calculateEmployeeAccrual } from '../utils/calc';
+import { calculateCompanyStats, calculateEmployeeAccrual, downloadFile } from '../utils/calc';
+import { exportPdfFile } from '../../../lib/mobile';
 import {
   FileSpreadsheet,
   Download,
@@ -69,21 +70,15 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       ];
     });
 
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Payroll_Report_AsOf_${asOfDate}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadFile(`Payroll_Report_AsOf_${asOfDate}.csv`, [headers.join(','), ...rows.map((r) => r.join(','))].join('\n'));
   };
 
   const handlePrint = () => {
-    window.print();
+    const lines = filteredEmployees.map((emp) => {
+      const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
+      return `${emp.name} | ${emp.department} | Accrued ${formatMoney(info.totalAccruedWages)} | Paid ${formatMoney(info.totalWithdrawn)} | Balance ${formatMoney(info.remainingBalance)}`;
+    });
+    void exportPdfFile(`Payroll_Report_AsOf_${asOfDate}.pdf`, 'Mathan ERP Payroll Report', [`As of ${asOfDate}`, `Total liability: ${formatMoney(stats.totalCompanyLiability)}`, `Total accrued: ${formatMoney(stats.totalCompanyAccrued)}`, `Total paid: ${formatMoney(stats.totalCompanyPaidOut)}`, '', ...lines]);
   };
 
   return (
@@ -196,4 +191,3 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     </div>
   );
 };
-

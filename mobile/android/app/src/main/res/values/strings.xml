@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Mathan ERP</string>
+    <string name="title_activity_main">Mathan ERP</string>
+    <string name="package_name">com.mathan.erp</string>
+    <string name="custom_url_scheme">com.mathan.erp</string>
+</resources>

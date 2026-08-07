@@ -6,7 +6,7 @@ This workspace is split by runtime responsibility:
 | --- | --- |
 | `frontend/` | Vite + React web application |
 | `backend/` | Supabase database migrations and security policies |
-| `mobile/` | Expo React Native Android/iOS application |
+| `mobile/` | Capacitor Android application wrapper |
 | `legacy/` | Original standalone Cash Book and Payroll reference apps |
 
 ## Start the web app
@@ -28,8 +28,10 @@ Open the local URL printed by Vite, normally `http://localhost:3000`.
 
 ```bash
 cd mobile
+npm install
 npm run android
 ```
 
-Use the same Supabase URL and anon key in `mobile/.env`.
+The mobile wrapper builds the frontend in standalone mode, so an installed user can work without Supabase, a backend, or internet access. Run commands from `mobile/`.
 
+Tagged releases are built and published through [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml). See [`mobile/README.md`](mobile/README.md) for the required signing secrets.

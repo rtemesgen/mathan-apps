@@ -1,4 +1,5 @@
 import { Employee, Transaction, EmployeeAccrualSummary, AccrualInterval, CompanyStats } from '../types';
+import { saveTextFile } from '../../../lib/mobile';
 
 /**
  * Format currency to USD or standard localized format
@@ -325,13 +326,5 @@ export function exportTransactionsCSV(
  * Trigger browser file download for a text string (CSV, JSON, etc.)
  */
 export function downloadFile(filename: string, content: string, type = 'text/csv;charset=utf-8;') {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  void saveTextFile(filename, content, type);
 }

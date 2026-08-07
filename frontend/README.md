@@ -23,12 +23,12 @@ Supabase migrations live in `../backend/supabase/migrations`. Apply them to a ne
 
 ## Mobile app
 
-The native Expo application is in [`../mobile`](../mobile/README.md). It uses the same Supabase project, persists offline records in SQLite, and includes Android double-Back exit behavior at launcher and dashboard roots.
+The native Capacitor Android wrapper is in [`../mobile`](../mobile/README.md). It reuses this frontend build, the same Supabase project, browser offline persistence, and Android back-button behavior.
 
 ```bash
 cd mobile
 npm install
-npm run typecheck
+npm run build
 npm run android
 ```
 

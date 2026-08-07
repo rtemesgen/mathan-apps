@@ -1,0 +1,29 @@
+{
+  "name": "mathan-erp-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix ../frontend run build -- --mode mobile && cap sync android",
+    "android": "npm run build && cap run android",
+    "open": "cap open android",
+    "sync": "cap sync android",
+    "mobile:build": "npm run build",
+    "mobile:android": "npm run android",
+    "mobile:open": "npm run open",
+    "mobile:sync": "npm run sync"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/app": "^7.1.0",
+    "@capacitor/browser": "^7.0.0",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/filesystem": "^7.1.4",
+    "@capacitor/share": "^7.0.2",
+    "@capacitor/toast": "^7.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3",
+    "typescript": "~5.8.2"
+  }
+}

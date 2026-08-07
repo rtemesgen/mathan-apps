@@ -16,14 +16,14 @@ coverage/
 *.tsbuildinfo
 .vite/
 
-# Expo / React Native generated files
-mobile/
-mobile/.expo/
-mobile/android/
-mobile/ios/
-mobile/web-build/
-mobile/*.db
-mobile/*.sqlite
+# Capacitor / Android generated files
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/.idea/
+mobile/android/local.properties
+mobile/android/keystore.properties
+mobile/android/app/release.keystore
 
 # Supabase CLI state and local service data
 backend/supabase/.temp/

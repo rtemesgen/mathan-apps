@@ -1,6 +1,7 @@
-import { ArrowRight, CheckCircle2, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Share2, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ERP_APPS } from '../appRegistry';
+import { shareApp } from '../lib/mobile';
 
 export function AppLauncher() {
   return (
@@ -11,6 +12,7 @@ export function AppLauncher() {
         </div>
         <h1 className="font-serif text-4xl font-bold tracking-tight text-zinc-900 sm:text-6xl">Choose an app to get started.</h1>
         <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-500 sm:text-base">Mathan ERP brings focused business tools into one workspace. Each app keeps its own records and accounting logic.</p>
+        <button onClick={() => void shareApp()} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm hover:border-zinc-300"><Share2 className="h-4 w-4" /> Share app</button>
       </section>
       <section className="mt-10 grid gap-4 md:grid-cols-2">
         {ERP_APPS.map((app) => {
@@ -31,4 +33,3 @@ export function AppLauncher() {
     </main>
   );
 }
-

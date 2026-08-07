@@ -18,5 +18,18 @@
   --color-cash-out: #DC2626;
 }
 
-body { margin: 0; font-family: var(--font-sans); background: #F6F5EF; color: #1C1D1B; }
+body {
+  margin: 0;
+  min-width: 320px;
+  font-family: var(--font-sans);
+  background: #F6F5EF;
+  color: #1C1D1B;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, input, select, textarea { font: inherit; }
+input, select, textarea { font-size: 16px; }
+.native-safe-top { padding-top: env(safe-area-inset-top); }
+.native-safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 summary::-webkit-details-marker { display: none; }
