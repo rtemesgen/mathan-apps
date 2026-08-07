@@ -7,6 +7,7 @@ const RELEASES_API = 'https://api.github.com/repos/rtemesgen/mathan-apps/release
 
 interface AppUpdaterPlugin {
   downloadAndInstall(options: { url: string; filename?: string }): Promise<void>;
+  installDownloaded(): Promise<void>;
 }
 
 const AppUpdater = registerPlugin<AppUpdaterPlugin>('AppUpdater');
@@ -27,6 +28,21 @@ function isNewerVersion(latest: string, current: string) {
 export function useAppUpdate() {
   const [update, setUpdate] = useState<{ version: string; url: string; downloadUrl: string } | null>(null);
   const [status, setStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'error'>('idle');
+  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'ready' | 'error'>('idle');
+  const [noticeVisible, setNoticeVisible] = useState(true);
+
+  const startDownload = async (next: { version: string; url: string; downloadUrl: string }) => {
+    setDownloadStatus('downloading');
+    const downloadKey = `mathan_update_download_started_${next.version}`;
+    try {
+      localStorage.setItem(downloadKey, 'true');
+      await AppUpdater.downloadAndInstall({ url: next.downloadUrl, filename: `mathan-erp-${next.version}.apk` });
+      setDownloadStatus('ready');
+    } catch {
+      localStorage.removeItem(downloadKey);
+      setDownloadStatus('error');
+    }
+  };
 
   const checkForUpdate = async () => {
     if (Capacitor.getPlatform() !== 'android') return null;
@@ -41,12 +57,10 @@ export function useAppUpdate() {
         const next = { version: release.tag_name.replace(/^v/i, ''), url: release.html_url, downloadUrl: apk.browser_download_url };
         setUpdate(next);
         setStatus('available');
+        setNoticeVisible(true);
         const downloadKey = `mathan_update_download_started_${next.version}`;
         if (!localStorage.getItem(downloadKey)) {
-          localStorage.setItem(downloadKey, 'true');
-          void AppUpdater.downloadAndInstall({ url: next.downloadUrl, filename: `mathan-erp-${next.version}.apk` }).catch(() => {
-            localStorage.removeItem(downloadKey);
-          });
+          void startDownload(next);
         }
         return next;
       }
@@ -76,7 +90,10 @@ export function useAppUpdate() {
     update,
     status,
     checkForUpdate,
-    openUpdate: () => update ? void Browser.open({ url: update.url }) : undefined,
-    dismissUpdate: () => setUpdate(null),
+    downloadStatus,
+    noticeVisible,
+    installUpdate: () => update ? void AppUpdater.installDownloaded().then(() => setDownloadStatus('ready')).catch(() => startDownload(update)) : undefined,
+    openRelease: () => update ? void Browser.open({ url: update.url }) : undefined,
+    dismissUpdate: () => setNoticeVisible(false),
   };
 }

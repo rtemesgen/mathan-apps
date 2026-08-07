@@ -1,12 +1,20 @@
 import { Capacitor } from '@capacitor/core';
-import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { registerPlugin } from '@capacitor/core';
 import { jsPDF } from 'jspdf';
 
 export const isNativeMobile = () => Capacitor.isNativePlatform();
+const FileSaver = registerPlugin<{ saveAndOpen(options: { filename: string; mimeType: string; data: string }): Promise<void> }>('FileSaver');
 
 function toSafeFilename(filename: string) {
   return filename.replace(/[^a-z0-9._-]+/gi, '_');
+}
+
+function encodeUtf8(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
 }
 
 /** Save text in a browser download, or hand a native file to Android sharing. */
@@ -25,20 +33,7 @@ export async function saveTextFile(filename: string, content: string, type = 'te
     return;
   }
 
-  const safeFilename = toSafeFilename(filename);
-  const result = await Filesystem.writeFile({
-    path: safeFilename,
-    data: content,
-    directory: Directory.Documents,
-    encoding: Encoding.UTF8,
-    recursive: true,
-  });
-
-  await Share.share({
-    title: filename,
-    url: result.uri,
-    dialogTitle: 'Share exported report',
-  });
+  await FileSaver.saveAndOpen({ filename: toSafeFilename(filename), mimeType: type, data: encodeUtf8(content) });
 }
 
 export async function exportPdfFile(filename: string, title: string, lines: string[]) {
@@ -71,8 +66,7 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
     return;
   }
   const data = pdf.output('datauristring').split(',')[1];
-  const result = await Filesystem.writeFile({ path: toSafeFilename(filename), data, directory: Directory.Documents, recursive: true });
-  await Share.share({ title: filename, url: result.uri, dialogTitle: 'Share PDF report' });
+  await FileSaver.saveAndOpen({ filename: toSafeFilename(filename), mimeType: 'application/pdf', data });
 }
 
 export async function shareApp() {

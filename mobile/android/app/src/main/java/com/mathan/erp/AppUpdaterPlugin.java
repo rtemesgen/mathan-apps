@@ -14,7 +14,6 @@ import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
 
-import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.annotation.CapacitorPlugin;
@@ -25,11 +24,29 @@ public class AppUpdaterPlugin extends Plugin {
     private BroadcastReceiver downloadReceiver;
 
     @PluginMethod
+    public void installDownloaded(PluginCall call) {
+        String savedUri = getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).getString("downloaded-apk-uri", null);
+        if (savedUri == null) {
+            call.reject("No downloaded update is available yet");
+            return;
+        }
+        installApk(Uri.parse(savedUri));
+        call.resolve();
+    }
+
+    @PluginMethod
     public void downloadAndInstall(PluginCall call) {
         String url = call.getString("url");
         String filename = call.getString("filename", "mathan-erp-update.apk");
         if (url == null || url.isBlank()) {
             call.reject("No update download URL was provided");
+            return;
+        }
+
+        String savedUri = getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).getString("downloaded-apk-uri", null);
+        if (savedUri != null) {
+            installApk(Uri.parse(savedUri));
+            call.resolve();
             return;
         }
 
@@ -43,7 +60,6 @@ public class AppUpdaterPlugin extends Plugin {
         long downloadId = manager.enqueue(request);
 
         registerDownloadReceiver(downloadId, call);
-        call.resolve(new JSObject().put("downloadId", downloadId));
     }
 
     private void registerDownloadReceiver(long downloadId, PluginCall call) {
@@ -64,7 +80,9 @@ public class AppUpdaterPlugin extends Plugin {
                     Toast.makeText(context, "Mathan ERP update download failed", Toast.LENGTH_LONG).show();
                     return;
                 }
+                context.getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).edit().putString("downloaded-apk-uri", apkUri.toString()).apply();
                 installApk(apkUri);
+                call.resolve();
             }
         };
         IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
