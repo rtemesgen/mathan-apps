@@ -77,7 +77,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   const Icon = currentInfo.icon;
 
   return (
-    <header className="bg-[#f6f5ef] border-b border-[#e8e6dc] sticky top-0 z-40 px-2.5 sm:px-4 py-1.5 flex items-center justify-between shadow-2xs">
+    <header className="native-safe-top bg-[#f6f5ef] border-b border-[#e8e6dc] sticky top-0 z-40 px-2.5 sm:px-4 py-1.5 flex items-center justify-between shadow-2xs">
       {/* Title & Menu Toggle Logo Button */}
       <div className="flex items-center space-x-2.5 sm:space-x-3.5">
         {isSidebarOpen ? (

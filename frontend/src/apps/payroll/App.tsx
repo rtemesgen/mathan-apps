@@ -14,6 +14,7 @@ import { AddRaiseView } from './views/AddRaiseView';
 import { ReportsView } from './views/ReportsView';
 import { TransactionsView } from './views/TransactionsView';
 import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
+import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 
 export default function App() {
   // Navigation active tab
@@ -59,6 +60,22 @@ export default function App() {
   // Detail inspection drawer state
   const [selectedDetailEmp, setSelectedDetailEmp] = useState<Employee | null>(null);
   const [selectedPayEmployeeId, setSelectedPayEmployeeId] = useState<string | undefined>();
+
+  useAndroidBackHandler(() => {
+    if (selectedDetailEmp) {
+      setSelectedDetailEmp(null);
+      return true;
+    }
+    if (isSidebarOpen && window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+      return true;
+    }
+    if (activeTab !== 'dashboard') {
+      setActiveTab('dashboard');
+      return true;
+    }
+    return false;
+  }, [selectedDetailEmp, isSidebarOpen, activeTab]);
 
   // Keep selectedDetailEmp updated if underlying data changes
   useEffect(() => {

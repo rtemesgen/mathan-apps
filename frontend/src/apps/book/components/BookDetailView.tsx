@@ -422,7 +422,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
       )}
 
       {/* STICKY BOTTOM BUTTONS OPTIMIZED FOR MOBILE */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#FFFFFF]/95 backdrop-blur-md border-t border-[#E6E2D6] p-1.5 sm:p-2 shadow-lg">
+      <div className="native-safe-bottom fixed bottom-0 left-0 right-0 z-40 bg-[#FFFFFF]/95 backdrop-blur-md border-t border-[#E6E2D6] p-1.5 sm:p-2 shadow-lg">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-1.5">
           {/* Cash In Button (Green) */}
           <button
@@ -448,4 +448,3 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
     </div>
   );
 };
-

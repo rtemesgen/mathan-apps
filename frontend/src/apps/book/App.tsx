@@ -8,6 +8,7 @@ import { AddBookModal } from './components/AddBookModal';
 import { TransactionModal } from './components/TransactionModal';
 import { CashBookSidebar } from './components/Sidebar';
 import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
+import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 
 export default function App() {
   const [books, setBooks] = useCloudSnapshot<Book[]>('cash_book', 'books', INITIAL_BOOKS);
@@ -21,6 +22,27 @@ export default function App() {
   const [transactionModalType, setTransactionModalType] = useState<TransactionType | null>(null);
   const [targetBookForTransaction, setTargetBookForTransaction] = useState<Book | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
+
+  useAndroidBackHandler(() => {
+    if (transactionModalType) {
+      setTransactionModalType(null);
+      setTargetBookForTransaction(null);
+      return true;
+    }
+    if (isAddBookOpen) {
+      setIsAddBookOpen(false);
+      return true;
+    }
+    if (isSidebarOpen && window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+      return true;
+    }
+    if (activeBookId) {
+      setActiveBookId(null);
+      return true;
+    }
+    return false;
+  }, [transactionModalType, isAddBookOpen, isSidebarOpen, activeBookId]);
 
   // Active book object if selected
   const activeBook = books.find(b => b.id === activeBookId) || null;

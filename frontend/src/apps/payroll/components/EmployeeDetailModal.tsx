@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   Trash2,
 } from 'lucide-react';
+import { exportPdfFile } from '../../../lib/mobile';
 
 interface EmployeeDetailModalProps {
   employee: Employee | null;
@@ -48,7 +49,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const handlePrint = () => {
-    window.print();
+    void exportPdfFile(`employee_${employee.id}_${evaluationDate}.pdf`, `${employee.name} Employee Statement`, [`As of ${evaluationDate}`, `Monthly salary: ${formatCurrency(summary.currentMonthlySalary)}`, `Total accrued: ${formatCurrency(summary.totalAccruedWages)}`, `Total paid out: ${formatCurrency(summary.totalWithdrawn)}`, `Remaining balance: ${formatCurrency(summary.remainingBalance)}`, '', ...empTransactions.map((tx) => `${tx.date} | ${formatCurrency(tx.amount)} | ${tx.notes || 'No notes'}`)]);
   };
 
   return (

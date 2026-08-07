@@ -8,6 +8,7 @@ import {
   formatCurrency,
   formatDate,
 } from '../utils/calc';
+import { exportPdfFile } from '../../../lib/mobile';
 import {
   X,
   FileSpreadsheet,
@@ -53,7 +54,11 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
   };
 
   const handlePrint = () => {
-    window.print();
+    const lines = filteredEmployees.map((emp) => {
+      const employeeStats = calculateEmployeeAccrual(emp, transactions, asOfDate);
+      return `${emp.name} | ${emp.department} | Accrued ${formatCurrency(employeeStats.totalAccruedWages)} | Paid ${formatCurrency(employeeStats.totalWithdrawn)} | Balance ${formatCurrency(employeeStats.remainingBalance)}`;
+    });
+    void exportPdfFile(`payroll_summary_${selectedDept}_${asOfDate}.pdf`, 'Mathan ERP Payroll Summary', [`As of ${asOfDate}`, `Total liability: ${formatCurrency(stats.totalCompanyLiability)}`, `Total accrued: ${formatCurrency(stats.totalCompanyAccrued)}`, `Total paid: ${formatCurrency(stats.totalCompanyPaidOut)}`, '', ...lines]);
   };
 
   return (

@@ -9,7 +9,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-[#f6f5ef] text-zinc-900">
-      {!currentApp && <header className="sticky top-0 z-40 border-b border-[#e8e6dc] bg-[#f6f5ef]/95 px-3 py-2.5 backdrop-blur sm:px-5">
+      {!currentApp && <header className="native-safe-top sticky top-0 z-40 border-b border-[#e8e6dc] bg-[#f6f5ef]/95 px-3 py-2.5 backdrop-blur sm:px-5">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <Link to="/" className="flex items-center gap-2.5 rounded-xl p-1 hover:bg-white/60">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 font-serif text-lg font-bold italic text-white">M</span>

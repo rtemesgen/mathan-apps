@@ -15,6 +15,7 @@ import {
   ChevronUp,
   FileText
 } from 'lucide-react';
+import { exportPdfFile } from '../../../lib/mobile';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -54,7 +55,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     }).format(val);
 
   const handleExportPDF = () => {
-    window.print();
+    void exportPdfFile(`Payroll_Transactions_${new Date().toISOString().slice(0, 10)}.pdf`, 'Mathan ERP Payroll Transactions', [`Filtered total: ${formatMoney(totalPayoutSum)}`, `Records found: ${filteredTransactions.length}`, '', ...filteredTransactions.map((tx) => `${tx.date} | ${tx.employeeName || 'Employee'} | ${formatMoney(tx.amount)} | ${tx.notes || 'No notes'}`)]);
   };
 
   return (
@@ -206,4 +207,3 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     </div>
   );
 };
-
