@@ -88,6 +88,18 @@ function drawPdfFooter(pdf: jsPDF, page: number, total: number, pageWidth: numbe
   pdf.text(`Page ${page} of ${total}`, pageWidth - 40, pageHeight - 20, { align: 'right' });
 }
 
+function drawPdfTableHeader(pdf: jsPDF, labels: string[], x: number, y: number, width: number) {
+  const columnWidth = (width - 16) / labels.length;
+  pdf.setFillColor(84, 98, 62);
+  pdf.roundedRect(x, y - 12, width, 25, 4, 4, 'F');
+  labels.forEach((label, index) => {
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7.5);
+    pdf.text(label.toUpperCase(), x + 8 + index * columnWidth, y + 3);
+  });
+}
+
 export async function exportPdfFile(filename: string, title: string, lines: string[]) {
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
   const margin = 40;
@@ -136,7 +148,20 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
   pdf.line(margin, y, margin + 34, y);
   y += 12;
 
-  for (const line of bodyLines.filter((value) => value.trim())) {
+  const rows = bodyLines.filter((value) => value.trim());
+  const firstRow = rows.find((line) => line.includes('|'));
+  if (firstRow) {
+    const columnCount = firstRow.split('|').length;
+    const labels = title.toLowerCase().includes('transaction')
+      ? ['Date', 'Employee', 'Amount', 'Notes']
+      : columnCount >= 5
+        ? ['Employee', 'Department', 'Accrued', 'Paid', 'Balance']
+        : ['Date', 'Amount', 'Notes'];
+    drawPdfTableHeader(pdf, labels.slice(0, columnCount), margin, y, pageWidth - margin * 2);
+    y += 28;
+  }
+
+  for (const line of rows) {
     const cells = line.split('|').map((cell) => cell.trim());
     const rowHeight = cells.length > 1 ? 30 : 22;
     if (y + rowHeight > pageHeight - 52) {
@@ -148,7 +173,8 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
       pdf.roundedRect(margin, y - 12, pageWidth - margin * 2, rowHeight, 4, 4, 'F');
       const columnWidth = (pageWidth - margin * 2 - 16) / Math.min(cells.length, 5);
       cells.slice(0, 5).forEach((cell, index) => {
-        pdf.setTextColor(index === 0 ? 45 : 85, index === 0 ? 45 : 85, index === 0 ? 45 : 85);
+        const isBalance = cell.toLowerCase().includes('balance') || (index === cells.length - 1 && cells.length >= 4);
+        pdf.setTextColor(isBalance ? 84 : index === 0 ? 45 : 85, isBalance ? 98 : index === 0 ? 45 : 85, isBalance ? 62 : index === 0 ? 45 : 85);
         pdf.setFont('helvetica', index === 0 ? 'bold' : 'normal');
         pdf.setFontSize(8);
         const wrapped = pdf.splitTextToSize(cell, columnWidth - 8) as string[];
@@ -163,6 +189,16 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
       y += (wrapped.length - 1) * 12;
     }
     y += rowHeight;
+  }
+
+  if (!rows.length) {
+    pdf.setFillColor(246, 245, 239);
+    pdf.setDrawColor(232, 230, 220);
+    pdf.roundedRect(margin, y, pageWidth - margin * 2, 64, 8, 8, 'FD');
+    pdf.setTextColor(100, 100, 95);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text('No records found for this report.', margin + 16, y + 36);
   }
 
   const totalPages = pdf.getNumberOfPages();

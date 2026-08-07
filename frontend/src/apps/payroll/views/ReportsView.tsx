@@ -76,7 +76,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const handlePrint = () => {
     const lines = filteredEmployees.map((emp) => {
       const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-      return `${emp.name} | ${emp.department} | Accrued ${formatMoney(info.totalAccruedWages)} | Paid ${formatMoney(info.totalWithdrawn)} | Balance ${formatMoney(info.remainingBalance)}`;
+      return `${emp.name} | ${emp.department || '—'} | Accrued ${formatMoney(info.totalAccruedWages)} | Paid ${formatMoney(info.totalWithdrawn)} | Balance ${formatMoney(info.remainingBalance)}`;
     });
     void exportPdfFile(`Payroll_Report_AsOf_${asOfDate}.pdf`, 'Mathan ERP Payroll Report', [`As of ${asOfDate}`, `Total liability: ${formatMoney(stats.totalCompanyLiability)}`, `Total accrued: ${formatMoney(stats.totalCompanyAccrued)}`, `Total paid: ${formatMoney(stats.totalCompanyPaidOut)}`, '', ...lines]);
   };
