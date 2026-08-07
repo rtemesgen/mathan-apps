@@ -43,13 +43,6 @@ public class AppUpdaterPlugin extends Plugin {
             return;
         }
 
-        String savedUri = getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).getString("downloaded-apk-uri", null);
-        if (savedUri != null) {
-            installApk(Uri.parse(savedUri));
-            call.resolve();
-            return;
-        }
-
         DownloadManager manager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
         DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
         request.setTitle("Mathan ERP update");
@@ -81,7 +74,6 @@ public class AppUpdaterPlugin extends Plugin {
                     return;
                 }
                 context.getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).edit().putString("downloaded-apk-uri", apkUri.toString()).apply();
-                installApk(apkUri);
                 call.resolve();
             }
         };

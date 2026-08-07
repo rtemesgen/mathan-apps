@@ -11,6 +11,23 @@ interface AppUpdaterPlugin {
 }
 
 const AppUpdater = registerPlugin<AppUpdaterPlugin>('AppUpdater');
+type DownloadStatus = 'idle' | 'downloading' | 'ready' | 'error';
+const DOWNLOAD_EVENT = 'mathan:update-download';
+
+function downloadStateKey(version: string) {
+  return `mathan_update_download_state_${version}`;
+}
+
+function readDownloadStatus(version: string): DownloadStatus {
+  const value = localStorage.getItem(downloadStateKey(version));
+  return value === 'downloading' || value === 'ready' || value === 'error' ? value : 'idle';
+}
+
+function writeDownloadStatus(version: string, state: DownloadStatus) {
+  if (state === 'idle') localStorage.removeItem(downloadStateKey(version));
+  else localStorage.setItem(downloadStateKey(version), state);
+  window.dispatchEvent(new CustomEvent(DOWNLOAD_EVENT, { detail: { version, state } }));
+}
 
 function versionParts(value: string) {
   return value.replace(/^v/i, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
@@ -28,19 +45,24 @@ function isNewerVersion(latest: string, current: string) {
 export function useAppUpdate() {
   const [update, setUpdate] = useState<{ version: string; url: string; downloadUrl: string } | null>(null);
   const [status, setStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'error'>('idle');
-  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'ready' | 'error'>('idle');
+  const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>('idle');
   const [noticeVisible, setNoticeVisible] = useState(true);
 
   const startDownload = async (next: { version: string; url: string; downloadUrl: string }) => {
+    const currentState = readDownloadStatus(next.version);
+    if (currentState === 'downloading' || currentState === 'ready') {
+      setDownloadStatus(currentState);
+      return;
+    }
     setDownloadStatus('downloading');
-    const downloadKey = `mathan_update_download_started_${next.version}`;
+    writeDownloadStatus(next.version, 'downloading');
     try {
-      localStorage.setItem(downloadKey, 'true');
       await AppUpdater.downloadAndInstall({ url: next.downloadUrl, filename: `mathan-erp-${next.version}.apk` });
       setDownloadStatus('ready');
+      writeDownloadStatus(next.version, 'ready');
     } catch {
-      localStorage.removeItem(downloadKey);
       setDownloadStatus('error');
+      writeDownloadStatus(next.version, 'error');
     }
   };
 
@@ -58,8 +80,9 @@ export function useAppUpdate() {
         setUpdate(next);
         setStatus('available');
         setNoticeVisible(true);
-        const downloadKey = `mathan_update_download_started_${next.version}`;
-        if (!localStorage.getItem(downloadKey)) {
+        const currentDownloadStatus = readDownloadStatus(next.version);
+        setDownloadStatus(currentDownloadStatus);
+        if (currentDownloadStatus !== 'downloading' && currentDownloadStatus !== 'ready') {
           void startDownload(next);
         }
         return next;
@@ -86,13 +109,22 @@ export function useAppUpdate() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    const handleDownloadState = (event: Event) => {
+      const detail = (event as CustomEvent<{ version: string; state: DownloadStatus }>).detail;
+      if (update?.version === detail.version) setDownloadStatus(detail.state);
+    };
+    window.addEventListener(DOWNLOAD_EVENT, handleDownloadState);
+    return () => window.removeEventListener(DOWNLOAD_EVENT, handleDownloadState);
+  }, [update?.version]);
+
   return {
     update,
     status,
     checkForUpdate,
     downloadStatus,
     noticeVisible,
-    installUpdate: () => update ? void AppUpdater.installDownloaded().then(() => setDownloadStatus('ready')).catch(() => startDownload(update)) : undefined,
+    installUpdate: () => update ? void AppUpdater.installDownloaded().catch(() => startDownload(update)) : undefined,
     openRelease: () => update ? void Browser.open({ url: update.url }) : undefined,
     dismissUpdate: () => setNoticeVisible(false),
   };
