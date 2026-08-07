@@ -70,7 +70,7 @@ export function useAppUpdate() {
   return {
     update,
     checkForUpdate,
-    openUpdate: () => update ? void AppUpdater.downloadAndInstall({ url: update.downloadUrl, filename: `mathan-erp-${update.version}.apk` }).catch(() => Browser.open({ url: update.url })) : undefined,
+    openUpdate: () => update ? void Browser.open({ url: update.url }) : undefined,
     dismissUpdate: () => setUpdate(null),
   };
 }
