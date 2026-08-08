@@ -21,9 +21,9 @@ export function AppVersionPanel() {
   }, []);
 
   return (
-    <div className="rounded-xl border border-[#e6e2d6] bg-white/75 px-3 py-2 text-right text-[11px] shadow-sm">
-      <p className="font-mono font-bold text-zinc-700">v{version}</p>
-      <p className="mt-0.5 text-[10px] text-zinc-500">Build {build}</p>
+    <div className="text-right text-[10px] leading-4 text-zinc-400">
+      <p className="font-mono font-semibold text-zinc-500">v{version}</p>
+      <p>Build {build}</p>
     </div>
   );
 }

@@ -4,12 +4,15 @@ import { ERP_APPS } from '../appRegistry';
 import { shareApp } from '../lib/mobile';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 import { AppVersionPanel } from './AppVersionPanel';
+import { useAuth } from '../auth/AuthProvider';
 
 export function AppLauncher() {
+  const { workspace } = useAuth();
   const { update, status, downloadStatus, checkForUpdate, downloadUpdate, installUpdate } = useAppUpdate();
   const downloading = downloadStatus === 'downloading';
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+      {workspace?.name && <p className="mb-5 text-center font-serif text-2xl font-bold text-zinc-900 sm:text-3xl">{workspace.name}</p>}
       <section className="grid gap-4 md:grid-cols-2">
         {ERP_APPS.map((app) => {
           const Icon = app.icon;
