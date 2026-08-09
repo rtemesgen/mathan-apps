@@ -231,6 +231,20 @@ export async function shareApp() {
   window.alert('Sharing is not available here. The app description was copied to your clipboard.');
 }
 
+export async function shareInvite(link: string, email: string) {
+  const text = `You’ve been invited to join a company on Mathan ERP${email ? ` (${email})` : ''}. Open this link to accept the invitation:`;
+  if (isNativeMobile()) {
+    await Share.share({ title: 'Company invitation', text: `${text}\n${link}`, url: link, dialogTitle: 'Share company invitation' });
+    return;
+  }
+  if (navigator.share) {
+    await navigator.share({ title: 'Company invitation', text, url: link });
+    return;
+  }
+  await navigator.clipboard?.writeText(`${text}\n${link}`);
+  window.alert('Sharing is not available here. The invitation was copied to your clipboard.');
+}
+
 export function printOrExplain() {
   if (isNativeMobile()) {
     window.alert('Printing is not available inside the Android app. Export the report as CSV to share or save it.');

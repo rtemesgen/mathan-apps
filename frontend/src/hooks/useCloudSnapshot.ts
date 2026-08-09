@@ -1,5 +1,5 @@
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, type AppId } from '../auth/AuthProvider';
 import { readOffline, writeOffline } from '../lib/localStore';
 import { supabase } from '../lib/supabase';
 import { enqueueMutation, getQueuedMutations, replaceQueue } from '../lib/syncQueue';
@@ -17,7 +17,8 @@ async function syncQueue(workspaceId: string) {
 }
 
 export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>, boolean] {
-  const { workspace, isGuest } = useAuth();
+  const { workspace, isGuest, canEditApp } = useAuth();
+  const appId: AppId = domain === 'cash_book' ? 'book' : 'payroll';
   const standalone = import.meta.env.VITE_STANDALONE === 'true' || isGuest;
   const [value, setValue] = useState<T>(initialValue);
   const [ready, setReady] = useState(false);
@@ -40,6 +41,7 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
   }, [workspace?.id, storageKey, domain, key]);
   useEffect(() => {
     if (!hydrated.current || (!workspace && !standalone)) return;
+    if (!standalone && !canEditApp(appId)) return;
     if (standalone) {
       void writeOffline(storageKey, value);
       return;
@@ -50,7 +52,11 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
       if (navigator.onLine) { const { error } = await supabase.from('app_state_snapshots').upsert(payload); if (!error) return; }
       await enqueueMutation({ table: 'app_state_snapshots', operation: 'upsert', payload });
     })();
-  }, [value, workspace?.id, domain, key, storageKey]);
+  }, [value, workspace?.id, domain, key, storageKey, appId, standalone, canEditApp]);
   useEffect(() => { const resync = () => { if (workspace) void syncQueue(workspace.id); }; window.addEventListener('online', resync); return () => window.removeEventListener('online', resync); }, [workspace?.id]);
-  return [value, setValue, ready];
+  const guardedSetValue: Dispatch<SetStateAction<T>> = (next) => {
+    if (!standalone && !canEditApp(appId)) return;
+    setValue(next);
+  };
+  return [value, guardedSetValue, ready];
 }
