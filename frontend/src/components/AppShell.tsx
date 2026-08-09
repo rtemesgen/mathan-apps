@@ -2,13 +2,15 @@ import { Building2 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { AppControls } from './AppControls';
 import { ERP_APPS } from '../appRegistry';
+import { useAuth } from '../auth/AuthProvider';
 
 export function AppShell() {
   const location = useLocation();
+  const { workspace } = useAuth();
   const currentApp = ERP_APPS.find((app) => location.pathname.startsWith(app.route));
 
   return (
-    <div className="min-h-screen bg-[#f6f5ef] text-zinc-900">
+    <div className="min-h-screen border-2 border-transparent bg-[#f6f5ef] text-zinc-900" style={workspace?.accent_color ? { borderColor: workspace.accent_color } : undefined}>
       {!currentApp && <header className="native-safe-top sticky top-0 z-40 border-b border-[#e8e6dc] bg-[#f6f5ef]/95 px-3 py-2.5 backdrop-blur sm:px-5">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <Link to="/" className="flex items-center gap-2.5 rounded-xl p-1 hover:bg-white/60">
