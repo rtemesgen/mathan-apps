@@ -1,12 +1,14 @@
 import { ChevronDown, Grid2X2 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { ERP_APPS } from '../appRegistry';
+import { useAuth } from '../auth/AuthProvider';
 
 interface AppSwitcherProps { label?: string; fullWidth?: boolean; }
 
 export function AppSwitcher({ label, fullWidth = false }: AppSwitcherProps) {
   const location = useLocation();
   const currentApp = ERP_APPS.find((app) => location.pathname.startsWith(app.route));
+  const { canViewApp } = useAuth();
 
   return (
     <details className={`relative ${fullWidth ? 'w-full' : ''}`}>
@@ -19,7 +21,7 @@ export function AppSwitcher({ label, fullWidth = false }: AppSwitcherProps) {
         <Link to="/" className="mb-1 block rounded-xl px-3 py-2 text-xs font-bold text-zinc-600 hover:bg-[#f6f5ef]">
           All Apps
         </Link>
-        {ERP_APPS.map((app) => {
+        {ERP_APPS.filter((app) => canViewApp(app.id)).map((app) => {
           const Icon = app.icon;
           return (
             <Link key={app.id} to={app.route} className="flex items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-[#f6f5ef]">

@@ -7,11 +7,16 @@ import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { disableGuestMode, enableGuestMode, isGuestMode } from './guestMode';
 import { readOffline, writeOffline } from '../lib/localStore';
 
-export interface Workspace { id: string; name: string; }
-interface AuthState { configured: boolean; loading: boolean; workspaceLoading: boolean; passwordRecovery: boolean; session: Session | null; user: User | null; workspace: Workspace | null; workspaceError: string | null; continueAsGuest: () => void; refreshWorkspace: () => Promise<Workspace | null>; finishPasswordRecovery: () => void; signOut: () => Promise<void>; isGuest: boolean; }
+export type AppId = 'book' | 'payroll';
+export type AppPermission = 'none' | 'view' | 'edit';
+export interface Workspace { id: string; name: string; accent_color: string; }
+export interface WorkspaceAppAccess { app_id: AppId; enabled: boolean; permission: AppPermission; }
+export interface WorkspaceMembership extends Workspace { role: 'owner' | 'member'; appAccess: Record<AppId, WorkspaceAppAccess>; }
+interface AuthState { configured: boolean; loading: boolean; workspaceLoading: boolean; passwordRecovery: boolean; session: Session | null; user: User | null; workspace: Workspace | null; workspaces: WorkspaceMembership[]; workspaceError: string | null; isOwner: boolean; appAccess: Record<AppId, WorkspaceAppAccess>; continueAsGuest: () => void; refreshWorkspace: (preferredWorkspaceId?: string) => Promise<Workspace | null>; refreshAccess: () => Promise<void>; switchWorkspace: (workspaceId: string) => void; finishPasswordRecovery: () => void; signOut: () => Promise<void>; canViewApp: (app: AppId) => boolean; canEditApp: (app: AppId) => boolean; isGuest: boolean; }
 const AuthContext = createContext<AuthState | null>(null);
 export const standaloneMode = import.meta.env.VITE_STANDALONE === 'true';
 const workspaceCacheKey = (userId: string) => `mathan_workspace_cache_${userId}`;
+const defaultAppAccess = (): Record<AppId, WorkspaceAppAccess> => ({ book: { app_id: 'book', enabled: true, permission: 'edit' }, payroll: { app_id: 'payroll', enabled: true, permission: 'edit' } });
 function readWorkspaceCache(userId: string): Workspace | null {
   try { const value = localStorage.getItem(workspaceCacheKey(userId)); return value ? JSON.parse(value) as Workspace : null; } catch { return null; }
 }
@@ -19,36 +24,57 @@ function readWorkspaceCache(userId: string): Workspace | null {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceMembership[]>([]);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [guest, setGuest] = useState(() => isGuestMode());
   const [workspaceLoading, setWorkspaceLoading] = useState(() => !standaloneMode && !isGuestMode() && isSupabaseConfigured);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
-  const refreshWorkspace = async () => {
+  const [isOwner, setIsOwner] = useState(false);
+  const [appAccess, setAppAccess] = useState<Record<AppId, WorkspaceAppAccess>>(defaultAppAccess);
+  const applyWorkspace = (membership: WorkspaceMembership | null) => {
+    setWorkspace(membership ? { id: membership.id, name: membership.name, accent_color: membership.accent_color } : null);
+    setIsOwner(membership?.role === 'owner');
+    setAppAccess(membership?.appAccess ?? defaultAppAccess());
+  };
+  const refreshAccess = async () => {
+    if (!session || standaloneMode || guest) {
+      setIsOwner(true);
+      setAppAccess(defaultAppAccess());
+      return;
+    }
+    await refreshWorkspace();
+  };
+  const refreshWorkspace = async (preferredWorkspaceId?: string) => {
     if (!session) { setWorkspace(null); setWorkspaceError(null); setWorkspaceLoading(false); return null; }
     setWorkspaceLoading(true);
-    const cacheKey = `workspace:${session.user.id}`;
-    const cached = await readOffline<Workspace>(cacheKey);
-    if (!navigator.onLine && cached) { setWorkspace(cached); setWorkspaceError(null); setWorkspaceLoading(false); return cached; }
-    const { data, error } = await supabase.from('workspace_members').select('workspaces(id,name)').eq('user_id', session.user.id).limit(1).maybeSingle();
+    const cached = readWorkspaceCache(session.user.id);
+    const { data, error } = await supabase.rpc('list_my_workspaces');
     if (error) {
-      if (cached) { setWorkspace(cached); setWorkspaceError(null); setWorkspaceLoading(false); return cached; }
+      if (cached) { applyWorkspace({ ...cached, role: 'owner', appAccess: defaultAppAccess() }); setWorkspaceError(null); setWorkspaceLoading(false); return cached; }
       setWorkspace(null); setWorkspaceError(error.message); setWorkspaceLoading(false); return null;
     }
-    const row = data as unknown as { workspaces: Workspace | Workspace[] | null } | null;
-    const nextWorkspace = Array.isArray(row?.workspaces) ? row?.workspaces[0] ?? null : row?.workspaces ?? null;
-    setWorkspace(nextWorkspace); setWorkspaceError(null); setWorkspaceLoading(false);
-    if (nextWorkspace) { localStorage.setItem(workspaceCacheKey(session.user.id), JSON.stringify(nextWorkspace)); await writeOffline(cacheKey, nextWorkspace); }
-    return nextWorkspace;
+    const memberships = ((data as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; book_enabled: boolean; book_permission: AppPermission; payroll_enabled: boolean; payroll_permission: AppPermission }> | null) ?? []).map((row) => ({
+      id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role,
+      appAccess: { book: { app_id: 'book' as AppId, enabled: row.book_enabled, permission: row.member_role === 'owner' ? 'edit' as AppPermission : row.book_permission }, payroll: { app_id: 'payroll' as AppId, enabled: row.payroll_enabled, permission: row.member_role === 'owner' ? 'edit' as AppPermission : row.payroll_permission } },
+    }));
+    setWorkspaces(memberships);
+    const current = memberships.find((item) => item.id === (preferredWorkspaceId ?? workspace?.id));
+    const preferred = current ?? memberships.find((item) => item.role === 'owner') ?? memberships[0] ?? null;
+    applyWorkspace(preferred); setWorkspaceError(null); setWorkspaceLoading(false);
+    if (preferred) { localStorage.setItem(workspaceCacheKey(session.user.id), JSON.stringify(preferred)); await writeOffline(`workspace:${session.user.id}`, preferred); }
+    return preferred ? { id: preferred.id, name: preferred.name, accent_color: preferred.accent_color } : null;
+  };
+  const switchWorkspace = (workspaceId: string) => {
+    const next = workspaces.find((item) => item.id === workspaceId);
+    if (!next || next.id === workspace?.id) return;
+    applyWorkspace(next);
+    if (session) localStorage.setItem(workspaceCacheKey(session.user.id), JSON.stringify(next));
   };
   useEffect(() => {
     if (standaloneMode || guest || !isSupabaseConfigured) { setLoading(false); return; }
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-      if (data.session) {
-        const cached = readWorkspaceCache(data.session.user.id);
-        if (cached) { setWorkspace(cached); setWorkspaceLoading(false); }
-      }
       setLoading(false);
     });
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
@@ -81,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     if (params.get('type') === 'recovery') setPasswordRecovery(true);
   }, []);
-  const value = useMemo(() => ({ configured: isSupabaseConfigured && !standaloneMode, loading, workspaceLoading, passwordRecovery, session, user: session?.user ?? null, workspace, workspaceError, isGuest: guest, continueAsGuest: () => { enableGuestMode(); setGuest(true); setLoading(false); setWorkspaceLoading(false); }, refreshWorkspace, finishPasswordRecovery: () => setPasswordRecovery(false), signOut: async () => { if (guest) { disableGuestMode(); setGuest(false); } else if (!standaloneMode) { await supabase.auth.signOut(); setSession(null); } setWorkspace(null); setWorkspaceError(null); setWorkspaceLoading(false); } }), [guest, loading, workspaceLoading, passwordRecovery, session, workspace, workspaceError]);
+  const value = useMemo(() => ({ configured: isSupabaseConfigured && !standaloneMode, loading, workspaceLoading, passwordRecovery, session, user: session?.user ?? null, workspace, workspaces, workspaceError, isOwner, appAccess, isGuest: guest, continueAsGuest: () => { enableGuestMode(); setGuest(true); setLoading(false); setWorkspaceLoading(false); }, refreshWorkspace, refreshAccess, switchWorkspace, canViewApp: (app: AppId) => appAccess[app]?.enabled === true && appAccess[app]?.permission !== 'none', canEditApp: (app: AppId) => appAccess[app]?.enabled === true && appAccess[app]?.permission === 'edit', finishPasswordRecovery: () => setPasswordRecovery(false), signOut: async () => { if (guest) { disableGuestMode(); setGuest(false); } else if (!standaloneMode) { await supabase.auth.signOut(); setSession(null); } setWorkspace(null); setWorkspaces([]); setWorkspaceError(null); setWorkspaceLoading(false); } }), [guest, loading, workspaceLoading, passwordRecovery, session, workspace, workspaces, workspaceError, isOwner, appAccess]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 export function useAuth() { const value = useContext(AuthContext); if (!value) throw new Error('useAuth must be used inside AuthProvider'); return value; }

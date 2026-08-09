@@ -30,4 +30,3 @@ export const ERP_APPS: ErpAppDefinition[] = [
     accent: 'indigo',
   },
 ];
-
