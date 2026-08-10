@@ -82,7 +82,9 @@ export function calculateEmployeeAccrual(
   transactions: Transaction[],
   asOfDateStr: string = getTodayString()
 ): EmployeeAccrualSummary {
-  const { startDate, initialSalary, salaryHistory } = employee;
+  const { startDate, salaryHistory } = employee;
+  const initialSalary = Number(employee.initialSalary) || 0;
+  const salaryChanges = (salaryHistory ?? []).map((change) => ({ ...change, newMonthlySalary: Number(change.newMonthlySalary) || 0 }));
 
   // Filter transactions for this employee up to asOfDate
   const empTransactions = transactions.filter(
@@ -96,7 +98,9 @@ export function calculateEmployeeAccrual(
   const lastPayoutDate = sortedTx.length > 0 ? sortedTx[0].date : undefined;
 
   // If asOfDate is before start date, earnings are zero
-  if (asOfDateStr < startDate) {
+  const terminationDate = employee.terminationDate || '';
+  const earningsEndDate = terminationDate && terminationDate < asOfDateStr ? terminationDate : asOfDateStr;
+  if (asOfDateStr < startDate || earningsEndDate < startDate) {
     return {
       employee,
       asOfDate: asOfDateStr,
@@ -110,14 +114,14 @@ export function calculateEmployeeAccrual(
   }
 
   // Sort salary history changes chronologically by effective date
-  const sortedSalaryHistory = [...salaryHistory].sort((a, b) =>
+  const sortedSalaryHistory = [...salaryChanges].sort((a, b) =>
     a.effectiveDate.localeCompare(b.effectiveDate)
   );
 
   // Determine current effective rate as of asOfDate
   let currentMonthlySalary = initialSalary;
   for (const change of sortedSalaryHistory) {
-    if (change.effectiveDate <= asOfDateStr) {
+    if (change.effectiveDate <= earningsEndDate) {
       currentMonthlySalary = change.newMonthlySalary;
     }
   }
@@ -148,7 +152,7 @@ export function calculateEmployeeAccrual(
 
   // Add changes that happen after startDate and on or before asOfDate
   for (const change of sortedSalaryHistory) {
-    if (change.effectiveDate > startDate && change.effectiveDate <= asOfDateStr) {
+    if (change.effectiveDate > startDate && change.effectiveDate <= earningsEndDate) {
       milestones.push({
         date: change.effectiveDate,
         rate: change.newMonthlySalary,
@@ -173,11 +177,18 @@ export function calculateEmployeeAccrual(
       const nextDate = milestones[i + 1].date;
       intervalEnd = addDays(nextDate, -1);
     } else {
-      intervalEnd = asOfDateStr;
+      intervalEnd = earningsEndDate;
     }
 
     if (intervalEnd >= intervalStart) {
-      const days = calculateDaysBetween(intervalStart, intervalEnd);
+      const daysInInterval = calculateDaysBetween(intervalStart, intervalEnd);
+      const leaveStart = employee.leaveStartDate || '';
+      const leaveEnd = employee.leaveEndDate || earningsEndDate;
+      const leaveDays = leaveStart && leaveStart <= intervalEnd && leaveEnd >= intervalStart
+        ? calculateDaysBetween(leaveStart > intervalStart ? leaveStart : intervalStart, leaveEnd < intervalEnd ? leaveEnd : intervalEnd)
+        : 0;
+      const days = Math.max(0, daysInInterval - leaveDays);
+      if (days === 0) continue;
       // Daily rate based on 365.25 days per year (standard financial daily rate = monthly * 12 / 365.25)
       const dailyRate = (currentMs.rate * 12) / 365.25;
       const accruedAmount = days * dailyRate;

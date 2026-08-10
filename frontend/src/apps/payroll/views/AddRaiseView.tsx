@@ -12,7 +12,8 @@ import {
   FileText,
   History,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  ChevronDown
 } from 'lucide-react';
 
 interface AddRaiseViewProps {
@@ -35,6 +36,8 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [validationMessage, setValidationMessage] = useState('');
   const [savedRaise, setSavedRaise] = useState<{ employeeName: string; amount: number; effectiveDate: string } | null>(null);
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {
     if (!selectedEmpId && employees.length > 0) {
@@ -125,23 +128,10 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
               <label className="block text-zinc-800 font-bold mb-1 flex items-center gap-1.5 text-[11px]">
                 <User className="w-3.5 h-3.5 text-zinc-700" /> Select Employee Profile <span className="text-red-500">*</span>
               </label>
-              <select
-                value={selectedEmpId}
-                onChange={(e) => {
-                  setSelectedEmpId(e.target.value);
-                  setIsSuccess(false);
-                }}
-                className="w-full px-3 py-1.5 bg-[#f2f0e6] border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 text-zinc-900 text-xs font-bold cursor-pointer"
-              >
-                {employees.map((emp) => {
-                  const rate = getCurrentSalaryRate(emp);
-                  return (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.department}) — Current Rate: {formatMoney(rate)}/mo
-                    </option>
-                  );
-                })}
-              </select>
+              <div className="relative">
+                <button type="button" onClick={() => setEmployeePickerOpen((open) => !open)} className="flex w-full items-center justify-between rounded-lg border border-[#d8d3c5] bg-[#f2f0e6] px-3 py-2 text-left text-xs font-bold text-zinc-900 shadow-2xs"><span className="truncate">{selectedEmp ? selectedEmp.name : 'Choose employee'}</span><ChevronDown className={`h-4 w-4 text-zinc-500 transition-transform ${employeePickerOpen ? 'rotate-180' : ''}`} /></button>
+                {employeePickerOpen && <div className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-[#d8d3c5] bg-[#fbfaf6] p-1.5 shadow-xl">{sortedEmployees.map((emp) => { const rate = getCurrentSalaryRate(emp); const selected = emp.id === selectedEmpId; return <button type="button" key={emp.id} onClick={() => { setSelectedEmpId(emp.id); setIsSuccess(false); setEmployeePickerOpen(false); }} className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${selected ? 'bg-zinc-900 text-white' : 'text-zinc-800 hover:bg-[#f2f0e6]'}`}><span className="min-w-0 truncate text-xs font-bold">{emp.name}</span><span className={`shrink-0 text-[10px] font-mono ${selected ? 'text-emerald-200' : 'text-zinc-500'}`}>Current: {formatMoney(rate)}</span></button>; })}</div>}
+              </div>
             </div>
 
             {/* Current Rate vs New Rate Grid */}
@@ -168,6 +158,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
                     placeholder="Enter new salary"
                     value={newSalary}
                     onChange={(e) => { setNewSalary(e.target.value); setValidationMessage(''); }}
+                    onBlur={(e) => setNewSalary(e.target.value === '' ? '' : String(Number(e.target.value)))}
                     className="w-full pl-6 pr-2.5 py-1 bg-white border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs font-bold text-zinc-900"
                   />
                 </div>

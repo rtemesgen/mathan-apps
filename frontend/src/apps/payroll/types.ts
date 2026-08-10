@@ -28,6 +28,9 @@ export interface Employee {
   initialSalary: number; // Initial monthly rate
   salaryHistory: SalaryChange[];
   status: 'active' | 'on_leave' | 'terminated';
+  terminationDate?: string;
+  leaveStartDate?: string;
+  leaveEndDate?: string;
   createdAt: string;
 }
 

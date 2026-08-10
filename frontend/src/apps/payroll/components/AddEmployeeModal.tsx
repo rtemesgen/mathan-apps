@@ -104,9 +104,10 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ isOpen, onCl
                   min="0"
                 step="any"
                   required
-                placeholder="Enter monthly salary"
+                  placeholder="Enter amount"
                   value={initialSalary}
                   onChange={(e) => setInitialSalary(e.target.value)}
+                  onBlur={(e) => setInitialSalary(e.target.value === '' ? '' : String(Number(e.target.value)))}
                   className="w-full pl-7 pr-3 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs text-slate-900 font-bold"
                 />
               </div>

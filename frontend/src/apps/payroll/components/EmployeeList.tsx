@@ -36,8 +36,8 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
   onOpenAddModal,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'balance' | 'name' | 'salary' | 'startDate'>('balance');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState<'balance' | 'name' | 'salary' | 'startDate'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Filter and sort
   const filtered = employees.filter((emp) => {
@@ -240,4 +240,3 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
     </div>
   );
 };
-

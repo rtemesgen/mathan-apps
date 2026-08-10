@@ -2,6 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard,
   UserPlus,
+  UserCog,
   Banknote,
   TrendingUp,
   FileSpreadsheet,
@@ -24,6 +25,7 @@ import { LogOut } from 'lucide-react';
 export type ActiveTab =
   | 'dashboard'
   | 'add-employee'
+  | 'manage-employees'
   | 'pay-salary'
   | 'add-raise'
   | 'reports'
@@ -62,6 +64,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'add-employee' as ActiveTab,
       label: 'Add Employee',
       icon: UserPlus,
+    },
+    {
+      id: 'manage-employees' as ActiveTab,
+      label: 'Manage Employees',
+      icon: UserCog,
     },
     {
       id: 'pay-salary' as ActiveTab,

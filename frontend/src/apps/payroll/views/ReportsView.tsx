@@ -20,23 +20,25 @@ interface ReportsViewProps {
   employees: Employee[];
   transactions: Transaction[];
   asOfDate: string;
+  onSelectEmployee: (employee: Employee) => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
   employees,
   transactions,
   asOfDate,
+  onSelectEmployee,
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   const stats = calculateCompanyStats(employees, transactions, asOfDate);
 
-  // Filter employees sorted by start date descending
+  // Keep report rows alphabetically ordered for predictable scanning and exports.
   const filteredEmployees = employees
     .filter((emp) => {
       return emp.name.toLowerCase().includes(searchTerm.toLowerCase());
     })
-    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   const formatMoney = (val: number) =>
     new Intl.NumberFormat('en-US', {
@@ -160,7 +162,15 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                   const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
                   const dailyRate = (info.currentMonthlySalary * 12) / 365.25;
                   return (
-                    <tr key={emp.id} className="hover:bg-[#f6f5ef]/80 transition">
+                    <tr
+                      key={emp.id}
+                      onClick={() => onSelectEmployee(emp)}
+                      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectEmployee(emp); }}
+                      tabIndex={0}
+                      role="button"
+                      className="cursor-pointer hover:bg-[#f6f5ef]/80 focus:bg-[#f6f5ef] focus:outline-none transition"
+                      title={`Open ${emp.name}`}
+                    >
                       <td className="py-3.5 px-6">
                         <div className="font-bold text-zinc-900">{emp.name}</div>
                       </td>

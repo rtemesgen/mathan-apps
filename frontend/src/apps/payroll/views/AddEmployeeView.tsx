@@ -152,9 +152,10 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
                     min="0"
                     step="any"
                     required
-                    placeholder="Enter monthly salary"
-                    value={initialSalary}
-                    onChange={(e) => setInitialSalary(e.target.value)}
+                    placeholder="Enter amount"
+                  value={initialSalary}
+                  onChange={(e) => setInitialSalary(e.target.value)}
+                  onBlur={(e) => setInitialSalary(e.target.value === '' ? '' : String(Number(e.target.value)))}
                     className="w-full pl-6 pr-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs text-zinc-900 font-bold"
                   />
                 </div>

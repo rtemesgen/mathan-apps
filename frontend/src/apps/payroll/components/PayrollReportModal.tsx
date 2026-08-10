@@ -43,7 +43,7 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
 
   const filteredEmployees = employees.filter(
     (emp) => selectedDept === 'all' || emp.department === selectedDept
-  );
+  ).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   const stats = calculateCompanyStats(filteredEmployees, transactions, asOfDate);
 

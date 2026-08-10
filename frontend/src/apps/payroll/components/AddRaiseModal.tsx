@@ -112,7 +112,7 @@ export const AddRaiseModal: React.FC<AddRaiseModalProps> = ({
               }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 text-xs font-medium"
             >
-              {employees.map((emp) => (
+              {[...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })).map((emp) => (
                 <option key={emp.id} value={emp.id}>
                   {emp.name} ({emp.department} - Current Rate: ${emp.initialSalary}/mo)
                 </option>
@@ -155,6 +155,7 @@ export const AddRaiseModal: React.FC<AddRaiseModalProps> = ({
                 min="0"
                 value={newSalary}
                 onChange={(e) => { setNewSalary(e.target.value); setValidationMessage(''); }}
+                onBlur={(e) => setNewSalary(e.target.value === '' ? '' : String(Number(e.target.value)))}
                 className="w-full pl-7 pr-3 py-2 bg-white border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs text-slate-900 font-bold text-sm"
               />
             </div>
