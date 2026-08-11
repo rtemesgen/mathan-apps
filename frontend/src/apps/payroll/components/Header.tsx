@@ -50,7 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Automated wage accruals, backdated raises, and withdrawal balances
+                Automated wage earnings, backdated raises, and payment balances
               </p>
             </div>
           </div>
@@ -114,11 +114,11 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Total Accrued Earnings */}
+          {/* Total Earned */}
           <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 flex items-center justify-between">
             <div>
               <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                Total Wages Accrued
+                Total Wages Earned
               </p>
               <p className="text-lg sm:text-xl font-bold text-indigo-300 mt-0.5 font-mono">
                 {formatCurrency(stats.totalCompanyAccrued)}
@@ -130,16 +130,16 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Total Paid Out */}
+          {/* Total Paid */}
           <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 flex items-center justify-between">
             <div>
               <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                Total Paid / Withdrawn
+                Total Paid
               </p>
               <p className="text-lg sm:text-xl font-bold text-emerald-400 mt-0.5 font-mono">
                 {formatCurrency(stats.totalCompanyPaidOut)}
               </p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Disbursed to employees</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Paid to employees</p>
             </div>
             <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
               <HandCoins className="w-5 h-5" />

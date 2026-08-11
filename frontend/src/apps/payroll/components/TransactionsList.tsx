@@ -13,6 +13,7 @@ import {
   CreditCard,
   Plus,
 } from 'lucide-react';
+import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 
 interface TransactionsListProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedMethod, setSelectedMethod] = useState<string>('all');
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
 
   const employeesMap = employees.reduce((acc, emp) => {
     acc[emp.id] = emp;
@@ -189,7 +191,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         </td>
                         <td className="p-3 text-center">
                           <button
-                            onClick={() => onDeleteTransaction(tx.id)}
+                            onClick={() => setTransactionToDelete(tx)}
                             className="p-1 text-slate-400 hover:text-red-600 rounded transition cursor-pointer"
                             title="Delete Transaction Record"
                           >
@@ -203,7 +205,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                 <tfoot>
                   <tr className="bg-slate-900 text-white font-mono font-bold">
                     <td colSpan={6} className="p-3.5 uppercase font-sans text-[11px] tracking-wider text-slate-300">
-                      Total Filtered Disbursed Payouts ({sorted.length} transactions)
+                      Total Filtered Paid Payouts ({sorted.length} transactions)
                     </td>
                     <td className="p-3.5 text-right text-emerald-300 text-sm">{formatCurrency(totalAmount)}</td>
                     <td className="p-3.5"></td>
@@ -225,6 +227,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
           </button>
         </div>
       </div>
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message="Are you sure you want to delete this payroll transaction?" onClose={() => setTransactionToDelete(null)} onConfirm={() => { if (transactionToDelete) onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
     </div>
   );
 };

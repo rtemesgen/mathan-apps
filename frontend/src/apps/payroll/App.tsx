@@ -139,9 +139,7 @@ export default function App() {
   };
 
   const handleDeleteTransaction = (txId: string) => {
-    if (window.confirm('Are you sure you want to delete this transaction record?')) {
-      setTransactions((prev) => prev.filter((t) => t.id !== txId));
-    }
+    setTransactions((prev) => prev.filter((t) => t.id !== txId));
   };
 
   const handleUpdateTransaction = (updated: Transaction) => {

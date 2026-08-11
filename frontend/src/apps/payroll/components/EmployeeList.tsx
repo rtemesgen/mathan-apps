@@ -209,7 +209,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({
                     <strong className="text-zinc-800 font-mono text-[11px]">{formatCurrency(summary.totalAccruedWages)}</strong>
                   </div>
                   <div>
-                    <span className="text-zinc-400 block text-[8px] font-extrabold uppercase leading-none">Paid Out</span>
+                    <span className="text-zinc-400 block text-[8px] font-extrabold uppercase leading-none">Paid</span>
                     <strong className="text-emerald-800 font-mono text-[11px]">{formatCurrency(summary.totalWithdrawn)}</strong>
                   </div>
                 </div>

@@ -47,7 +47,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ isOpen, onCl
             </div>
             <div>
               <h2 className="text-base font-bold">Add New Employee</h2>
-              <p className="text-xs text-slate-400">Set start date and base salary for automatic accruals</p>
+              <p className="text-xs text-slate-400">Set start date and base salary for automatic earnings</p>
             </div>
           </div>
           <button
@@ -90,7 +90,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ isOpen, onCl
                   className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs text-slate-900"
                 />
               </div>
-              <p className="text-[10px] text-slate-500 mt-1">Calculates accruals from this date</p>
+            <p className="text-[10px] text-slate-500 mt-1">Calculates earnings from this date</p>
             </div>
 
             <div>

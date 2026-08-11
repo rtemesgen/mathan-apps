@@ -7,7 +7,7 @@ import { AppVersionPanel } from './AppVersionPanel';
 import { useAuth } from '../auth/AuthProvider';
 
 export function AppLauncher() {
-  const { workspace, canViewApp, isOwner } = useAuth();
+  const { workspace, canViewApp } = useAuth();
   const { update, status, downloadStatus, checkForUpdate, downloadUpdate, installUpdate } = useAppUpdate();
   const downloading = downloadStatus === 'downloading';
   return (
@@ -23,7 +23,7 @@ export function AppLauncher() {
             </Link>
           );
         })}
-        {isOwner && <Link to="/settings" aria-label="Settings" className="group flex items-center gap-3 rounded-xl border border-dashed border-[#cfcabb] bg-[#faf9f5] p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-400 sm:p-3.5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"><Settings className="h-4 w-4" /></div><h2 className="font-serif text-lg font-bold text-zinc-900">Settings</h2></Link>}
+        <Link to="/settings" aria-label="Settings" className="group flex items-center gap-3 rounded-xl border border-dashed border-[#cfcabb] bg-[#faf9f5] p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-400 sm:p-3.5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"><Settings className="h-4 w-4" /></div><h2 className="font-serif text-lg font-bold text-zinc-900">Settings</h2></Link>
       </section>
       <footer className="mt-8 flex flex-wrap items-end justify-between gap-4 border-t border-[#e6e2d6] pt-5">
         <div className="flex flex-wrap gap-2">

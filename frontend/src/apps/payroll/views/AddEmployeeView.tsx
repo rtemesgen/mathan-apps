@@ -64,16 +64,16 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
         </div>
         <h2 className="font-serif-title text-3xl font-bold text-zinc-900">Employee Successfully Registered!</h2>
         <p className="text-zinc-600 text-sm mt-2 max-w-md mx-auto font-medium">
-          <span className="font-bold text-zinc-900">{createdEmpName}</span> has been added to Mathan ERP. Accruals have been automatically calculated based on their start date ({startDate}).
+          <span className="font-bold text-zinc-900">{createdEmpName}</span> has been added to Mathan ERP. Earnings have been automatically calculated based on their start date ({startDate}).
         </p>
 
         <div className="mt-6 p-5 bg-[#f6f5ef] border border-zinc-200 rounded-2xl max-w-sm mx-auto text-left text-xs space-y-2">
           <div className="flex justify-between">
-            <span className="text-zinc-500 font-medium">Days Accrued:</span>
+            <span className="text-zinc-500 font-medium">Days Earned:</span>
             <span className="font-bold font-mono text-zinc-800">{daysWorked} days</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-zinc-500 font-medium">Initial Accrued Balance:</span>
+            <span className="text-zinc-500 font-medium">Initial Earned Balance:</span>
             <span className="font-bold font-mono text-emerald-800">
               ${estimatedInitialEarned.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>

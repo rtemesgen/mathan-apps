@@ -156,12 +156,20 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
       ? ['Date & Time', 'Type', 'Amount', 'Remark', 'Category', 'Payment']
       : title.toLowerCase().includes('transaction')
       ? ['Date', 'Employee', 'Amount', 'Notes']
-      : columnCount >= 5
-        ? ['Employee', 'Department', 'Accrued', 'Paid', 'Balance']
+      : columnCount >= 7
+        ? ['Employee', 'Start Date', 'Monthly Rate', 'Daily Rate', 'Earned', 'Paid', 'Balance']
+        : columnCount >= 5
+          ? ['Employee', 'Department', 'Earned', 'Paid', 'Balance']
         : ['Date', 'Amount', 'Notes'];
     drawPdfTableHeader(pdf, labels.slice(0, columnCount), margin, y, pageWidth - margin * 2);
     y += 28;
   }
+
+  // Keep every body row on the same grid as the header. This is especially
+  // important for imported or hand-built lines with an unexpected extra cell.
+  const tableColumnCount = firstRow
+    ? (title.toLowerCase().includes('cash book') ? 6 : Math.min(firstRow.split('|').length, 7))
+    : 1;
 
   for (const line of rows) {
     const cells = line.split('|').map((cell) => cell.trim());
@@ -173,12 +181,13 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
     if (cells.length > 1) {
       pdf.setFillColor((Math.round(y / rowHeight) % 2 === 0) ? 250 : 246, 249, 244);
       pdf.roundedRect(margin, y - 12, pageWidth - margin * 2, rowHeight, 4, 4, 'F');
-      const columnWidth = (pageWidth - margin * 2 - 16) / Math.min(cells.length, 5);
-      cells.slice(0, 5).forEach((cell, index) => {
+      const visibleColumnCount = tableColumnCount;
+      const columnWidth = (pageWidth - margin * 2 - 16) / visibleColumnCount;
+      cells.slice(0, visibleColumnCount).forEach((cell, index) => {
         const isBalance = cell.toLowerCase().includes('balance') || (index === cells.length - 1 && cells.length >= 4);
         pdf.setTextColor(isBalance ? 84 : index === 0 ? 45 : 85, isBalance ? 98 : index === 0 ? 45 : 85, isBalance ? 62 : index === 0 ? 45 : 85);
         pdf.setFont('helvetica', index === 0 ? 'bold' : 'normal');
-        pdf.setFontSize(8);
+        pdf.setFontSize(visibleColumnCount >= 7 ? 7 : 8);
         const wrapped = pdf.splitTextToSize(cell, columnWidth - 8) as string[];
         pdf.text(wrapped.slice(0, 2), margin + 8 + index * columnWidth, y + 2);
       });

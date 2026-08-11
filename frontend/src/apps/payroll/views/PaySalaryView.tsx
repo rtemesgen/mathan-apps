@@ -108,7 +108,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
             <div>
               <h3 className="font-serif-title text-sm font-bold text-emerald-950">Payout Recorded Successfully!</h3>
               <p className="text-[11px] text-emerald-800 font-medium">
-                Disbursed <span className="font-mono font-bold">{formatMoney(lastTx.amount)}</span> to{' '}
+                Paid <span className="font-mono font-bold">{formatMoney(lastTx.amount)}</span> to{' '}
                 <span className="font-bold text-zinc-900">{lastTx.employeeName}</span> on {lastTx.date}.
               </p>
             </div>
@@ -218,11 +218,11 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
               <div className="mt-2.5 space-y-2 text-xs">
                 <div className="p-2.5 bg-[#f6f5ef] rounded-lg border border-zinc-200/60 space-y-1 text-[11px]">
                   <div className="flex justify-between text-zinc-500 font-medium">
-                    <span>Total Accrued:</span>
+                    <span>Total Earned:</span>
                     <span className="font-mono text-zinc-900 font-bold">{formatMoney(accrualInfo.totalAccruedWages)}</span>
                   </div>
                   <div className="flex justify-between text-zinc-500 font-medium">
-                    <span>Previously Disbursed:</span>
+                    <span>Previously Paid:</span>
                     <span className="font-mono text-emerald-800 font-bold">-{formatMoney(accrualInfo.totalWithdrawn)}</span>
                   </div>
                   <div className="flex justify-between text-zinc-900 border-t border-zinc-200 pt-1 font-bold">
@@ -234,10 +234,10 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
                 {numAmount > 0 && (
                   <div className="p-2.5 bg-zinc-900 text-white rounded-lg space-y-1 animate-in fade-in duration-150">
                     <div className="text-[9px] text-zinc-400 font-extrabold uppercase tracking-widest">
-                      After Disbursing Payout
+                      After Payment
                     </div>
                     <div className="flex justify-between text-zinc-300 text-[11px]">
-                      <span>Disbursement:</span>
+                      <span>Payment:</span>
                       <span className="font-mono font-bold text-emerald-400">-{formatMoney(numAmount)}</span>
                     </div>
                     <div className="flex justify-between text-white font-extrabold border-t border-zinc-700 pt-1 text-xs">

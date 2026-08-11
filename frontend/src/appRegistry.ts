@@ -24,7 +24,7 @@ export const ERP_APPS: ErpAppDefinition[] = [
     id: 'payroll',
     name: 'Payroll',
     route: '/payroll',
-    description: 'Manage employees, salary accruals, payouts, and reports.',
+    description: 'Manage employees, salary earnings, payments, and reports.',
     status: 'available',
     icon: WalletCards,
     accent: 'indigo',

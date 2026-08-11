@@ -16,6 +16,7 @@ import {
   FileText
 } from 'lucide-react';
 import { exportPdfFile } from '../../../lib/mobile';
+import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -33,6 +34,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [employeeFilter, setEmployeeFilter] = useState<string>('All');
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
 
   const filteredTransactions = transactions
     .filter((tx) => {
@@ -166,7 +168,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         </td>
                         <td className="py-2.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={() => onDeleteTransaction(tx.id)}
+                            onClick={() => setTransactionToDelete(tx)}
                             className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition cursor-pointer"
                             title="Delete record"
                           >
@@ -204,6 +206,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           </table>
         </div>
       </div>
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message="Are you sure you want to delete this payroll transaction?" onClose={() => setTransactionToDelete(null)} onConfirm={() => { if (transactionToDelete) onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
     </div>
   );
 };

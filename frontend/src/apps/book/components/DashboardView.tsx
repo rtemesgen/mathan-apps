@@ -15,7 +15,10 @@ interface DashboardViewProps {
   onOpenAddBookModal: () => void;
   onQuickCashIn: (book: Book) => void;
   onQuickCashOut: (book: Book) => void;
-  onDeleteBook: (bookId: string) => void;
+  onRenameBook: (book: Book) => void;
+  onRequestDeleteBook: (book: Book) => void;
+  onAddMembers: (book: Book) => void;
+  onOpenImportBookModal: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -25,7 +28,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenAddBookModal,
   onQuickCashIn,
   onQuickCashOut,
-  onDeleteBook,
+  onRenameBook,
+  onRequestDeleteBook,
+  onAddMembers,
+  onOpenImportBookModal,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'recent' | 'balance' | 'name'>('recent');
@@ -88,8 +94,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2.5 sm:py-4 pb-20 space-y-2.5 sm:space-y-3">
       {/* GRAND OVERVIEW CARD - COMPACT SIZE */}
       <div className="bg-[#FFFFFF] rounded-lg border border-[#E6E2D6] p-2.5 sm:p-3 shadow-2xs relative overflow-hidden">
+        <button type="button" onClick={onOpenImportBookModal} className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 rounded-md bg-[#121212] px-2 py-1 text-[9px] font-bold text-white hover:bg-[#27272A]">
+          Import
+        </button>
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-1.5 mb-0.5">
               <span className="px-1.5 py-0.2 text-[8px] font-extrabold uppercase tracking-widest bg-[#121212] text-white rounded-md">
                 ALL BOOKS
@@ -222,7 +231,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               onSelectBook={onSelectBook}
               onQuickCashIn={onQuickCashIn}
               onQuickCashOut={onQuickCashOut}
-              onDeleteBook={books.length > 1 ? onDeleteBook : undefined}
+              onRenameBook={onRenameBook}
+              onAddMembers={onAddMembers}
+              onRequestDeleteBook={onRequestDeleteBook}
             />
           ))}
         </div>
@@ -242,4 +253,3 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     </div>
   );
 };
-

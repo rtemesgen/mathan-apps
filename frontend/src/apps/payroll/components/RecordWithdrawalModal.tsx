@@ -85,7 +85,7 @@ export const RecordWithdrawalModal: React.FC<RecordWithdrawalModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold">Record Salary Withdrawal / Payout</h2>
-              <p className="text-xs text-slate-400">Deduct payout from employee's accrued balance</p>
+              <p className="text-xs text-slate-400">Deduct payout from employee's earned balance</p>
             </div>
           </div>
           <button
@@ -119,7 +119,7 @@ export const RecordWithdrawalModal: React.FC<RecordWithdrawalModalProps> = ({
             <div className="bg-amber-500/10 p-3 rounded-xl border border-amber-500/20 grid grid-cols-2 gap-3 text-xs">
               <div>
                 <span className="text-[10px] text-amber-800 font-bold block uppercase">
-                  Available Accrued Balance
+                  Available Earned Balance
                 </span>
                 <strong className="text-amber-950 font-mono text-sm">
                   {formatCurrency(currentSummary.remainingBalance)}
