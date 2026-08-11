@@ -17,6 +17,7 @@ import {
   X
 } from 'lucide-react';
 import { exportPdfFile, showAppToast } from '../../../lib/mobile';
+import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 
 interface BookDetailViewProps {
   book: Book;
@@ -39,6 +40,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   const [typeFilter, setTypeFilter] = useState<'all' | 'in' | 'out'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'highest'>('newest');
   const [previewAttachment, setPreviewAttachment] = useState<{ url: string; name: string } | null>(null);
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
 
   // Book Statistics
   const bookTransactions = useMemo(() => {
@@ -158,7 +160,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-[#4B5563] hover:text-[#121212] bg-[#FAF9F5] hover:bg-[#EFECE3] border border-[#E6E2D6] rounded-md transition-colors"
           >
             <Download className="w-2.5 h-2.5" />
-            <span className="hidden sm:inline">PDF</span>
+            <span>Download PDF</span>
           </button>
         </div>
       </div>
@@ -352,7 +354,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                       </div>
 
                       <button
-                        onClick={() => onDeleteTransaction(tx.id)}
+                        onClick={() => setTransactionToDelete(tx)}
                         title="Delete entry"
                         className="p-0.5 text-[#9CA3AF] hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-80 group-hover:opacity-100"
                       >
@@ -422,6 +424,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           </div>
         </div>
       )}
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message={transactionToDelete ? <>Are you sure you want to delete <strong className="text-[#121212]">{transactionToDelete.remark}</strong>?</> : ''} onClose={() => setTransactionToDelete(null)} onConfirm={() => { if (transactionToDelete) onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
 
       {/* STICKY BOTTOM BUTTONS OPTIMIZED FOR MOBILE */}
       <div className="native-safe-bottom fixed bottom-0 left-0 right-0 z-40 bg-[#FFFFFF]/95 backdrop-blur-md border-t border-[#E6E2D6] p-1.5 sm:p-2 shadow-lg">

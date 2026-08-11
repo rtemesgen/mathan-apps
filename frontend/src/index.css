@@ -33,3 +33,6 @@ input, select, textarea { font-size: 16px; }
 .native-safe-top { padding-top: env(safe-area-inset-top); }
 .native-safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 summary::-webkit-details-marker { display: none; }
+
+/* The contact-based member card replaces the older email link card in Settings. */
+section.mt-3.rounded-2xl.border-emerald-200.bg-emerald-50 { display: none; }

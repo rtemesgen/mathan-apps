@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Employee, Transaction } from '../types';
+import { Employee, SalaryChange, Transaction } from '../types';
 import { calculateEmployeeAccrual, formatCurrency, formatDate, getTodayString } from '../utils/calc';
 import {
   X,
@@ -16,8 +16,11 @@ import {
   ArrowRight,
   CheckCircle2,
   Trash2,
+  Pencil,
+  Save,
 } from 'lucide-react';
 import { exportPdfFile } from '../../../lib/mobile';
+import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 
 interface EmployeeDetailModalProps {
   employee: Employee | null;
@@ -27,6 +30,10 @@ interface EmployeeDetailModalProps {
   onRecordWithdrawal: (emp: Employee) => void;
   onAddRaise: (emp: Employee) => void;
   onDeleteTransaction?: (txId: string) => void;
+  onUpdateTransaction?: (transaction: Transaction) => void;
+  onRemoveTransaction?: (txId: string) => void;
+  onUpdateRaise?: (employeeId: string, raise: SalaryChange) => void;
+  onDeleteRaise?: (employeeId: string, raiseId: string) => void;
 }
 
 export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
@@ -37,11 +44,19 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   onRecordWithdrawal,
   onAddRaise,
   onDeleteTransaction,
+  onUpdateTransaction,
+  onRemoveTransaction,
+  onUpdateRaise,
+  onDeleteRaise,
 }) => {
   if (!employee) return null;
 
   const [evaluationDate, setEvaluationDate] = useState<string>(asOfDate);
-  const [activeTab, setActiveTab] = useState<'intervals' | 'history' | 'withdrawals'>('intervals');
+  const [activeTab, setActiveTab] = useState<'history' | 'withdrawals'>('withdrawals');
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editingRaise, setEditingRaise] = useState<SalaryChange | null>(null);
+  const [confirmDeleteTransaction, setConfirmDeleteTransaction] = useState<string | null>(null);
+  const [confirmDeleteRaise, setConfirmDeleteRaise] = useState<string | null>(null);
 
   const summary = calculateEmployeeAccrual(employee, transactions, evaluationDate);
   const empTransactions = transactions
@@ -49,23 +64,23 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const handlePrint = () => {
-    void exportPdfFile(`employee_${employee.id}_${evaluationDate}.pdf`, `${employee.name} Employee Statement`, [`As of ${evaluationDate}`, `Monthly salary: ${formatCurrency(summary.currentMonthlySalary)}`, `Total accrued: ${formatCurrency(summary.totalAccruedWages)}`, `Total paid out: ${formatCurrency(summary.totalWithdrawn)}`, `Remaining balance: ${formatCurrency(summary.remainingBalance)}`, '', ...empTransactions.map((tx) => `${tx.date} | ${formatCurrency(tx.amount)} | ${tx.notes || 'No notes'}`)]);
+    void exportPdfFile(`employee_${employee.id}_${evaluationDate}.pdf`, `${employee.name} Employee Statement`, [`As of ${evaluationDate}`, `Monthly salary: ${formatCurrency(summary.currentMonthlySalary)}`, `Total earned: ${formatCurrency(summary.totalAccruedWages)}`, `Total paid: ${formatCurrency(summary.totalWithdrawn)}`, `Remaining balance: ${formatCurrency(summary.remainingBalance)}`, '', ...empTransactions.map((tx) => `${tx.date} | ${formatCurrency(tx.amount)} | ${tx.notes || 'No notes'}`)]);
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-zinc-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl sm:rounded-[32px] border border-[#e8e6dc] shadow-2xl w-full max-w-4xl max-h-[96vh] sm:max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 bg-[#f6f5ef]">
+      <div className="min-h-screen w-full bg-white flex flex-col overflow-hidden animate-in fade-in duration-200">
         {/* Modal Header */}
-        <div className="bg-zinc-900 text-white p-3.5 sm:p-6 flex items-center justify-between border-b border-zinc-800 gap-2">
+        <div className="bg-zinc-900 text-white px-4 py-3 sm:px-6 flex items-center justify-between border-b border-zinc-800 gap-2 shrink-0">
           <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white/10 border border-white/20 text-white flex items-center justify-center text-sm sm:text-lg font-bold font-mono shrink-0">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white/10 border border-white/20 text-white flex items-center justify-center text-sm font-bold font-mono shrink-0">
               {employee.name
                 .split(' ')
                 .map((n) => n[0])
                 .join('')}
             </div>
             <div className="min-w-0">
-              <h2 className="font-serif-title text-base sm:text-2xl font-bold tracking-tight truncate">{employee.name}</h2>
+              <h2 className="font-serif-title text-base sm:text-xl font-bold tracking-tight truncate">{employee.name}</h2>
               <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5 font-medium truncate">
                 Started <strong className="text-zinc-200 font-mono">{formatDate(employee.startDate)}</strong>
               </p>
@@ -74,74 +89,18 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
 
           <div className="flex items-center space-x-1.5 shrink-0">
             <button
-              onClick={handlePrint}
-              className="p-2 sm:p-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl transition cursor-pointer"
-              title="Print Employee Statement"
-            >
-              <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </button>
-            <button
               onClick={onClose}
-              className="p-2 sm:p-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl transition cursor-pointer"
+              className="p-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-full transition cursor-pointer"
+              aria-label="Close employee records"
             >
               <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           </div>
         </div>
 
-        {/* Real-Time Balance Inquiry Banner */}
-        <div className="bg-[#f6f5ef] border-b border-[#e8e6dc] p-3.5 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="text-[9px] sm:text-[10px] font-extrabold text-amber-800 uppercase tracking-widest">
-                  Current Unpaid Balance
-                </span>
-                <span className="inline-flex items-center text-[9px] sm:text-[10px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-full">
-                  <Clock className="w-3 h-3 mr-1" />
-                  Auto-Calculated
-                </span>
-              </div>
-              <div className="font-serif-title text-2xl sm:text-3xl font-bold text-zinc-900 mt-0.5">
-                {formatCurrency(summary.remainingBalance)}
-              </div>
-              <p className="text-[11px] sm:text-xs text-zinc-600 mt-0.5 font-medium">
-                Unpaid as of <span className="font-bold text-zinc-900">{formatDate(evaluationDate)}</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Stats Bar */}
-          <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-[#e8e6dc] text-xs">
-            <div>
-              <span className="text-zinc-500 block text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider">Salary</span>
-              <strong className="text-zinc-900 font-mono text-xs sm:text-sm">{formatCurrency(summary.currentMonthlySalary)}/mo</strong>
-            </div>
-            <div>
-              <span className="text-zinc-500 block text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider">Earned</span>
-              <strong className="text-zinc-900 font-mono text-xs sm:text-sm">{formatCurrency(summary.totalAccruedWages)}</strong>
-            </div>
-            <div>
-              <span className="text-zinc-500 block text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider">Paid Out</span>
-              <strong className="text-emerald-800 font-mono text-xs sm:text-sm">{formatCurrency(summary.totalWithdrawn)}</strong>
-            </div>
-          </div>
-        </div>
-
         {/* Tab Navigation & Evaluation Date Filter */}
-        <div className="bg-slate-50 border-b border-slate-200 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="bg-[#f6f5ef] border-b border-[#e8e6dc] px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center space-x-1 overflow-x-auto max-w-full pb-1 sm:pb-0">
-            <button
-              onClick={() => setActiveTab('intervals')}
-              className={`px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-lg transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'intervals'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-200/60'
-              }`}
-            >
-              Interval Accrual Math ({summary.intervals.length})
-            </button>
-
             <button
               onClick={() => setActiveTab('history')}
               className={`px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-lg transition cursor-pointer whitespace-nowrap ${
@@ -174,61 +133,15 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
               onChange={(e) => setEvaluationDate(e.target.value)}
               className="px-2 py-0.5 bg-white border border-slate-300 rounded text-xs text-slate-800 font-mono"
             />
+            <span className="ml-auto rounded-lg border border-[#e8e6dc] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
+              Start date: <strong className="font-mono text-slate-900">{formatDate(employee.startDate)}</strong>
+            </span>
           </div>
         </div>
 
         {/* Modal Body Content */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
-          {/* TAB 1: Interval Accrual Math Breakdown */}
-          {activeTab === 'intervals' && (
-            <div className="space-y-3">
-              <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs">
-                <table className="w-full min-w-[550px] text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
-                      <th className="p-2.5">Period Dates</th>
-                      <th className="p-2.5 text-right">Days</th>
-                      <th className="p-2.5 text-right">Monthly Salary</th>
-                      <th className="p-2.5 text-right">Daily Rate</th>
-                      <th className="p-2.5 text-right">Period Accrued</th>
-                      <th className="p-2.5">Reason / Note</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
-                    {[...summary.intervals].reverse().map((int, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/80 transition">
-                        <td className="p-2.5 font-sans font-medium text-slate-900 whitespace-nowrap">
-                          {formatDate(int.startDate)} <span className="text-slate-400 font-normal">to</span> {formatDate(int.endDate)}
-                        </td>
-                        <td className="p-2.5 text-right font-semibold whitespace-nowrap">{int.days} days</td>
-                        <td className="p-2.5 text-right whitespace-nowrap">{formatCurrency(int.monthlySalary)}/mo</td>
-                        <td className="p-2.5 text-right text-slate-500 whitespace-nowrap">${int.dailyRate.toFixed(2)}/day</td>
-                        <td className="p-2.5 text-right font-bold text-indigo-600 whitespace-nowrap">
-                          {formatCurrency(int.accruedAmount)}
-                        </td>
-                        <td className="p-2.5 font-sans text-slate-500 text-[11px] whitespace-nowrap">
-                          {int.reasonNote || 'Base Period'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-900 text-white font-bold font-mono">
-                      <td colSpan={4} className="p-3 text-right font-sans uppercase text-[11px] tracking-wider text-slate-300">
-                        Total Accrued Earnings:
-                      </td>
-                      <td className="p-3 text-right text-indigo-300 text-sm whitespace-nowrap">
-                        {formatCurrency(summary.totalAccruedWages)}
-                      </td>
-                      <td className="p-3"></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: Salary Change Timeline */}
+          {/* Salary Change Timeline */}
           {activeTab === 'history' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -268,7 +181,8 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                 {[...employee.salaryHistory]
                   .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))
                   .map((change) => (
-                  <div key={change.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50 transition">
+                  <React.Fragment key={change.id}>
+                  <div className="relative p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 transition">
                     <div className="flex items-start space-x-3">
                       <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0 mt-0.5">
                         <TrendingUp className="w-4 h-4" />
@@ -287,13 +201,25 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                         <p className="text-xs text-slate-600 mt-0.5">{change.reason}</p>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right shrink-0">
                       <span className="text-xs text-slate-400 block text-[10px]">New Monthly Rate</span>
                       <strong className="text-indigo-600 font-mono text-sm">
                         {formatCurrency(change.newMonthlySalary)}/mo
                       </strong>
+                      {(onUpdateRaise || onDeleteRaise) && <div className="mt-1 flex justify-end gap-1">
+                        {onUpdateRaise && <button type="button" onClick={() => setEditingRaise(editingRaise?.id === change.id ? null : { ...change })} className="rounded-md p-1 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Edit raise"><Pencil className="h-3.5 w-3.5" /></button>}
+                        {onDeleteRaise && <button type="button" onClick={() => setConfirmDeleteRaise(change.id)} className="rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete raise"><Trash2 className="h-3.5 w-3.5" /></button>}
+                      </div>}
                     </div>
+                    {editingRaise?.id === change.id && onUpdateRaise && <div className="absolute left-3 right-3 top-full z-10 mt-1 grid gap-2 rounded-lg border border-indigo-200 bg-white p-3 shadow-lg sm:grid-cols-[150px_150px_1fr_auto]">
+                      <input type="date" value={editingRaise.effectiveDate} onChange={(event) => setEditingRaise({ ...editingRaise, effectiveDate: event.target.value })} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" />
+                      <input type="number" min="0" step="1" value={editingRaise.newMonthlySalary} onChange={(event) => setEditingRaise({ ...editingRaise, newMonthlySalary: Number(event.target.value) || 0 })} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" placeholder="Monthly salary" />
+                      <input value={editingRaise.reason} onChange={(event) => setEditingRaise({ ...editingRaise, reason: event.target.value })} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" placeholder="Reason" />
+                      <button type="button" onClick={() => { if (editingRaise.effectiveDate && editingRaise.reason.trim()) { onUpdateRaise(employee.id, { ...editingRaise, reason: editingRaise.reason.trim() }); setEditingRaise(null); } }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> Save</button>
+                    </div>}
                   </div>
+                  <DeleteConfirmModal isOpen={confirmDeleteRaise === change.id} title="Delete salary raise?" message="Are you sure you want to delete this salary raise?" onClose={() => setConfirmDeleteRaise(null)} onConfirm={() => { onDeleteRaise?.(employee.id, change.id); setConfirmDeleteRaise(null); }} />
+                  </React.Fragment>
                 ))}
               </div>
             </div>
@@ -302,24 +228,13 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
           {/* TAB 3: Withdrawal / Payout Ledger */}
           {activeTab === 'withdrawals' && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Withdrawal & Payout History Log
-                </h3>
-                <button
-                  onClick={() => onRecordWithdrawal(employee)}
-                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition flex items-center cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  Record New Withdrawal
-                </button>
-              </div>
-
               {empTransactions.length === 0 ? (
                 <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
                   No withdrawals or payouts logged for this employee yet.
                 </div>
               ) : (
+                <>
+                <DeleteConfirmModal isOpen={!!confirmDeleteTransaction} title="Delete payment record?" message="Are you sure you want to delete this payment record?" onClose={() => setConfirmDeleteTransaction(null)} onConfirm={() => { if (confirmDeleteTransaction) (onRemoveTransaction ?? onDeleteTransaction)?.(confirmDeleteTransaction); setConfirmDeleteTransaction(null); }} />
                 <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
@@ -327,12 +242,13 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                         <th className="p-2.5">Date</th>
                         <th className="p-2.5">Type</th>
                         <th className="p-2.5 text-right">Amount</th>
-                        {onDeleteTransaction && <th className="p-2.5 text-center">Action</th>}
+                        {(onDeleteTransaction || onUpdateTransaction || onRemoveTransaction) && <th className="p-2.5 text-center">Action</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700">
                       {empTransactions.map((tx) => (
-                        <tr key={tx.id} className="hover:bg-slate-50/80 transition">
+                        <React.Fragment key={tx.id}>
+                        <tr className="hover:bg-slate-50/80 transition">
                           <td className="p-2.5 font-medium text-slate-900">{formatDate(tx.date)}</td>
                           <td className="p-2.5">
                             <span className="capitalize px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
@@ -342,37 +258,53 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                           <td className="p-2.5 text-right font-bold font-mono text-emerald-700 text-sm">
                             -{formatCurrency(tx.amount)}
                           </td>
-                          {onDeleteTransaction && (
+                          {(onDeleteTransaction || onUpdateTransaction || onRemoveTransaction) && (
                             <td className="p-2.5 text-center">
-                              <button
-                                onClick={() => onDeleteTransaction(tx.id)}
-                                className="p-1 text-slate-400 hover:text-red-600 rounded transition cursor-pointer"
-                                title="Delete Transaction"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex justify-center gap-1">
+                                {onUpdateTransaction && <button onClick={() => setEditingTransaction(editingTransaction?.id === tx.id ? null : { ...tx })} className="rounded-md p-1 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Edit transaction"><Pencil className="h-3.5 w-3.5" /></button>}
+                                {(onRemoveTransaction || onDeleteTransaction) && <button onClick={() => setConfirmDeleteTransaction(tx.id)} className="rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete transaction"><Trash2 className="h-3.5 w-3.5" /></button>}
+                              </div>
                             </td>
                           )}
                         </tr>
+                        {editingTransaction?.id === tx.id && onUpdateTransaction && <tr className="bg-indigo-50/50"><td colSpan={4} className="p-3"><div className="grid gap-2 sm:grid-cols-[140px_120px_1fr_auto]"><input type="date" value={editingTransaction.date} onChange={(event) => setEditingTransaction({ ...editingTransaction, date: event.target.value })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" /><input type="number" min="0" step="0.01" value={editingTransaction.amount} onChange={(event) => setEditingTransaction({ ...editingTransaction, amount: Number(event.target.value) || 0 })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Amount" /><input value={editingTransaction.notes ?? ''} onChange={(event) => setEditingTransaction({ ...editingTransaction, notes: event.target.value })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Notes" /><button type="button" onClick={() => { if (editingTransaction.date && editingTransaction.amount >= 0) { onUpdateTransaction(editingTransaction); setEditingTransaction(null); } }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> Save</button></div></td></tr>}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </div>
           )}
+
+        </div>
+
+        {/* Fixed balance summary: records scroll above, this stays visible */}
+        <div className="shrink-0 border-t border-[#e8e6dc] bg-white px-4 py-2.5 sm:px-6">
+          <div className="ml-auto max-w-xl rounded-xl border border-[#e8e6dc] bg-[#f6f5ef] px-4 py-2.5 shadow-sm">
+            <div className="flex items-center justify-between gap-4 text-xs sm:text-sm">
+              <span className="text-slate-500">Total Earned:</span>
+              <span className="font-mono font-bold text-zinc-900">{formatCurrency(summary.totalAccruedWages)}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-4 text-xs sm:text-sm">
+              <span className="text-slate-500">Previously Paid:</span>
+              <span className="font-mono font-bold text-emerald-800">-{formatCurrency(summary.totalWithdrawn)}</span>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between gap-4 border-t border-[#dedbd0] pt-1.5 text-sm sm:text-base">
+              <span className="font-extrabold text-zinc-900">Available Balance:</span>
+              <span className="font-mono font-extrabold text-zinc-900">{formatCurrency(summary.remainingBalance)}</span>
+            </div>
+          </div>
         </div>
 
         {/* Modal Footer */}
-        <div className="bg-slate-100 border-t border-slate-200 p-3.5 flex items-center justify-between text-xs">
-          <div className="text-slate-500">
-            Employee ID: <span className="font-mono text-slate-800 font-semibold">{employee.id}</span>
-          </div>
+        <div className="bg-[#f6f5ef] border-t border-[#e8e6dc] p-3 flex items-center justify-end shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg transition cursor-pointer"
+            className="w-full sm:w-auto px-6 py-2.5 bg-zinc-900 hover:bg-zinc-700 text-white text-sm font-semibold rounded-xl transition cursor-pointer"
           >
-            Close Window
+            Close
           </button>
         </div>
       </div>

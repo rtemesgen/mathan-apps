@@ -67,7 +67,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* KPI 3: Total Withdrawn */}
         <div className="bg-white p-2 sm:p-2.5 rounded-xl border border-[#e8e6dc] shadow-2xs flex flex-col justify-between">
-          <span className="text-[9px] sm:text-xs font-semibold text-zinc-500 block truncate">Total Paid Out</span>
+          <span className="text-[9px] sm:text-xs font-semibold text-zinc-500 block truncate">Total Paid</span>
           <div className="font-serif-title text-xs sm:text-base lg:text-lg font-bold text-emerald-800 mt-0.5 truncate">
             {formatMoney(stats.totalCompanyPaidOut)}
           </div>
@@ -89,4 +89,3 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     </div>
   );
 };
-

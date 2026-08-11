@@ -2,6 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard,
   UserPlus,
+  UserCog,
   Banknote,
   TrendingUp,
   FileSpreadsheet,
@@ -19,11 +20,12 @@ import {
 import { CompanyStats } from '../types';
 import { AppSwitcher } from '../../../components/AppSwitcher';
 import { useAuth } from '../../../auth/AuthProvider';
-import { LogOut } from 'lucide-react';
+import { LogIn, LogOut } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
   | 'add-employee'
+  | 'manage-employees'
   | 'pay-salary'
   | 'add-raise'
   | 'reports'
@@ -50,7 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClose,
   currentAppName = 'Payroll Tracker',
 }) => {
-  const { workspace, signOut } = useAuth();
+  const { workspace, signOut, isGuest } = useAuth();
   const navItems = [
     {
       id: 'dashboard' as ActiveTab,
@@ -62,6 +64,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'add-employee' as ActiveTab,
       label: 'Add Employee',
       icon: UserPlus,
+    },
+    {
+      id: 'manage-employees' as ActiveTab,
+      label: 'Manage Employees',
+      icon: UserCog,
     },
     {
       id: 'pay-salary' as ActiveTab,
@@ -199,8 +206,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {workspace?.name || 'Workspace'}
           </span>
           <AppSwitcher label="Apps" fullWidth />
-          <button onClick={() => void signOut()} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-100 bg-red-50 px-2 py-2 text-[10px] font-bold text-red-700 hover:bg-red-100" title="Sign out">
-            <LogOut className="w-3.5 h-3.5" /> Log out
+          <button onClick={() => void signOut()} className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[10px] font-bold ${isGuest ? 'border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border border-red-100 bg-red-50 text-red-700 hover:bg-red-100'}`} title={isGuest ? 'Log in' : 'Log out'}>
+            {isGuest ? <LogIn className="w-3.5 h-3.5" /> : <LogOut className="w-3.5 h-3.5" />} {isGuest ? 'Log in' : 'Log out'}
           </button>
         </div>
         <div>

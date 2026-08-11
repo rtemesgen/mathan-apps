@@ -43,7 +43,7 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
 
   const filteredEmployees = employees.filter(
     (emp) => selectedDept === 'all' || emp.department === selectedDept
-  );
+  ).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   const stats = calculateCompanyStats(filteredEmployees, transactions, asOfDate);
 
@@ -56,9 +56,10 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
   const handlePrint = () => {
     const lines = filteredEmployees.map((emp) => {
       const employeeStats = calculateEmployeeAccrual(emp, transactions, asOfDate);
-      return `${emp.name} | ${emp.department || '—'} | Accrued ${formatCurrency(employeeStats.totalAccruedWages)} | Paid ${formatCurrency(employeeStats.totalWithdrawn)} | Balance ${formatCurrency(employeeStats.remainingBalance)}`;
+      const dailyRate = (employeeStats.currentMonthlySalary * 12) / 365.25;
+      return `${emp.name} | ${emp.startDate} | ${formatCurrency(employeeStats.currentMonthlySalary)} | ${formatCurrency(dailyRate)} | ${formatCurrency(employeeStats.totalAccruedWages)} | ${formatCurrency(employeeStats.totalWithdrawn)} | ${formatCurrency(employeeStats.remainingBalance)}`;
     });
-    void exportPdfFile(`payroll_summary_${selectedDept}_${asOfDate}.pdf`, 'Mathan ERP Payroll Summary', [`As of ${asOfDate}`, `Total liability: ${formatCurrency(stats.totalCompanyLiability)}`, `Total accrued: ${formatCurrency(stats.totalCompanyAccrued)}`, `Total paid: ${formatCurrency(stats.totalCompanyPaidOut)}`, '', ...lines]);
+    void exportPdfFile(`payroll_summary_${selectedDept}_${asOfDate}.pdf`, 'Mathan ERP Payroll Summary', [`As of ${asOfDate}`, `Total liability: ${formatCurrency(stats.totalCompanyLiability)}`, `Total earned: ${formatCurrency(stats.totalCompanyAccrued)}`, `Total paid: ${formatCurrency(stats.totalCompanyPaidOut)}`, '', ...lines]);
   };
 
   return (
@@ -73,7 +74,7 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
             <div>
               <h2 className="text-lg font-bold">Accounting Payroll Summary & Liability Export</h2>
               <p className="text-xs text-slate-400">
-                Official financial records of employee wages accrued, paid out, and balances held
+                Official financial records of employee wages earned, paid, and balances held
               </p>
             </div>
           </div>
@@ -147,7 +148,7 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
 
             <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
               <span className="text-[10px] font-bold text-indigo-800 block uppercase">
-                Total Wages Accrued
+                Total Wages Earned
               </span>
               <strong className="text-lg font-bold font-mono text-indigo-900 mt-0.5 block">
                 {formatCurrency(stats.totalCompanyAccrued)}
@@ -156,7 +157,7 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
 
             <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
               <span className="text-[10px] font-bold text-emerald-800 block uppercase">
-                Total Disbursements / Paid Out
+                Total Paid
               </span>
               <strong className="text-lg font-bold font-mono text-emerald-900 mt-0.5 block">
                 {formatCurrency(stats.totalCompanyPaidOut)}
@@ -181,17 +182,18 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
               <thead>
                 <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
                   <th className="p-3">Employee Name</th>
-                  <th className="p-3">Department</th>
                   <th className="p-3">Start Date</th>
-                  <th className="p-3 text-right">Current Rate</th>
-                  <th className="p-3 text-right">Total Accrued ($)</th>
-                  <th className="p-3 text-right">Total Paid ($)</th>
-                  <th className="p-3 text-right">Balance Held ($)</th>
+                  <th className="p-3 text-right">Monthly Rate</th>
+                  <th className="p-3 text-right">Daily Rate</th>
+                  <th className="p-3 text-right">Earned ($)</th>
+                  <th className="p-3 text-right">Paid ($)</th>
+                  <th className="p-3 text-right">Balance ($)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {filteredEmployees.map((emp) => {
                   const summary = calculateEmployeeAccrual(emp, transactions, asOfDate);
+                  const dailyRate = (summary.currentMonthlySalary * 12) / 365.25;
                   return (
                     <tr key={emp.id} className="hover:bg-slate-50 transition">
                       <td className="p-3 font-semibold text-slate-900">
@@ -200,10 +202,12 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
                           {emp.position}
                         </span>
                       </td>
-                      <td className="p-3">{emp.department}</td>
                       <td className="p-3 font-mono">{formatDate(emp.startDate)}</td>
                       <td className="p-3 text-right font-mono font-medium">
-                        {formatCurrency(summary.currentMonthlySalary)}/mo
+                        {formatCurrency(summary.currentMonthlySalary)}
+                      </td>
+                      <td className="p-3 text-right font-mono font-medium">
+                        {formatCurrency(dailyRate)}
                       </td>
                       <td className="p-3 text-right font-mono text-indigo-700">
                         {formatCurrency(summary.totalAccruedWages)}
@@ -220,10 +224,11 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-900 text-white font-mono font-bold">
-                  <td colSpan={3} className="p-3.5 uppercase font-sans text-[11px] tracking-wider text-slate-300">
+                  <td colSpan={2} className="p-3.5 uppercase font-sans text-[11px] tracking-wider text-slate-300">
                     Grand Totals ({filteredEmployees.length} employees)
                   </td>
-                  <td className="p-3.5 text-right">{formatCurrency(stats.totalMonthlyPayrollRate)}/mo</td>
+                  <td className="p-3.5 text-right">{formatCurrency(stats.totalMonthlyPayrollRate)}</td>
+                  <td className="p-3.5 text-right">{formatCurrency((stats.totalMonthlyPayrollRate * 12) / 365.25)}</td>
                   <td className="p-3.5 text-right text-indigo-300">
                     {formatCurrency(stats.totalCompanyAccrued)}
                   </td>

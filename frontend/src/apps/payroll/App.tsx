@@ -12,12 +12,30 @@ import { PaySalaryView } from './views/PaySalaryView';
 import { AddRaiseView } from './views/AddRaiseView';
 import { ReportsView } from './views/ReportsView';
 import { TransactionsView } from './views/TransactionsView';
+import { ManageEmployeesView } from './views/ManageEmployeesView';
 import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
+import { useAuth } from '../../auth/AuthProvider';
+
+const PAYROLL_TABS: ActiveTab[] = ['dashboard', 'add-employee', 'manage-employees', 'pay-salary', 'add-raise', 'reports', 'transactions'];
 
 export default function App() {
+  const { workspace, isGuest } = useAuth();
+  const payrollTabKey = `mathan_payroll_active_tab_${isGuest ? 'standalone' : workspace?.id ?? 'anonymous'}`;
   // Navigation active tab
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [tabHydrated, setTabHydrated] = useState(false);
+
+  useEffect(() => {
+    setTabHydrated(false);
+    const saved = window.localStorage.getItem(payrollTabKey) as ActiveTab | null;
+    if (saved && PAYROLL_TABS.includes(saved)) setActiveTab(saved);
+    setTabHydrated(true);
+  }, [payrollTabKey]);
+
+  useEffect(() => {
+    if (tabHydrated) window.localStorage.setItem(payrollTabKey, activeTab);
+  }, [activeTab, payrollTabKey, tabHydrated]);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth >= 1024; // Default open on large screens, closed on mobile/tablet
@@ -89,6 +107,16 @@ export default function App() {
     setEmployees((prev) => [newEmp, ...prev]);
   };
 
+  const handleSaveEmployee = (updatedEmployee: Employee) => {
+    setEmployees((current) => current.map((employee) => employee.id === updatedEmployee.id ? updatedEmployee : employee));
+  };
+
+  const handleDeleteEmployee = (employeeId: string) => {
+    setEmployees((current) => current.filter((employee) => employee.id !== employeeId));
+    setTransactions((current) => current.filter((transaction) => transaction.employeeId !== employeeId));
+    if (selectedPayEmployeeId === employeeId) setSelectedPayEmployeeId(undefined);
+  };
+
   const handleSaveRaise = (employeeId: string, raise: SalaryChange) => {
     setEmployees((prev) =>
       prev.map((emp) => {
@@ -111,9 +139,27 @@ export default function App() {
   };
 
   const handleDeleteTransaction = (txId: string) => {
-    if (window.confirm('Are you sure you want to delete this transaction record?')) {
-      setTransactions((prev) => prev.filter((t) => t.id !== txId));
-    }
+    setTransactions((prev) => prev.filter((t) => t.id !== txId));
+  };
+
+  const handleUpdateTransaction = (updated: Transaction) => {
+    setTransactions((current) => current.map((transaction) => transaction.id === updated.id ? updated : transaction));
+  };
+
+  const handleRemoveTransaction = (txId: string) => {
+    setTransactions((current) => current.filter((transaction) => transaction.id !== txId));
+  };
+
+  const handleUpdateRaise = (employeeId: string, updatedRaise: SalaryChange) => {
+    setEmployees((current) => current.map((employee) => employee.id === employeeId
+      ? { ...employee, salaryHistory: employee.salaryHistory.map((raise) => raise.id === updatedRaise.id ? updatedRaise : raise) }
+      : employee));
+  };
+
+  const handleDeleteRaise = (employeeId: string, raiseId: string) => {
+    setEmployees((current) => current.map((employee) => employee.id === employeeId
+      ? { ...employee, salaryHistory: employee.salaryHistory.filter((raise) => raise.id !== raiseId) }
+      : employee));
   };
 
   const stats = calculateCompanyStats(employees, transactions, asOfDate);
@@ -201,6 +247,14 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'manage-employees' && (
+            <ManageEmployeesView
+              employees={employees}
+              onSaveEmployee={handleSaveEmployee}
+              onDeleteEmployee={handleDeleteEmployee}
+            />
+          )}
+
           {activeTab === 'pay-salary' && (
             <PaySalaryView
               employees={employees}
@@ -226,6 +280,7 @@ export default function App() {
               employees={employees}
               transactions={transactions}
               asOfDate={asOfDate}
+              onSelectEmployee={setSelectedDetailEmp}
             />
           )}
 
@@ -258,6 +313,10 @@ export default function App() {
             setActiveTab('add-raise');
           }}
           onDeleteTransaction={handleDeleteTransaction}
+          onUpdateTransaction={handleUpdateTransaction}
+          onRemoveTransaction={handleRemoveTransaction}
+          onUpdateRaise={handleUpdateRaise}
+          onDeleteRaise={handleDeleteRaise}
         />
       )}
     </div>

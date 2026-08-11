@@ -20,23 +20,25 @@ interface ReportsViewProps {
   employees: Employee[];
   transactions: Transaction[];
   asOfDate: string;
+  onSelectEmployee: (employee: Employee) => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
   employees,
   transactions,
   asOfDate,
+  onSelectEmployee,
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   const stats = calculateCompanyStats(employees, transactions, asOfDate);
 
-  // Filter employees sorted by start date descending
+  // Keep report rows alphabetically ordered for predictable scanning and exports.
   const filteredEmployees = employees
     .filter((emp) => {
       return emp.name.toLowerCase().includes(searchTerm.toLowerCase());
     })
-    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   const formatMoney = (val: number) =>
     new Intl.NumberFormat('en-US', {
@@ -76,9 +78,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const handlePrint = () => {
     const lines = filteredEmployees.map((emp) => {
       const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-      return `${emp.name} | ${emp.department || '—'} | Accrued ${formatMoney(info.totalAccruedWages)} | Paid ${formatMoney(info.totalWithdrawn)} | Balance ${formatMoney(info.remainingBalance)}`;
+      const dailyRate = (info.currentMonthlySalary * 12) / 365.25;
+      return `${emp.name} | ${emp.startDate} | ${formatMoney(info.currentMonthlySalary)} | ${formatMoney(dailyRate)} | ${formatMoney(info.totalAccruedWages)} | ${formatMoney(info.totalWithdrawn)} | ${formatMoney(info.remainingBalance)}`;
     });
-    void exportPdfFile(`Payroll_Report_AsOf_${asOfDate}.pdf`, 'Mathan ERP Payroll Report', [`As of ${asOfDate}`, `Total liability: ${formatMoney(stats.totalCompanyLiability)}`, `Total accrued: ${formatMoney(stats.totalCompanyAccrued)}`, `Total paid: ${formatMoney(stats.totalCompanyPaidOut)}`, '', ...lines]);
+    void exportPdfFile(`Payroll_Report_AsOf_${asOfDate}.pdf`, 'Mathan ERP Payroll Report', [`As of ${asOfDate}`, `Total liability: ${formatMoney(stats.totalCompanyLiability)}`, `Total earned: ${formatMoney(stats.totalCompanyAccrued)}`, `Total paid: ${formatMoney(stats.totalCompanyPaidOut)}`, '', ...lines]);
   };
 
   return (
@@ -98,7 +101,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
 
         <div className="bg-white p-2 sm:p-3 rounded-xl border border-[#e8e6dc] shadow-2xs flex flex-col justify-between">
-          <span className="text-[9px] sm:text-xs font-semibold text-zinc-500 block truncate">Total Paid Out</span>
+          <span className="text-[9px] sm:text-xs font-semibold text-zinc-500 block truncate">Total Paid</span>
           <div className="font-serif-title text-xs sm:text-lg lg:text-xl font-bold text-emerald-800 mt-0.5 truncate">{formatMoney(stats.totalCompanyPaidOut)}</div>
           <p className="text-[8px] sm:text-[10px] text-zinc-400 mt-0.5 font-medium truncate">{transactions.length} total payments</p>
         </div>
@@ -160,7 +163,15 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                   const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
                   const dailyRate = (info.currentMonthlySalary * 12) / 365.25;
                   return (
-                    <tr key={emp.id} className="hover:bg-[#f6f5ef]/80 transition">
+                    <tr
+                      key={emp.id}
+                      onClick={() => onSelectEmployee(emp)}
+                      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectEmployee(emp); }}
+                      tabIndex={0}
+                      role="button"
+                      className="cursor-pointer hover:bg-[#f6f5ef]/80 focus:bg-[#f6f5ef] focus:outline-none transition"
+                      title={`Open ${emp.name}`}
+                    >
                       <td className="py-3.5 px-6">
                         <div className="font-bold text-zinc-900">{emp.name}</div>
                       </td>

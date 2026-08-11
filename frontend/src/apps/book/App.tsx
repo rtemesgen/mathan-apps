@@ -8,6 +8,11 @@ import { TransactionModal } from './components/TransactionModal';
 import { CashBookSidebar } from './components/Sidebar';
 import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
+import { showAppToast } from '../../lib/mobile';
+import { ImportBookModal } from './components/ImportBookModal';
+import { RenameBookModal } from './components/RenameBookModal';
+import { DeleteBookModal } from './components/DeleteBookModal';
+import { AddMembersModal } from './components/AddMembersModal';
 
 export default function App() {
   const [books, setBooks] = useCloudSnapshot<Book[]>('cash_book', 'books', []);
@@ -18,6 +23,10 @@ export default function App() {
 
   // Modals state
   const [isAddBookOpen, setIsAddBookOpen] = useState<boolean>(false);
+  const [isImportBookOpen, setIsImportBookOpen] = useState(false);
+  const [bookToRename, setBookToRename] = useState<Book | null>(null);
+  const [bookToDelete, setBookToDelete] = useState<Book | null>(null);
+  const [bookForMembers, setBookForMembers] = useState<Book | null>(null);
   const [transactionModalType, setTransactionModalType] = useState<TransactionType | null>(null);
   const [targetBookForTransaction, setTargetBookForTransaction] = useState<Book | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
@@ -32,6 +41,13 @@ export default function App() {
       setIsAddBookOpen(false);
       return true;
     }
+    if (isImportBookOpen || bookToRename || bookToDelete || bookForMembers) {
+      setIsImportBookOpen(false);
+      setBookToRename(null);
+      setBookToDelete(null);
+      setBookForMembers(null);
+      return true;
+    }
     if (isSidebarOpen && window.innerWidth < 1024) {
       setIsSidebarOpen(false);
       return true;
@@ -41,7 +57,7 @@ export default function App() {
       return true;
     }
     return false;
-  }, [transactionModalType, isAddBookOpen, isSidebarOpen, activeBookId]);
+  }, [transactionModalType, isAddBookOpen, isImportBookOpen, bookToRename, bookToDelete, bookForMembers, isSidebarOpen, activeBookId]);
 
   // Active book object if selected
   const activeBook = books.find(b => b.id === activeBookId) || null;
@@ -62,13 +78,34 @@ export default function App() {
 
   // Delete Book Handler
   const handleDeleteBook = (bookId: string) => {
-    if (confirm('Are you sure you want to delete this book and all its transaction records?')) {
-      setBooks(prev => prev.filter(b => b.id !== bookId));
-      setTransactions(prev => prev.filter(t => t.bookId !== bookId));
-      if (activeBookId === bookId) {
-        setActiveBookId(null);
-      }
+    const book = books.find((item) => item.id === bookId);
+    if (!book) return;
+    setBooks(prev => prev.filter(b => b.id !== bookId));
+    setTransactions(prev => prev.filter(t => t.bookId !== bookId));
+    if (activeBookId === bookId) {
+      setActiveBookId(null);
     }
+    setBookToDelete(null);
+    showAppToast(`${book.name} deleted`);
+  };
+
+  const handleRenameBook = (bookId: string, name: string) => {
+    setBooks(prev => prev.map(book => book.id === bookId ? { ...book, name, updatedAt: new Date().toISOString() } : book));
+    setBookToRename(null);
+  };
+
+  const handleImportBooks = (importedBooks: Array<{ book: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] }>) => {
+    const now = new Date().toISOString();
+    const newBooks = importedBooks.map(({ book }) => ({ ...book, id: `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, createdAt: now, updatedAt: now }));
+    const newTransactions = importedBooks.flatMap(({ transactions }, index) => transactions.map((transaction, txIndex) => ({
+      ...transaction,
+      id: `tx-import-${Date.now()}-${index}-${txIndex}`,
+      bookId: newBooks[index].id,
+      createdAt: now,
+    })));
+    setBooks(prev => [...newBooks, ...prev]);
+    setTransactions(prev => [...newTransactions, ...prev]);
+    setIsImportBookOpen(false);
   };
 
   // Open Cash In Modal
@@ -121,9 +158,7 @@ export default function App() {
 
   // Delete Transaction Handler
   const handleDeleteTransaction = (txId: string) => {
-    if (confirm('Delete this transaction record?')) {
-      setTransactions(prev => prev.filter(t => t.id !== txId));
-    }
+    setTransactions(prev => prev.filter(t => t.id !== txId));
   };
 
   return (
@@ -157,7 +192,10 @@ export default function App() {
               onOpenAddBookModal={() => setIsAddBookOpen(true)}
               onQuickCashIn={(b) => handleOpenCashInModal(b)}
               onQuickCashOut={(b) => handleOpenCashOutModal(b)}
-              onDeleteBook={handleDeleteBook}
+              onRenameBook={setBookToRename}
+              onRequestDeleteBook={setBookToDelete}
+              onAddMembers={setBookForMembers}
+              onOpenImportBookModal={() => setIsImportBookOpen(true)}
             />
           )}
         </main>
@@ -168,6 +206,29 @@ export default function App() {
         isOpen={isAddBookOpen}
         onClose={() => setIsAddBookOpen(false)}
         onSave={handleCreateBook}
+      />
+
+      <RenameBookModal
+        book={bookToRename}
+        onClose={() => setBookToRename(null)}
+        onSave={handleRenameBook}
+      />
+
+      <DeleteBookModal
+        book={bookToDelete}
+        onClose={() => setBookToDelete(null)}
+        onConfirm={handleDeleteBook}
+      />
+
+      <AddMembersModal
+        book={bookForMembers}
+        onClose={() => setBookForMembers(null)}
+      />
+
+      <ImportBookModal
+        isOpen={isImportBookOpen}
+        onClose={() => setIsImportBookOpen(false)}
+        onImport={handleImportBooks}
       />
 
       {/* Cash In / Cash Out Transaction Modal */}

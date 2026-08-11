@@ -13,7 +13,8 @@ import {
   ArrowRight,
   Receipt,
   Search,
-  History
+  History,
+  ChevronDown
 } from 'lucide-react';
 
 interface PaySalaryViewProps {
@@ -40,6 +41,8 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [lastTx, setLastTx] = useState<Transaction | null>(null);
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {
     if (!selectedEmpId && employees.length > 0) {
@@ -105,7 +108,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
             <div>
               <h3 className="font-serif-title text-sm font-bold text-emerald-950">Payout Recorded Successfully!</h3>
               <p className="text-[11px] text-emerald-800 font-medium">
-                Disbursed <span className="font-mono font-bold">{formatMoney(lastTx.amount)}</span> to{' '}
+                Paid <span className="font-mono font-bold">{formatMoney(lastTx.amount)}</span> to{' '}
                 <span className="font-bold text-zinc-900">{lastTx.employeeName}</span> on {lastTx.date}.
               </p>
             </div>
@@ -128,23 +131,10 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
               <label className="block text-zinc-800 font-bold mb-1 flex items-center gap-1.5 text-[11px]">
                 <User className="w-3.5 h-3.5 text-zinc-700" /> Select Employee Profile <span className="text-red-500">*</span>
               </label>
-              <select
-                value={selectedEmpId}
-                onChange={(e) => {
-                  setSelectedEmpId(e.target.value);
-                  setIsSuccess(false);
-                }}
-                className="w-full px-3 py-1.5 bg-[#f2f0e6] border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 text-zinc-900 text-xs font-bold cursor-pointer"
-              >
-                {employees.map((emp) => {
-                  const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-                  return (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.department}) — Available: ${info.remainingBalance.toFixed(2)}
-                    </option>
-                  );
-                })}
-              </select>
+              <div className="relative">
+                <button type="button" onClick={() => setEmployeePickerOpen((open) => !open)} className="flex w-full items-center justify-between rounded-lg border border-[#d8d3c5] bg-[#f2f0e6] px-3 py-2 text-left text-xs font-bold text-zinc-900 shadow-2xs"><span className="truncate">{selectedEmp ? selectedEmp.name : 'Choose employee'}</span><ChevronDown className={`h-4 w-4 text-zinc-500 transition-transform ${employeePickerOpen ? 'rotate-180' : ''}`} /></button>
+                {employeePickerOpen && <div className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-[#d8d3c5] bg-[#fbfaf6] p-1.5 shadow-xl">{sortedEmployees.map((emp) => { const info = calculateEmployeeAccrual(emp, transactions, asOfDate); const selected = emp.id === selectedEmpId; return <button type="button" key={emp.id} onClick={() => { setSelectedEmpId(emp.id); setIsSuccess(false); setEmployeePickerOpen(false); }} className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition ${selected ? 'bg-zinc-900 text-white' : 'text-zinc-800 hover:bg-[#f2f0e6]'}`}><span className="min-w-0 truncate text-xs font-bold">{emp.name}</span><span className={`shrink-0 text-[10px] font-mono ${selected ? 'text-emerald-200' : 'text-zinc-500'}`}>Available: ${info.remainingBalance.toFixed(2)}</span></button>; })}</div>}
+              </div>
             </div>
 
             {/* Payout Amount */}
@@ -228,11 +218,11 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
               <div className="mt-2.5 space-y-2 text-xs">
                 <div className="p-2.5 bg-[#f6f5ef] rounded-lg border border-zinc-200/60 space-y-1 text-[11px]">
                   <div className="flex justify-between text-zinc-500 font-medium">
-                    <span>Total Accrued:</span>
+                    <span>Total Earned:</span>
                     <span className="font-mono text-zinc-900 font-bold">{formatMoney(accrualInfo.totalAccruedWages)}</span>
                   </div>
                   <div className="flex justify-between text-zinc-500 font-medium">
-                    <span>Previously Disbursed:</span>
+                    <span>Previously Paid:</span>
                     <span className="font-mono text-emerald-800 font-bold">-{formatMoney(accrualInfo.totalWithdrawn)}</span>
                   </div>
                   <div className="flex justify-between text-zinc-900 border-t border-zinc-200 pt-1 font-bold">
@@ -244,10 +234,10 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
                 {numAmount > 0 && (
                   <div className="p-2.5 bg-zinc-900 text-white rounded-lg space-y-1 animate-in fade-in duration-150">
                     <div className="text-[9px] text-zinc-400 font-extrabold uppercase tracking-widest">
-                      After Disbursing Payout
+                      After Payment
                     </div>
                     <div className="flex justify-between text-zinc-300 text-[11px]">
-                      <span>Disbursement:</span>
+                      <span>Payment:</span>
                       <span className="font-mono font-bold text-emerald-400">-{formatMoney(numAmount)}</span>
                     </div>
                     <div className="flex justify-between text-white font-extrabold border-t border-zinc-700 pt-1 text-xs">
