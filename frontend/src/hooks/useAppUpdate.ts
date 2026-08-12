@@ -4,11 +4,11 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { emitAppNotification } from '../lib/notifications';
 
 const RELEASES_API = 'https://api.github.com/repos/rtemesgen/mathan-apps/releases/latest';
-type DownloadStatus = 'idle' | 'downloading' | 'ready' | 'error';
+type DownloadStatus = 'idle' | 'downloading' | 'paused' | 'ready' | 'error';
 type UpdateInfo = { version: string; url: string; downloadUrl: string };
 
 interface AppUpdaterPlugin {
-  downloadAndInstall(options: { url: string; filename?: string }): Promise<void>;
+  downloadAndInstall(options: { url: string; filename?: string }): Promise<{ downloadId?: number }>;
   installDownloaded(): Promise<void>;
   getDownloadProgress(): Promise<{ progress: number; downloaded: number; total: number; status: string }>;
 }
@@ -35,7 +35,7 @@ function downloadStateKey(version: string) {
 
 function readDownloadStatus(version: string): DownloadStatus {
   const value = localStorage.getItem(downloadStateKey(version));
-  return value === 'downloading' || value === 'ready' || value === 'error' ? value : 'idle';
+  return value === 'downloading' || value === 'paused' || value === 'ready' || value === 'error' ? value : 'idle';
 }
 
 function writeDownloadStatus(version: string, state: DownloadStatus) {
@@ -61,9 +61,8 @@ function useUpdateController() {
     writeDownloadStatus(next.version, 'downloading');
     try {
       await AppUpdater.downloadAndInstall({ url: next.downloadUrl, filename: `mathan-erp-${next.version}.apk` });
-      setDownloadProgress(100);
-      setDownloadStatus('ready');
-      writeDownloadStatus(next.version, 'ready');
+      // Completion is decided by getDownloadProgress after DownloadManager
+      // verifies the final APK URI; enqueueing alone is not completion.
     } catch {
       setDownloadStatus('error');
       writeDownloadStatus(next.version, 'error');
@@ -122,7 +121,20 @@ function useUpdateController() {
     const poll = async () => {
       try {
         const result = await AppUpdater.getDownloadProgress();
-        if (active && Number.isFinite(result.progress)) setDownloadProgress(Math.max(0, Math.min(100, result.progress)));
+        if (!active) return;
+        if (result.status === 'successful') {
+          setDownloadProgress(100);
+          setDownloadStatus('ready');
+          writeDownloadStatus(update.version, 'ready');
+        } else if (result.status === 'failed' || result.status === 'missing' || result.status === 'none') {
+          setDownloadStatus('error');
+          writeDownloadStatus(update.version, 'error');
+        } else if (result.status === 'paused') {
+          setDownloadStatus('paused');
+          writeDownloadStatus(update.version, 'paused');
+        } else if (Number.isFinite(result.progress)) {
+          setDownloadProgress(Math.max(0, Math.min(99, result.progress)));
+        }
       } catch {
         // Progress is optional; the download state remains visible.
       }

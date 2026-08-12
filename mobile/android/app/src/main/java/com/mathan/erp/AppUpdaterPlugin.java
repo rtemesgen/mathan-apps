@@ -1,10 +1,8 @@
 package com.mathan.erp;
 
 import android.app.DownloadManager;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
@@ -23,8 +21,6 @@ import com.getcapacitor.PluginMethod;
 
 @CapacitorPlugin(name = "AppUpdater")
 public class AppUpdaterPlugin extends Plugin {
-    private BroadcastReceiver downloadReceiver;
-
     @PluginMethod
     public void getDownloadProgress(PluginCall call) {
         long downloadId = getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).getLong("download-id", -1);
@@ -44,8 +40,14 @@ public class AppUpdaterPlugin extends Plugin {
             long downloaded = downloadedIndex >= 0 ? cursor.getLong(downloadedIndex) : 0;
             long total = totalIndex >= 0 ? cursor.getLong(totalIndex) : 0;
             int status = statusIndex >= 0 ? cursor.getInt(statusIndex) : DownloadManager.STATUS_PENDING;
-            int progress = total > 0 ? (int) Math.round((downloaded * 100.0) / total) : 0;
-            call.resolve(new JSObject().put("progress", progress).put("downloaded", downloaded).put("total", total).put("status", String.valueOf(status)));
+            boolean successful = status == DownloadManager.STATUS_SUCCESSFUL;
+            Uri completedUri = successful ? manager.getUriForDownloadedFile(downloadId) : null;
+            if (successful && completedUri != null) {
+                getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).edit().putString("downloaded-apk-uri", completedUri.toString()).apply();
+            }
+            int progress = successful ? 100 : total > 0 ? Math.min(99, (int) Math.floor(downloaded * 100.0 / total)) : 0;
+            String state = successful && completedUri != null ? "successful" : status == DownloadManager.STATUS_FAILED ? "failed" : successful ? "finalizing" : status == DownloadManager.STATUS_PAUSED ? "paused" : status == DownloadManager.STATUS_RUNNING ? "running" : status == DownloadManager.STATUS_PENDING ? "pending" : String.valueOf(status);
+            call.resolve(new JSObject().put("progress", progress).put("downloaded", downloaded).put("total", total).put("status", state));
         } catch (Exception error) {
             call.reject("Could not read download progress", error);
         }
@@ -53,12 +55,29 @@ public class AppUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void installDownloaded(PluginCall call) {
-        String savedUri = getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).getString("downloaded-apk-uri", null);
-        if (savedUri == null) {
+        long downloadId = getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).getLong("download-id", -1);
+        if (downloadId < 0) {
             call.reject("No downloaded update is available yet");
             return;
         }
-        installApk(Uri.parse(savedUri));
+        DownloadManager manager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+        Uri apkUri = null;
+        try (Cursor cursor = manager.query(new DownloadManager.Query().setFilterById(downloadId))) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                int status = statusIndex >= 0 ? cursor.getInt(statusIndex) : DownloadManager.STATUS_PENDING;
+                if (status == DownloadManager.STATUS_SUCCESSFUL) apkUri = manager.getUriForDownloadedFile(downloadId);
+            }
+        } catch (Exception error) {
+            call.reject("Could not verify the downloaded update", error);
+            return;
+        }
+        if (apkUri == null) {
+            call.reject("The downloaded update is no longer available. Please download it again.");
+            return;
+        }
+        getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).edit().putString("downloaded-apk-uri", apkUri.toString()).apply();
+        installApk(apkUri);
         call.resolve();
     }
 
@@ -79,39 +98,12 @@ public class AppUpdaterPlugin extends Plugin {
         request.setMimeType("application/vnd.android.package-archive");
         request.setDestinationInExternalFilesDir(getContext(), Environment.DIRECTORY_DOWNLOADS, filename);
         long downloadId = manager.enqueue(request);
-        getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).edit().putLong("download-id", downloadId).apply();
+        getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).edit().putLong("download-id", downloadId).remove("downloaded-apk-uri").apply();
 
-        registerDownloadReceiver(downloadId, call);
-    }
-
-    private void registerDownloadReceiver(long downloadId, PluginCall call) {
-        if (downloadReceiver != null) return;
-        downloadReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                if (intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) != downloadId) return;
-                try {
-                    context.unregisterReceiver(this);
-                } catch (IllegalArgumentException ignored) {
-                    // Receiver was already removed during activity teardown.
-                }
-                downloadReceiver = null;
-                DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
-                Uri apkUri = manager.getUriForDownloadedFile(downloadId);
-                if (apkUri == null) {
-                    Toast.makeText(context, "Mathan ERP update download failed", Toast.LENGTH_LONG).show();
-                    return;
-                }
-                context.getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).edit().putString("downloaded-apk-uri", apkUri.toString()).apply();
-                call.resolve();
-            }
-        };
-        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            getContext().registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            getContext().registerReceiver(downloadReceiver, filter);
-        }
+        // DownloadManager owns the transfer and persists it across activity
+        // pauses/recreation. The frontend polls its state, so no in-memory
+        // broadcast receiver can leave a JavaScript promise stalled.
+        call.resolve(new JSObject().put("downloadId", downloadId));
     }
 
     private void installApk(Uri apkUri) {
