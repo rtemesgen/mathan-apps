@@ -33,7 +33,14 @@ export function ContactMemberCard() {
     try {
       let loaded: ContactEntry[] = [];
       if (Capacitor.isNativePlatform()) {
-        await Contacts.requestPermissions();
+        const currentPermission = await Contacts.checkPermissions();
+        const permission = currentPermission.contacts === 'granted' || currentPermission.contacts === 'limited'
+          ? currentPermission
+          : await Contacts.requestPermissions();
+        if (permission.contacts !== 'granted' && permission.contacts !== 'limited') {
+          setNotice('Contacts permission is required. Allow access in the Android prompt or app settings, then tap Choose from contacts again.');
+          return;
+        }
         const result = await Contacts.getContacts({ projection: { name: true, phones: true } });
         loaded = result.contacts.flatMap((contact) => (contact.phones ?? []).filter((phone) => phone.number).map((phone, index) => ({ id: `${contact.contactId}-${index}`, name: contact.name?.display || 'Unnamed contact', number: phone.number || '' })));
       } else {
@@ -51,7 +58,8 @@ export function ContactMemberCard() {
       const appUsers = new Set(((data as Array<{ phone: string }> | null) ?? []).map((item) => normalize(item.phone)));
       setStatuses(Object.fromEntries(unique.map((contact) => [contact.number, appUsers.has(contact.number) ? 'app' : 'invite'])));
     } catch (error) {
-      setNotice(error instanceof Error && error.message.toLowerCase().includes('cancel') ? 'Contact selection cancelled.' : 'Contacts permission was not granted. You can use Add manually below.');
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      setNotice(message.includes('cancel') && !Capacitor.isNativePlatform() ? 'Contact selection cancelled. You can use Add manually below.' : 'Contacts could not be loaded. Allow contact access in app settings, then try again.');
     } finally { setLoading(false); }
   };
 

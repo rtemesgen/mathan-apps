@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const memberships = ((data as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; book_enabled: boolean; book_permission: AppPermission; payroll_enabled: boolean; payroll_permission: AppPermission }> | null) ?? []).map((row) => ({
       id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role,
-      appAccess: { book: { app_id: 'book' as AppId, enabled: row.book_enabled, permission: row.member_role === 'owner' ? 'edit' as AppPermission : row.book_permission }, payroll: { app_id: 'payroll' as AppId, enabled: row.payroll_enabled, permission: row.member_role === 'owner' ? 'edit' as AppPermission : row.payroll_permission } },
+      appAccess: { book: { app_id: 'book' as AppId, enabled: row.book_enabled, permission: row.book_permission }, payroll: { app_id: 'payroll' as AppId, enabled: row.payroll_enabled, permission: row.payroll_permission } },
     }));
     setWorkspaces(memberships);
     const current = memberships.find((item) => item.id === (preferredWorkspaceId ?? workspace?.id));

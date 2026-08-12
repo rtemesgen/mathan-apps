@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { emitAppNotification } from '../lib/notifications';
 
 const RELEASES_API = 'https://api.github.com/repos/rtemesgen/mathan-apps/releases/latest';
 type DownloadStatus = 'idle' | 'downloading' | 'ready' | 'error';
@@ -88,6 +89,7 @@ function useUpdateController() {
         setDownloadProgress(0);
         setDownloadStatus(readDownloadStatus(next.version));
         setNoticeVisible(true);
+        emitAppNotification({ title: 'Mathan ERP update available', body: `Version ${next.version} is ready to download.` });
         return next;
       }
       setUpdate(null);

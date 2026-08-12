@@ -20,9 +20,12 @@ export function WorkspaceInvitations({ compact = false }: { compact?: boolean })
   const load = async () => {
     if (!user) return;
     const { data, error: loadError } = await supabase.rpc('list_my_workspace_invitations');
-    if (!loadError) setInvitations((data as Invitation[] | null) ?? []);
+    if (!loadError) {
+      const next = (data as Invitation[] | null) ?? [];
+      setInvitations(next);
+    }
   };
-  useEffect(() => { void load(); }, [user]);
+  useEffect(() => { void load(); }, [user?.id]);
 
   const respond = async (invitation: Invitation, accept: boolean) => {
     setBusy(invitation.invitation_id); setError('');

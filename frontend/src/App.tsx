@@ -8,6 +8,7 @@ import { AuthGate } from './auth/AuthGate';
 import { useAndroidBackButton } from './hooks/useAndroidBackButton';
 import { AppUpdateNotice } from './components/AppUpdateNotice';
 import { AppToast } from './components/AppToast';
+import { AppNotificationCenter } from './components/AppNotificationCenter';
 import { AppUpdateProvider } from './hooks/useAppUpdate';
 import { InviteAcceptance, SettingsPage } from './components/SettingsPage';
 import { CompanySelector } from './components/CompanySelector';
@@ -38,6 +39,7 @@ export default function App() {
           <AndroidNavigationBridge />
           <AppUpdateNotice />
           <AppToast />
+          <AppNotificationCenter />
           <AuthGate>
             <Routes>
               <Route element={<AppShell />}>
