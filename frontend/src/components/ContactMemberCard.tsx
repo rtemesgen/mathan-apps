@@ -4,11 +4,10 @@ import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
+import { getLatestAppDownloadUrl } from '../lib/mobile';
 
 type ContactEntry = { id: string; name: string; number: string };
 type ContactStatus = 'checking' | 'app' | 'added' | 'invited' | 'invite';
-const appLink = () => (import.meta.env.VITE_APP_SHARE_URL as string | undefined)?.trim() || window.location.origin;
-
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || '+';
 }
@@ -58,13 +57,14 @@ export function ContactMemberCard() {
       const appUsers = new Set(((data as Array<{ phone: string }> | null) ?? []).map((item) => normalize(item.phone)));
       setStatuses(Object.fromEntries(unique.map((contact) => [contact.number, appUsers.has(contact.number) ? 'app' : 'invite'])));
     } catch (error) {
-      const message = error instanceof Error ? error.message.toLowerCase() : '';
-      setNotice(message.includes('cancel') && !Capacitor.isNativePlatform() ? 'Contact selection cancelled. You can use Add manually below.' : 'Contacts could not be loaded. Allow contact access in app settings, then try again.');
+      const rawMessage = error instanceof Error ? error.message : '';
+      const message = rawMessage.toLowerCase();
+      setNotice(message.includes('cancel') && !Capacitor.isNativePlatform() ? 'Contact selection cancelled. You can use Add manually below.' : rawMessage.includes('Permission') ? `${rawMessage} Allow Contacts access, then tap Choose from contacts again.` : 'Contacts could not be loaded. Tap Choose from contacts again.');
     } finally { setLoading(false); }
   };
 
-  const sendLink = (channel: 'sms' | 'whatsapp', number: string, name: string) => {
-    const text = encodeURIComponent(`Join me on Mathan ERP. Download or open the app here: ${appLink()}`);
+  const sendLink = async (channel: 'sms' | 'whatsapp', number: string, name: string) => {
+    const text = encodeURIComponent(`Join me on Mathan ERP. Download the app directly here: ${await getLatestAppDownloadUrl()}`);
     window.open(channel === 'whatsapp' ? `https://wa.me/${number.replace(/^\+/, '')}?text=${text}` : `sms:${number}?body=${text}`, '_blank', 'noopener,noreferrer');
     setNotice(`Invite link ready for ${name}.`);
   };

@@ -13,6 +13,24 @@ export function showAppToast(message: string) {
   }
   window.dispatchEvent(new CustomEvent('mathan:toast', { detail: message }));
 }
+
+const LATEST_RELEASE_APK_URL = 'https://github.com/rtemesgen/mathan-apps/releases/latest/download/app-release.apk';
+
+/** Resolve the current APK asset so shared links start the download directly. */
+export async function getLatestAppDownloadUrl() {
+  try {
+    const response = await fetch('https://api.github.com/repos/rtemesgen/mathan-apps/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+    if (response.ok) {
+      const release = await response.json() as { assets?: Array<{ name?: string; browser_download_url?: string }> };
+      const apk = release.assets?.find((asset) => asset.name?.toLowerCase() === 'app-release.apk' || asset.name?.toLowerCase().endsWith('.apk'));
+      if (apk?.browser_download_url) return apk.browser_download_url;
+    }
+  } catch {
+    // Use GitHub's stable latest-release redirect below when the API is unavailable.
+  }
+  const configuredUrl = (import.meta.env.VITE_APP_SHARE_URL as string | undefined)?.trim();
+  return configuredUrl && (configuredUrl.toLowerCase().includes('.apk') || configuredUrl.includes('/releases/latest/download/')) ? configuredUrl : LATEST_RELEASE_APK_URL;
+}
 const FileSaver = registerPlugin<{ saveAndOpen(options: { filename: string; mimeType: string; data: string }): Promise<void> }>('FileSaver');
 
 function toSafeFilename(filename: string) {
@@ -226,8 +244,8 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
 }
 
 export async function shareApp() {
-  const url = import.meta.env.VITE_APP_SHARE_URL as string | undefined;
-  const message = 'Mathan ERP — standalone Cash Book and Payroll business tools.';
+  const url = await getLatestAppDownloadUrl();
+  const message = 'Download Mathan ERP directly — Cash Book and Payroll business tools.';
   if (isNativeMobile()) {
     await Share.share({ title: 'Share Mathan ERP', text: message, ...(url ? { url } : {}), dialogTitle: 'Share Mathan ERP' });
     return;

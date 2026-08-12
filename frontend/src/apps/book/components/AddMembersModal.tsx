@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Contact, Mail, MessageCircle, Phone, UserPlus, Users, X } from 'lucide-react';
+import { Contacts } from '@capacitor-community/contacts';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../auth/AuthProvider';
-import { showAppToast } from '../../../lib/mobile';
+import { getLatestAppDownloadUrl } from '../../../lib/mobile';
 import { Book } from '../types';
 
 type Member = { user_id: string; email: string; display_name: string; role: 'owner' | 'member'; book_permission: 'none' | 'view' | 'edit' };
 type ContactEntry = { name?: string[]; tel?: string[]; email?: string[] };
 
-const appLink = () => (import.meta.env.VITE_APP_SHARE_URL as string | undefined)?.trim() || window.location.origin;
-const inviteText = (bookName: string) => `Join ${bookName} on Mathan ERP to work together: ${appLink()}`;
+const inviteText = (bookName: string, appLink: string) => `Join ${bookName} on Mathan ERP to work together. Download the app directly here: ${appLink}`;
 
 export function AddMembersModal({ book, onClose }: { book: Book | null; onClose: () => void }) {
   const { workspace, isOwner } = useAuth();
@@ -45,14 +46,27 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
   };
 
   const chooseContacts = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const current = await Contacts.checkPermissions();
+        const permission = current.contacts === 'granted' || current.contacts === 'limited' ? current : await Contacts.requestPermissions();
+        if (permission.contacts !== 'granted' && permission.contacts !== 'limited') { setError('Contacts permission is required. Allow it in Android settings, then try again.'); return; }
+        const result = await Contacts.getContacts({ projection: { name: true, phones: true, emails: true } });
+        setContacts(result.contacts.map((contact) => ({ name: contact.name?.display ? [contact.name.display] : [], tel: (contact.phones ?? []).map((phone) => phone.number ?? '').filter(Boolean), email: (contact.emails ?? []).map((item) => item.address ?? '').filter(Boolean) })));
+        setNotice('Choose SMS or WhatsApp beside a contact to send the direct app link.');
+      } catch (error) {
+        setError(error instanceof Error ? `${error.message} Try allowing Contacts access again.` : 'Contacts could not be loaded. Try again.');
+      }
+      return;
+    }
     const contactsApi = (navigator as Navigator & { contacts?: { select: (properties: string[], options: { multiple: boolean }) => Promise<ContactEntry[]> } }).contacts;
     if (!contactsApi) { setError('Contact selection is not available here. Enter an email or phone number below.'); return; }
     try { setContacts(await contactsApi.select(['name', 'tel', 'email'], { multiple: true })); setNotice('Choose Invite beside a contact to send the app link.'); } catch { setNotice('Contact selection cancelled.'); }
   };
 
-  const sendLink = (channel: 'sms' | 'whatsapp', contact: ContactEntry) => {
+  const sendLink = async (channel: 'sms' | 'whatsapp', contact: ContactEntry) => {
     const number = (contact.tel?.[0] ?? '').replace(/[^0-9+]/g, '');
-    const text = encodeURIComponent(inviteText(book.name));
+    const text = encodeURIComponent(inviteText(book.name, await getLatestAppDownloadUrl()));
     const url = channel === 'whatsapp' ? `https://wa.me/${number.replace(/^\+/, '')}?text=${text}` : `sms:${number}?body=${text}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
@@ -65,7 +79,7 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
     if (inviteError) setError(inviteError.message);
     else {
       const token = (data as Array<{ invite_token: string }> | null)?.[0]?.invite_token;
-      const link = token ? `${window.location.origin}/invite/${token}` : appLink();
+      const link = token ? `${window.location.origin}/invite/${token}` : await getLatestAppDownloadUrl();
       setNotice('Invite created. Choose how to send it.');
       setEmail('');
       window.open(`mailto:${encodeURIComponent(email.trim())}?subject=${encodeURIComponent(`Join ${book.name} on Mathan ERP`)}&body=${encodeURIComponent(`You are invited to join ${book.name} on Mathan ERP: ${link}`)}`, '_blank', 'noopener,noreferrer');
