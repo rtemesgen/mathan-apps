@@ -76,8 +76,16 @@ function LegacyImportGate({ children }: { children: React.ReactNode }) {
   const finish = () => { localStorage.setItem(`mathan_erp_import_handled_${workspace.id}`, 'true'); setHandled(true); };
   const importRecords = async () => {
     for (const record of records) {
-      await supabase.from('app_state_snapshots').upsert({ workspace_id: workspace.id, domain: record.domain, payload: record.value });
-      await writeOffline(`${workspace.id}:${record.cache}`, record.value);
+      const { data, error } = await supabase.rpc('write_app_state_snapshot', {
+        target_workspace: workspace.id,
+        target_domain: record.domain,
+        expected_revision: 0,
+        target_payload: record.value,
+        audit_action: 'legacy_browser_import',
+        affected_client_ids: [],
+      });
+      const result = (data as Array<{ status: string; payload: unknown }> | null)?.[0];
+      if (!error && result?.status === 'written') await writeOffline(`${workspace.id}:${record.cache}`, record.value);
     }
     finish();
   };
