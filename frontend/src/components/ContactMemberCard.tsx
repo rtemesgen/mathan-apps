@@ -78,7 +78,21 @@ export function ContactMemberCard() {
     setNotice(`${contact.name} was invited. They must accept before joining your company.`);
   };
 
-  const filtered = useMemo(() => contacts.filter((contact) => `${contact.name} ${contact.number}`.toLowerCase().includes(search.toLowerCase())), [contacts, search]);
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return contacts
+      .filter((contact) => !query || `${contact.name} ${contact.number}`.toLowerCase().includes(query))
+      .sort((left, right) => {
+        const leftName = left.name.toLowerCase();
+        const rightName = right.name.toLowerCase();
+        if (query) {
+          const rank = (name: string, number: string) => name.startsWith(query) ? 0 : name.includes(query) ? 1 : number.startsWith(query) ? 2 : 3;
+          const rankDifference = rank(leftName, left.number) - rank(rightName, right.number);
+          if (rankDifference !== 0) return rankDifference;
+        }
+        return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' }) || left.number.localeCompare(right.number);
+      });
+  }, [contacts, search]);
   const appContacts = filtered.filter((contact) => statuses[contact.number] === 'app' || statuses[contact.number] === 'added' || statuses[contact.number] === 'invited' || statuses[contact.number] === 'checking');
   const inviteContacts = filtered.filter((contact) => statuses[contact.number] === 'invite');
 

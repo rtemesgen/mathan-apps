@@ -31,8 +31,36 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
     })();
   }, [book, workspace?.id, isOwner]);
 
-  const filteredMembers = useMemo(() => members.filter((member) => `${member.display_name} ${member.email}`.toLowerCase().includes(search.toLowerCase())), [members, search]);
-  const filteredContacts = useMemo(() => contacts.filter((contact) => `${contact.name?.[0] ?? ''} ${contact.tel?.[0] ?? ''} ${contact.email?.[0] ?? ''}`.toLowerCase().includes(search.toLowerCase())), [contacts, search]);
+  const filteredMembers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return members
+      .filter((member) => !query || `${member.display_name} ${member.email}`.toLowerCase().includes(query))
+      .sort((left, right) => {
+        const leftName = (left.display_name || left.email).toLowerCase();
+        const rightName = (right.display_name || right.email).toLowerCase();
+        if (query) {
+          const rank = (name: string, email: string) => name.startsWith(query) ? 0 : name.includes(query) ? 1 : email.startsWith(query) ? 2 : 3;
+          const rankDifference = rank(leftName, left.email) - rank(rightName, right.email);
+          if (rankDifference !== 0) return rankDifference;
+        }
+        return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' }) || left.email.localeCompare(right.email);
+      });
+  }, [members, search]);
+  const filteredContacts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return contacts
+      .filter((contact) => !query || `${contact.name?.[0] ?? ''} ${contact.tel?.[0] ?? ''} ${contact.email?.[0] ?? ''}`.toLowerCase().includes(query))
+      .sort((left, right) => {
+        const leftName = (left.name?.[0] || left.tel?.[0] || left.email?.[0] || '').toLowerCase();
+        const rightName = (right.name?.[0] || right.tel?.[0] || right.email?.[0] || '').toLowerCase();
+        if (query) {
+          const rank = (name: string, phone: string, email: string) => name.startsWith(query) ? 0 : name.includes(query) ? 1 : phone.startsWith(query) || email.startsWith(query) ? 2 : 3;
+          const rankDifference = rank(leftName, left.tel?.[0] ?? '', left.email?.[0] ?? '') - rank(rightName, right.tel?.[0] ?? '', right.email?.[0] ?? '');
+          if (rankDifference !== 0) return rankDifference;
+        }
+        return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' }) || (left.tel?.[0] ?? '').localeCompare(right.tel?.[0] ?? '');
+      });
+  }, [contacts, search]);
 
   if (!book) return null;
   if (!isOwner) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={onClose}><div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between"><h2 className="text-sm font-bold">Add members</h2><button onClick={onClose}><X className="h-4 w-4" /></button></div><p className="mt-3 text-xs text-zinc-500">Only company owners can add people. Ask the owner to invite members from Workspace Settings.</p></div></div>;
