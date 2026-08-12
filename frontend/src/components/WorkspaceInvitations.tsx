@@ -31,7 +31,7 @@ export function WorkspaceInvitations({ compact = false }: { compact?: boolean })
     setBusy(invitation.invitation_id); setError('');
     const { error: responseError } = await supabase.rpc('respond_to_workspace_invitation', { target_invitation: invitation.invitation_id, accept_invitation: accept });
     if (responseError) setError(responseError.message);
-    else { setInvitations((current) => current.filter((item) => item.invitation_id !== invitation.invitation_id)); if (accept) await refreshWorkspace(invitation.workspace_id); }
+    else { setInvitations((current) => current.filter((item) => item.invitation_id !== invitation.invitation_id)); window.dispatchEvent(new Event('mathan:invitations-changed')); if (accept) await refreshWorkspace(invitation.workspace_id); }
     setBusy(null);
   };
 

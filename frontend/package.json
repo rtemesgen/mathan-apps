@@ -9,7 +9,8 @@
     "build:standalone": "VITE_STANDALONE=true vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "test:accounting": "tsx tests/accounting.test.ts"
+    "test:accounting": "node --import tsx tests/accounting.test.ts",
+    "test": "npm run lint && npm run test:accounting"
   },
   "dependencies": {
     "@capacitor-community/contacts": "^7.2.0",
