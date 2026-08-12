@@ -5,6 +5,7 @@ import { shareApp } from '../lib/mobile';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 import { AppVersionPanel } from './AppVersionPanel';
 import { useAuth } from '../auth/AuthProvider';
+import { WorkspaceInvitations } from './WorkspaceInvitations';
 
 export function AppLauncher() {
   const { workspace, canViewApp } = useAuth();
@@ -13,6 +14,7 @@ export function AppLauncher() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       {workspace?.name && <p className="mb-5 flex items-center justify-center gap-2 text-center font-serif text-2xl font-bold text-zinc-900 sm:text-3xl"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: workspace.accent_color }} />{workspace.name}</p>}
+      <WorkspaceInvitations />
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {ERP_APPS.filter((app) => canViewApp(app.id)).map((app) => {
           const Icon = app.icon;

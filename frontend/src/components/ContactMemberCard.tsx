@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
 
 type ContactEntry = { id: string; name: string; number: string };
-type ContactStatus = 'checking' | 'app' | 'added' | 'invite';
+type ContactStatus = 'checking' | 'app' | 'added' | 'invited' | 'invite';
 const appLink = () => (import.meta.env.VITE_APP_SHARE_URL as string | undefined)?.trim() || window.location.origin;
 
 function initials(name: string) {
@@ -64,14 +64,14 @@ export function ContactMemberCard() {
   const addContact = async (contact: ContactEntry) => {
     if (!workspace) return;
     setStatuses((current) => ({ ...current, [contact.number]: 'checking' }));
-    const { data, error } = await supabase.rpc('add_workspace_member_by_phone', { target_workspace: workspace.id, target_phone: contact.number, target_book_permission: 'edit' });
+    const { data, error } = await supabase.rpc('create_workspace_phone_invitation', { target_workspace: workspace.id, target_phone: contact.number });
     if (error || !data) { setStatuses((current) => ({ ...current, [contact.number]: 'invite' })); setNotice(error?.message || 'This contact is not registered yet.'); return; }
-    setStatuses((current) => ({ ...current, [contact.number]: 'added' }));
-    setNotice(`${contact.name} was added to your company.`);
+    setStatuses((current) => ({ ...current, [contact.number]: 'invited' }));
+    setNotice(`${contact.name} was invited. They must accept before joining your company.`);
   };
 
   const filtered = useMemo(() => contacts.filter((contact) => `${contact.name} ${contact.number}`.toLowerCase().includes(search.toLowerCase())), [contacts, search]);
-  const appContacts = filtered.filter((contact) => statuses[contact.number] === 'app' || statuses[contact.number] === 'added' || statuses[contact.number] === 'checking');
+  const appContacts = filtered.filter((contact) => statuses[contact.number] === 'app' || statuses[contact.number] === 'added' || statuses[contact.number] === 'invited' || statuses[contact.number] === 'checking');
   const inviteContacts = filtered.filter((contact) => statuses[contact.number] === 'invite');
 
   return <>
@@ -81,5 +81,5 @@ export function ContactMemberCard() {
 }
 
 function ContactGroup({ title, contacts, statuses, onAdd, onInvite, empty }: { title: string; contacts: ContactEntry[]; statuses: Record<string, ContactStatus>; onAdd: (contact: ContactEntry) => void; onInvite: (channel: 'sms' | 'whatsapp', number: string, name: string) => void; empty: string }) {
-  return <section className="mb-5"><h2 className="mb-2 px-1 text-xs font-extrabold uppercase tracking-wider text-zinc-500">{title} <span className="font-normal">({contacts.length})</span></h2>{contacts.length === 0 ? <p className="rounded-xl bg-white p-4 text-sm text-zinc-400">{empty}</p> : <div className="overflow-hidden rounded-2xl border border-[#e6e2d6] bg-white shadow-sm">{contacts.map((contact) => { const status = statuses[contact.number]; return <div key={contact.id} className="flex items-center gap-3 border-b border-[#f0eee7] px-3 py-3 last:border-b-0"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800">{initials(contact.name)}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{contact.name}</p><p className="truncate text-xs text-zinc-500">{contact.number}</p></div>{status === 'app' && <button type="button" onClick={() => onAdd(contact)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white"><UserPlus className="h-3.5 w-3.5" /> Add</button>}{status === 'added' && <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700"><Check className="h-4 w-4" /> Added</span>}{status === 'checking' && <span className="text-xs text-zinc-500">Checking…</span>}{status === 'invite' && <div className="flex gap-1.5"><button type="button" onClick={() => onInvite('sms', contact.number, contact.name)} className="rounded-lg border border-indigo-200 px-2.5 py-2 text-xs font-bold text-indigo-700">SMS</button><button type="button" onClick={() => onInvite('whatsapp', contact.number, contact.name)} className="rounded-lg bg-[#25D366] px-2.5 py-2 text-xs font-bold text-white"><MessageCircle className="mr-1 inline h-3.5 w-3.5" /> Invite</button></div>}</div>; })}</div>}</section>;
+  return <section className="mb-5"><h2 className="mb-2 px-1 text-xs font-extrabold uppercase tracking-wider text-zinc-500">{title} <span className="font-normal">({contacts.length})</span></h2>{contacts.length === 0 ? <p className="rounded-xl bg-white p-4 text-sm text-zinc-400">{empty}</p> : <div className="overflow-hidden rounded-2xl border border-[#e6e2d6] bg-white shadow-sm">{contacts.map((contact) => { const status = statuses[contact.number]; return <div key={contact.id} className="flex items-center gap-3 border-b border-[#f0eee7] px-3 py-3 last:border-b-0"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800">{initials(contact.name)}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{contact.name}</p><p className="truncate text-xs text-zinc-500">{contact.number}</p></div>{status === 'app' && <button type="button" onClick={() => onAdd(contact)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white"><UserPlus className="h-3.5 w-3.5" /> Invite</button>}{(status === 'added' || status === 'invited') && <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700"><Check className="h-4 w-4" /> {status === 'invited' ? 'Invited' : 'Added'}</span>}{status === 'checking' && <span className="text-xs text-zinc-500">Checking…</span>}{status === 'invite' && <div className="flex gap-1.5"><button type="button" onClick={() => onInvite('sms', contact.number, contact.name)} className="rounded-lg border border-indigo-200 px-2.5 py-2 text-xs font-bold text-indigo-700">SMS</button><button type="button" onClick={() => onInvite('whatsapp', contact.number, contact.name)} className="rounded-lg bg-[#25D366] px-2.5 py-2 text-xs font-bold text-white"><MessageCircle className="mr-1 inline h-3.5 w-3.5" /> Invite</button></div>}</div>; })}</div>}</section>;
 }
