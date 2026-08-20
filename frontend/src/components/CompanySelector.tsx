@@ -3,6 +3,7 @@ import { ArrowRight, Building2, Check, Plus, ShieldCheck, X } from 'lucide-react
 import { useNavigate } from 'react-router-dom';
 import { useAuth, type AppId } from '../auth/AuthProvider';
 import { supabase } from '../lib/supabase';
+import { showAppToast } from '../lib/mobile';
 
 const appNames: Record<AppId, string> = { book: 'Cash Book', payroll: 'Payroll' };
 
@@ -36,12 +37,19 @@ export function CompanySelector() {
     const cleaned = name.trim();
     if (cleaned.length < 2) { setError('Enter a company name with at least 2 characters.'); return; }
     setBusy(true); setError('');
-    const { data, error: createError } = await supabase.rpc('create_workspace', { workspace_name: cleaned });
-    if (createError) { setError(createError.message); setBusy(false); return; }
-    const created = data as { id?: string } | null;
-    await refreshWorkspace(created?.id);
-    navigate('/');
-    setBusy(false);
+    try {
+      const { data, error: createError } = await supabase.rpc('create_workspace', { workspace_name: cleaned });
+      if (createError) throw createError;
+      const created = data as { id?: string } | null;
+      const selected = await refreshWorkspace(created?.id);
+      if (!selected) throw new Error('Workspace refresh failed');
+      showAppToast(`${cleaned} created successfully`);
+      navigate('/');
+    } catch {
+      setError('The company could not be created. Check your connection and try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const renderCompany = (item: typeof workspaces[number]) => <button key={item.id} onClick={() => selectCompany(item.id)} className={`group w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${item.id === workspace?.id ? 'border-zinc-900 ring-2 ring-zinc-900/5' : 'border-[#e6e2d6]'}`}>
