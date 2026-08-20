@@ -1,3 +1,5 @@
+import { readStorageJson, writeStorage } from './safeStorage';
+
 const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
 
@@ -19,8 +21,7 @@ export async function readOffline<T>(key: string): Promise<T | null> {
       request.onerror = () => reject(request.error);
     });
   } catch {
-    const raw = localStorage.getItem(`mathan_erp_offline_${key}`);
-    return raw ? JSON.parse(raw) as T : null;
+    return readStorageJson<T>(`mathan_erp_offline_${key}`);
   }
 }
 
@@ -33,7 +34,8 @@ export async function writeOffline<T>(key: string, value: T): Promise<void> {
       request.onerror = () => reject(request.error);
     });
   } catch {
-    localStorage.setItem(`mathan_erp_offline_${key}`, JSON.stringify(value));
+    if (!writeStorage(`mathan_erp_offline_${key}`, JSON.stringify(value))) {
+      throw new Error('This device could not save your changes. Free some storage space and try again.');
+    }
   }
 }
-

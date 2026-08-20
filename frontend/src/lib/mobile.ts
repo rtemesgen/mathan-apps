@@ -6,12 +6,12 @@ import { jsPDF } from 'jspdf';
 
 export const isNativeMobile = () => Capacitor.isNativePlatform();
 
-export function showAppToast(message: string) {
+export function showAppToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
   if (isNativeMobile()) {
     void Toast.show({ text: message, duration: 'short' });
     return;
   }
-  window.dispatchEvent(new CustomEvent('mathan:toast', { detail: message }));
+  window.dispatchEvent(new CustomEvent('mathan:toast', { detail: { message, type } }));
 }
 
 const LATEST_RELEASE_APK_URL = 'https://github.com/rtemesgen/mathan-apps/releases/latest/download/app-release.apk';
@@ -254,8 +254,9 @@ export async function shareApp() {
     await navigator.share({ title: 'Mathan ERP', text: message, ...(url ? { url } : {}) });
     return;
   }
-  await navigator.clipboard?.writeText(url ? `${message}\n${url}` : message);
-  window.alert('Sharing is not available here. The app description was copied to your clipboard.');
+  if (!navigator.clipboard) throw new Error('Sharing and clipboard access are not available in this browser.');
+  await navigator.clipboard.writeText(url ? `${message}\n${url}` : message);
+  showAppToast('App details copied to your clipboard.', 'info');
 }
 
 export async function shareInvite(link: string, email: string) {
@@ -268,13 +269,14 @@ export async function shareInvite(link: string, email: string) {
     await navigator.share({ title: 'Company invitation', text, url: link });
     return;
   }
-  await navigator.clipboard?.writeText(`${text}\n${link}`);
-  window.alert('Sharing is not available here. The invitation was copied to your clipboard.');
+  if (!navigator.clipboard) throw new Error('Sharing and clipboard access are not available in this browser.');
+  await navigator.clipboard.writeText(`${text}\n${link}`);
+  showAppToast('Invitation copied to your clipboard.', 'info');
 }
 
 export function printOrExplain() {
   if (isNativeMobile()) {
-    window.alert('Printing is not available inside the Android app. Export the report as CSV to share or save it.');
+    showAppToast('Printing is unavailable in the Android app. Export the report instead.', 'info');
     return;
   }
   window.print();

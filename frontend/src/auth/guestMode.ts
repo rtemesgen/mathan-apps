@@ -1,13 +1,15 @@
+import { readStorage, removeStorage, writeStorage } from '../lib/safeStorage';
+
 const GUEST_MODE_KEY = 'mathan_erp_guest_mode';
 
 export function isGuestMode() {
-  return typeof localStorage !== 'undefined' && localStorage.getItem(GUEST_MODE_KEY) === 'true';
+  return readStorage(GUEST_MODE_KEY) === 'true';
 }
 
 export function enableGuestMode() {
-  localStorage.setItem(GUEST_MODE_KEY, 'true');
+  writeStorage(GUEST_MODE_KEY, 'true');
 }
 
 export function disableGuestMode() {
-  localStorage.removeItem(GUEST_MODE_KEY);
+  removeStorage(GUEST_MODE_KEY);
 }
