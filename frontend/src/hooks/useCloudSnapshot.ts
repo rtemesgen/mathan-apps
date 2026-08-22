@@ -10,8 +10,20 @@ async function syncQueue(workspaceId: string) {
   const remaining = [];
   for (const mutation of queue) {
     if (mutation.table !== 'app_state_snapshots' || mutation.payload.workspace_id !== workspaceId) { remaining.push(mutation); continue; }
-    const { error } = await supabase.from('app_state_snapshots').upsert(mutation.payload);
-    if (error) remaining.push(mutation);
+    const { data, error } = await supabase.rpc('write_app_state_snapshot', {
+      target_workspace: workspaceId,
+      target_domain: mutation.payload.domain,
+      expected_revision: mutation.payload.expected_revision ?? 0,
+      target_payload: mutation.payload.payload,
+      audit_action: mutation.payload.audit_action ?? 'snapshot_written_offline',
+      affected_client_ids: mutation.payload.affected_client_ids ?? [],
+    });
+    const result = (data as Array<{ status: string; revision: number; payload: unknown }> | null)?.[0];
+    if (error || !result || result.status === 'conflict') {
+      if (result?.status === 'conflict') {
+        window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: mutation.payload.domain, remote: result.payload, revision: result.revision } }));
+      } else remaining.push(mutation);
+    }
   }
   await replaceQueue(remaining);
 }
@@ -23,6 +35,7 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
   const [value, setValue] = useState<T>(initialValue);
   const [ready, setReady] = useState(false);
   const hydrated = useRef(false);
+  const revision = useRef(0);
   const storageKey = `${standalone ? 'standalone' : workspace?.id ?? 'anonymous'}:${domain}:${key}`;
   useEffect(() => {
     let active = true; hydrated.current = false; setReady(false);
@@ -30,8 +43,9 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
       const local = await readOffline<T>(storageKey);
       if (active && local !== null) setValue(local);
       if (workspace && !standalone && navigator.onLine) {
-        const { data } = await supabase.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', `${domain}:${key}`).maybeSingle();
-        const remote = data as unknown as { payload?: T } | null;
+        const { data } = await supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', workspace.id).eq('domain', `${domain}:${key}`).maybeSingle();
+        const remote = data as unknown as { payload?: T; revision?: number } | null;
+        revision.current = remote?.revision ?? 0;
         if (active && remote?.payload !== undefined) { setValue(remote.payload); await writeOffline(storageKey, remote.payload); }
         await syncQueue(workspace.id);
       }
@@ -46,10 +60,21 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
       void writeOffline(storageKey, value);
       return;
     }
-    const payload = { workspace_id: workspace.id, domain: `${domain}:${key}`, payload: value };
+    const payload = { workspace_id: workspace.id, domain: `${domain}:${key}`, payload: value, expected_revision: revision.current };
     void writeOffline(storageKey, value);
     void (async () => {
-      if (navigator.onLine) { const { error } = await supabase.from('app_state_snapshots').upsert(payload); if (!error) return; }
+      if (navigator.onLine) {
+        const { data, error } = await supabase.rpc('write_app_state_snapshot', {
+          target_workspace: workspace.id, target_domain: payload.domain, expected_revision: payload.expected_revision,
+          target_payload: payload.payload, audit_action: 'snapshot_written', affected_client_ids: [],
+        });
+        const result = (data as Array<{ status: string; revision: number; payload: T }> | null)?.[0];
+        if (!error && result?.status === 'written') { revision.current = result.revision; return; }
+        if (result?.status === 'conflict') {
+          window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: payload.domain, remote: result.payload, revision: result.revision } }));
+          return;
+        }
+      }
       await enqueueMutation({ table: 'app_state_snapshots', operation: 'upsert', payload });
     })();
   }, [value, workspace?.id, domain, key, storageKey, appId, standalone, canEditApp]);

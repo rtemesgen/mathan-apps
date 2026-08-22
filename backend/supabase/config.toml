@@ -10,3 +10,5 @@ enabled = true
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["mathanerp://auth/callback"]
 
+[functions.system-admin]
+verify_jwt = true

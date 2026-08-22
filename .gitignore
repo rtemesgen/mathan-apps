@@ -13,6 +13,8 @@ node_modules/
 mobile/node_modules/
 dist/
 coverage/
+frontend/playwright-report/
+frontend/test-results/
 *.tsbuildinfo
 .vite/
 

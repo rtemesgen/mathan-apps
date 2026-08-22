@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Contact, Mail, MessageCircle, Phone, UserPlus, Users, X } from 'lucide-react';
+import { Contacts } from '@capacitor-community/contacts';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../auth/AuthProvider';
-import { showAppToast } from '../../../lib/mobile';
+import { getLatestAppDownloadUrl } from '../../../lib/mobile';
 import { Book } from '../types';
 
 type Member = { user_id: string; email: string; display_name: string; role: 'owner' | 'member'; book_permission: 'none' | 'view' | 'edit' };
 type ContactEntry = { name?: string[]; tel?: string[]; email?: string[] };
 
-const appLink = () => (import.meta.env.VITE_APP_SHARE_URL as string | undefined)?.trim() || window.location.origin;
-const inviteText = (bookName: string) => `Join ${bookName} on Mathan ERP to work together: ${appLink()}`;
+const inviteText = (bookName: string, appLink: string) => `Join ${bookName} on Mathan ERP to work together. Download the app directly here: ${appLink}`;
 
 export function AddMembersModal({ book, onClose }: { book: Book | null; onClose: () => void }) {
   const { workspace, isOwner } = useAuth();
@@ -30,8 +31,36 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
     })();
   }, [book, workspace?.id, isOwner]);
 
-  const filteredMembers = useMemo(() => members.filter((member) => `${member.display_name} ${member.email}`.toLowerCase().includes(search.toLowerCase())), [members, search]);
-  const filteredContacts = useMemo(() => contacts.filter((contact) => `${contact.name?.[0] ?? ''} ${contact.tel?.[0] ?? ''} ${contact.email?.[0] ?? ''}`.toLowerCase().includes(search.toLowerCase())), [contacts, search]);
+  const filteredMembers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return members
+      .filter((member) => !query || `${member.display_name} ${member.email}`.toLowerCase().includes(query))
+      .sort((left, right) => {
+        const leftName = (left.display_name || left.email).toLowerCase();
+        const rightName = (right.display_name || right.email).toLowerCase();
+        if (query) {
+          const rank = (name: string, email: string) => name.startsWith(query) ? 0 : name.includes(query) ? 1 : email.startsWith(query) ? 2 : 3;
+          const rankDifference = rank(leftName, left.email) - rank(rightName, right.email);
+          if (rankDifference !== 0) return rankDifference;
+        }
+        return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' }) || left.email.localeCompare(right.email);
+      });
+  }, [members, search]);
+  const filteredContacts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return contacts
+      .filter((contact) => !query || `${contact.name?.[0] ?? ''} ${contact.tel?.[0] ?? ''} ${contact.email?.[0] ?? ''}`.toLowerCase().includes(query))
+      .sort((left, right) => {
+        const leftName = (left.name?.[0] || left.tel?.[0] || left.email?.[0] || '').toLowerCase();
+        const rightName = (right.name?.[0] || right.tel?.[0] || right.email?.[0] || '').toLowerCase();
+        if (query) {
+          const rank = (name: string, phone: string, email: string) => name.startsWith(query) ? 0 : name.includes(query) ? 1 : phone.startsWith(query) || email.startsWith(query) ? 2 : 3;
+          const rankDifference = rank(leftName, left.tel?.[0] ?? '', left.email?.[0] ?? '') - rank(rightName, right.tel?.[0] ?? '', right.email?.[0] ?? '');
+          if (rankDifference !== 0) return rankDifference;
+        }
+        return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' }) || (left.tel?.[0] ?? '').localeCompare(right.tel?.[0] ?? '');
+      });
+  }, [contacts, search]);
 
   if (!book) return null;
   if (!isOwner) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={onClose}><div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between"><h2 className="text-sm font-bold">Add members</h2><button onClick={onClose}><X className="h-4 w-4" /></button></div><p className="mt-3 text-xs text-zinc-500">Only company owners can add people. Ask the owner to invite members from Workspace Settings.</p></div></div>;
@@ -45,14 +74,27 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
   };
 
   const chooseContacts = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const current = await Contacts.checkPermissions();
+        const permission = current.contacts === 'granted' || current.contacts === 'limited' ? current : await Contacts.requestPermissions();
+        if (permission.contacts !== 'granted' && permission.contacts !== 'limited') { setError('Contacts permission is required. Allow it in Android settings, then try again.'); return; }
+        const result = await Contacts.getContacts({ projection: { name: true, phones: true, emails: true } });
+        setContacts(result.contacts.map((contact) => ({ name: contact.name?.display ? [contact.name.display] : [], tel: (contact.phones ?? []).map((phone) => phone.number ?? '').filter(Boolean), email: (contact.emails ?? []).map((item) => item.address ?? '').filter(Boolean) })));
+        setNotice('Choose SMS or WhatsApp beside a contact to send the direct app link.');
+      } catch (error) {
+        setError(error instanceof Error ? `${error.message} Try allowing Contacts access again.` : 'Contacts could not be loaded. Try again.');
+      }
+      return;
+    }
     const contactsApi = (navigator as Navigator & { contacts?: { select: (properties: string[], options: { multiple: boolean }) => Promise<ContactEntry[]> } }).contacts;
     if (!contactsApi) { setError('Contact selection is not available here. Enter an email or phone number below.'); return; }
     try { setContacts(await contactsApi.select(['name', 'tel', 'email'], { multiple: true })); setNotice('Choose Invite beside a contact to send the app link.'); } catch { setNotice('Contact selection cancelled.'); }
   };
 
-  const sendLink = (channel: 'sms' | 'whatsapp', contact: ContactEntry) => {
+  const sendLink = async (channel: 'sms' | 'whatsapp', contact: ContactEntry) => {
     const number = (contact.tel?.[0] ?? '').replace(/[^0-9+]/g, '');
-    const text = encodeURIComponent(inviteText(book.name));
+    const text = encodeURIComponent(inviteText(book.name, await getLatestAppDownloadUrl()));
     const url = channel === 'whatsapp' ? `https://wa.me/${number.replace(/^\+/, '')}?text=${text}` : `sms:${number}?body=${text}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
@@ -65,7 +107,7 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
     if (inviteError) setError(inviteError.message);
     else {
       const token = (data as Array<{ invite_token: string }> | null)?.[0]?.invite_token;
-      const link = token ? `${window.location.origin}/invite/${token}` : appLink();
+      const link = token ? `${window.location.origin}/invite/${token}` : await getLatestAppDownloadUrl();
       setNotice('Invite created. Choose how to send it.');
       setEmail('');
       window.open(`mailto:${encodeURIComponent(email.trim())}?subject=${encodeURIComponent(`Join ${book.name} on Mathan ERP`)}&body=${encodeURIComponent(`You are invited to join ${book.name} on Mathan ERP: ${link}`)}`, '_blank', 'noopener,noreferrer');

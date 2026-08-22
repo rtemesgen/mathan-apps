@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const viteEnv: Record<string, string | undefined> = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {};
+const url = viteEnv.VITE_SUPABASE_URL;
+const key = viteEnv.VITE_SUPABASE_ANON_KEY;
 
 function cleanEnvValue(value: unknown) {
   return typeof value === 'string' ? value.trim().replace(/^("|')|("|')$/g, '') : '';

@@ -21,6 +21,20 @@ The root application owns routing and the shared Mathan ERP shell. Cash Book and
 
 Supabase migrations live in `../backend/supabase/migrations`. Apply them to a new Supabase project before using authentication or cloud sync. The first signed-in session detects compatible legacy browser data and offers a one-time import into the selected workspace.
 
+## Full-stack browser tests
+
+The Playwright suite runs against the isolated local Supabase stack, including Auth, RLS, Storage, the `system-admin` Edge Function, encrypted backup/restore, and regression checks for Cash Book, Payroll, and Settings.
+
+```bash
+cd ../backend
+npx supabase start
+cd ../frontend
+npx playwright install chromium
+npm run test:e2e
+```
+
+The suite deletes and recreates fixture data only in the local Supabase project. Never point these tests at a hosted production project.
+
 ## Mobile app
 
 The native Capacitor Android wrapper is in [`../mobile`](../mobile/README.md). It reuses this frontend build, the same Supabase project, browser offline persistence, and Android back-button behavior.

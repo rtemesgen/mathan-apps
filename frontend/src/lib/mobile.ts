@@ -13,7 +13,28 @@ export function showAppToast(message: string) {
   }
   window.dispatchEvent(new CustomEvent('mathan:toast', { detail: message }));
 }
-const FileSaver = registerPlugin<{ saveAndOpen(options: { filename: string; mimeType: string; data: string }): Promise<void> }>('FileSaver');
+
+const LATEST_RELEASE_APK_URL = 'https://github.com/rtemesgen/mathan-apps/releases/latest/download/app-release.apk';
+
+/** Resolve the current APK asset so shared links start the download directly. */
+export async function getLatestAppDownloadUrl() {
+  try {
+    const response = await fetch('https://api.github.com/repos/rtemesgen/mathan-apps/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+    if (response.ok) {
+      const release = await response.json() as { assets?: Array<{ name?: string; browser_download_url?: string }> };
+      const apk = release.assets?.find((asset) => asset.name?.toLowerCase() === 'app-release.apk' || asset.name?.toLowerCase().endsWith('.apk'));
+      if (apk?.browser_download_url) return apk.browser_download_url;
+    }
+  } catch {
+    // Use GitHub's stable latest-release redirect below when the API is unavailable.
+  }
+  const configuredUrl = (import.meta.env.VITE_APP_SHARE_URL as string | undefined)?.trim();
+  return configuredUrl && (configuredUrl.toLowerCase().includes('.apk') || configuredUrl.includes('/releases/latest/download/')) ? configuredUrl : LATEST_RELEASE_APK_URL;
+}
+const FileSaver = registerPlugin<{
+  saveAndOpen(options: { filename: string; mimeType: string; data: string }): Promise<void>;
+  save(options: { filename: string; mimeType: string; data: string }): Promise<{ uri?: string }>;
+}>('FileSaver');
 
 function toSafeFilename(filename: string) {
   return filename.replace(/[^a-z0-9._-]+/gi, '_');
@@ -43,6 +64,20 @@ export async function saveTextFile(filename: string, content: string, type = 'te
   }
 
   await FileSaver.saveAndOpen({ filename: toSafeFilename(filename), mimeType: type, data: encodeUtf8(content) });
+}
+
+export async function saveBinaryFile(filename: string, mimeType: string, bytes: Uint8Array) {
+  if (!isNativeMobile()) {
+    const blob = new Blob([bytes as BlobPart], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = toSafeFilename(filename); link.style.visibility = 'hidden';
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    return;
+  }
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  await FileSaver.save({ filename: toSafeFilename(filename), mimeType, data: btoa(binary) });
 }
 
 function drawPdfLogo(pdf: jsPDF, x: number, y: number, size = 32) {
@@ -226,8 +261,8 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
 }
 
 export async function shareApp() {
-  const url = import.meta.env.VITE_APP_SHARE_URL as string | undefined;
-  const message = 'Mathan ERP — standalone Cash Book and Payroll business tools.';
+  const url = await getLatestAppDownloadUrl();
+  const message = 'Download Mathan ERP directly — Cash Book and Payroll business tools.';
   if (isNativeMobile()) {
     await Share.share({ title: 'Share Mathan ERP', text: message, ...(url ? { url } : {}), dialogTitle: 'Share Mathan ERP' });
     return;

@@ -24,7 +24,16 @@ import java.io.OutputStream;
 @CapacitorPlugin(name = "FileSaver")
 public class FileSaverPlugin extends Plugin {
     @PluginMethod
+    public void save(PluginCall call) {
+        saveFile(call, false);
+    }
+
+    @PluginMethod
     public void saveAndOpen(PluginCall call) {
+        saveFile(call, true);
+    }
+
+    private void saveFile(PluginCall call, boolean shouldOpen) {
         String filename = call.getString("filename");
         String mimeType = call.getString("mimeType", "application/octet-stream");
         String base64Data = call.getString("data");
@@ -39,7 +48,8 @@ public class FileSaverPlugin extends Plugin {
             Uri uri = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
                     ? saveToPublicDownloads(filename, normalizedMimeType, bytes)
                     : saveToAppDownloads(filename, normalizedMimeType, bytes);
-            openFile(uri, normalizedMimeType);
+            if (shouldOpen) openFile(uri, normalizedMimeType);
+            else Toast.makeText(getContext(), "Backup saved in Downloads", Toast.LENGTH_SHORT).show();
             call.resolve(new JSObject().put("uri", uri.toString()));
         } catch (Exception error) {
             call.reject("Could not save file", error);

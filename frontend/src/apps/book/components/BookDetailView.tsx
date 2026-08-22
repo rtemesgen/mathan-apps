@@ -212,19 +212,15 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
 
         {/* TRANSACTIONS SECTION BELOW CARD */}
         <div className="bg-[#FFFFFF] rounded-lg border border-[#E6E2D6] p-2 sm:p-3 shadow-2xs space-y-2">
-          {/* Section Header */}
-          <div className="pb-2 border-b border-[#E6E2D6]">
-            <h2 className="text-xs font-bold text-[#121212] tracking-tight">
-              Transactions
-            </h2>
-            <p className="text-[9px] text-[#6B7280]">
-              Showing {filteredTransactions.length} of {bookTransactions.length} entries
-            </p>
-          </div>
+          {/* Section Header and controls */}
+          <div className="space-y-2 border-b border-[#E6E2D6] pb-2">
+            <div className="flex min-w-0 items-end gap-2">
+              <div className="min-w-20 shrink-0">
+              <h2 className="text-sm font-bold tracking-tight text-[#121212]">Transactions</h2>
+              <p className="text-[9px] text-[#6B7280]">Showing {filteredTransactions.length} of {bookTransactions.length} entries</p>
+              </div>
 
-          {/* Search, Filter & Sort Controls */}
-          <div className="flex flex-row gap-1.5">
-            <div className="relative flex-1">
+              <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#9CA3AF]" />
               <input
                 type="text"
@@ -233,9 +229,11 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                 placeholder="Search entries..."
                 className="w-full pl-6 pr-2 py-1 text-[10px] bg-[#FAF9F5] border border-[#D8D3C5] rounded-md focus:outline-none focus:ring-1 focus:ring-[#121212]"
               />
+              </div>
             </div>
 
-            <select
+            <div className="flex gap-1.5">
+              <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value as 'all' | 'in' | 'out')}
               className="px-1.5 py-1 text-[10px] font-semibold bg-[#FAF9F5] border border-[#D8D3C5] rounded-md focus:outline-none focus:ring-1 focus:ring-[#121212]"
@@ -243,9 +241,9 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
               <option value="all">All Entries</option>
               <option value="in">Cash In Only</option>
               <option value="out">Cash Out Only</option>
-            </select>
+              </select>
 
-            <select
+              <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'highest')}
               className="px-1.5 py-1 text-[10px] font-semibold bg-[#FAF9F5] border border-[#D8D3C5] rounded-md focus:outline-none focus:ring-1 focus:ring-[#121212]"
@@ -253,7 +251,8 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
               <option value="highest">Highest Amount</option>
-            </select>
+              </select>
+            </div>
           </div>
 
           {/* Transactions List */}
