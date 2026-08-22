@@ -13,6 +13,7 @@ import { AppUpdateProvider } from './hooks/useAppUpdate';
 import { InviteAcceptance, SettingsPage } from './components/SettingsPage';
 import { CompanySelector } from './components/CompanySelector';
 import { useAuth, type AppId } from './auth/AuthProvider';
+import { AdminPage } from './admin/AdminPage';
 
 function InviteRoute() {
   const { token = '' } = useParams();
@@ -23,6 +24,13 @@ function AppAccessGate({ app, children }: { app: AppId; children: React.ReactNod
   const { canViewApp, workspaceLoading } = useAuth();
   if (workspaceLoading) return <div className="flex min-h-[70vh] items-center justify-center text-sm font-semibold text-zinc-500">Checking app access…</div>;
   if (!canViewApp(app)) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+function SystemAdminGate({ children }: { children: React.ReactNode }) {
+  const { isSystemAdmin, adminLoading } = useAuth();
+  if (adminLoading) return <div className="flex min-h-[70vh] items-center justify-center text-sm font-semibold text-zinc-500">Checking administrator access…</div>;
+  if (!isSystemAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -45,6 +53,7 @@ export default function App() {
               <Route element={<AppShell />}>
                 <Route path="/" element={<AppLauncher />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/admin" element={<SystemAdminGate><AdminPage /></SystemAdminGate>} />
                 <Route path="/companies" element={<CompanySelector />} />
                 <Route path="/invite/:token" element={<InviteRoute />} />
                 <Route path="/book" element={<AppAccessGate app="book"><BookApp /></AppAccessGate>} />

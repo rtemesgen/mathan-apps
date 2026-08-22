@@ -31,7 +31,10 @@ export async function getLatestAppDownloadUrl() {
   const configuredUrl = (import.meta.env.VITE_APP_SHARE_URL as string | undefined)?.trim();
   return configuredUrl && (configuredUrl.toLowerCase().includes('.apk') || configuredUrl.includes('/releases/latest/download/')) ? configuredUrl : LATEST_RELEASE_APK_URL;
 }
-const FileSaver = registerPlugin<{ saveAndOpen(options: { filename: string; mimeType: string; data: string }): Promise<void> }>('FileSaver');
+const FileSaver = registerPlugin<{
+  saveAndOpen(options: { filename: string; mimeType: string; data: string }): Promise<void>;
+  save(options: { filename: string; mimeType: string; data: string }): Promise<{ uri?: string }>;
+}>('FileSaver');
 
 function toSafeFilename(filename: string) {
   return filename.replace(/[^a-z0-9._-]+/gi, '_');
@@ -61,6 +64,20 @@ export async function saveTextFile(filename: string, content: string, type = 'te
   }
 
   await FileSaver.saveAndOpen({ filename: toSafeFilename(filename), mimeType: type, data: encodeUtf8(content) });
+}
+
+export async function saveBinaryFile(filename: string, mimeType: string, bytes: Uint8Array) {
+  if (!isNativeMobile()) {
+    const blob = new Blob([bytes as BlobPart], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = toSafeFilename(filename); link.style.visibility = 'hidden';
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    return;
+  }
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  await FileSaver.save({ filename: toSafeFilename(filename), mimeType, data: btoa(binary) });
 }
 
 function drawPdfLogo(pdf: jsPDF, x: number, y: number, size = 32) {
