@@ -12,3 +12,9 @@ additional_redirect_urls = ["mathanerp://auth/callback"]
 
 [functions.system-admin]
 verify_jwt = true
+
+[functions.lifecycle]
+verify_jwt = false
+
+[functions.account-sessions]
+verify_jwt = false

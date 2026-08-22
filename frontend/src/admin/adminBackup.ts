@@ -15,7 +15,7 @@ type BackupKeyMeta = { salt: string; verifier: string };
 export type BackupProgress = { stage: string; percent: number; completed: number; total: number; bytes: number };
 export type AdminArchive = Record<string, unknown> & {
   format: 'mathan-system-backup';
-  schema_version: '1';
+  schema_version: '1' | '2';
   exported_at: string;
   checksum: string;
   users: Array<Record<string, unknown>>;
@@ -91,11 +91,11 @@ export async function createEncryptedAdminBackup(kind: 'automatic' | 'manual', o
   const key = await readOffline<CryptoKey>(KEY_STORAGE);
   const keyMeta = await readOffline<BackupKeyMeta>(KEY_META_STORAGE);
   if (!isCryptoKey(key) || !keyMeta) throw new Error('Set the recovery passphrase on this device first.');
-  const started = await adminRequest<{ run: { id: string }; counts: Record<string, number>; resources: string[]; schema_version: '1' }>('start-backup', { kind });
+  const started = await adminRequest<{ run: { id: string }; counts: Record<string, number>; resources: string[]; schema_version: '2' }>('start-backup', { kind });
   const total = Object.values(started.counts).reduce((sum, count) => sum + count, 0);
   let completed = 0;
   let transferredBytes = 0;
-  const archive: Record<string, unknown> = { format: 'mathan-system-backup', schema_version: '1', exported_at: new Date().toISOString() };
+  const archive: Record<string, unknown> = { format: 'mathan-system-backup', schema_version: '2', exported_at: new Date().toISOString() };
   try {
     for (const resource of started.resources) {
       const rows: Array<Record<string, unknown>> = [];
@@ -162,7 +162,7 @@ export async function decryptAdminBackup(content: string, passphrase: string): P
     plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: base64ToBytes(container.cipher.iv) }, key, base64ToBytes(container.cipher.data));
   } catch { throw new Error('The recovery passphrase is incorrect or the backup is damaged.'); }
   const archive = JSON.parse(decoder.decode(plaintext)) as AdminArchive;
-  if (archive.format !== 'mathan-system-backup' || archive.schema_version !== '1' || !Array.isArray(archive.workspaces)) throw new Error('Unsupported recovery archive.');
+  if (archive.format !== 'mathan-system-backup' || !['1', '2'].includes(archive.schema_version) || !Array.isArray(archive.workspaces)) throw new Error('Unsupported recovery archive.');
   const { checksum, ...unsigned } = archive;
   if (await digest(unsigned) !== checksum) throw new Error('Backup checksum verification failed.');
   return archive;

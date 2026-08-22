@@ -16,6 +16,7 @@ interface AuthState { configured: boolean; loading: boolean; workspaceLoading: b
 const AuthContext = createContext<AuthState | null>(null);
 export const standaloneMode = import.meta.env.VITE_STANDALONE === 'true';
 const workspaceCacheKey = (userId: string) => `mathan_workspace_cache_${userId}`;
+const adminCacheKey = (userId: string) => `mathan_system_admin_${userId}`;
 const defaultAppAccess = (): Record<AppId, WorkspaceAppAccess> => ({ book: { app_id: 'book', enabled: true, permission: 'edit' }, payroll: { app_id: 'payroll', enabled: true, permission: 'edit' } });
 function readWorkspaceCache(userId: string): Workspace | null {
   try { const value = localStorage.getItem(workspaceCacheKey(userId)); return value ? JSON.parse(value) as Workspace : null; } catch { return null; }
@@ -50,8 +51,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshAdmin = async () => {
     if (!session || standaloneMode || guest || !isSupabaseConfigured) { setIsSystemAdmin(false); setAdminLoading(false); return; }
     setAdminLoading(true);
-    const { data, error } = await supabase.functions.invoke('system-admin', { body: { action: 'status' } });
-    setIsSystemAdmin(!error && data?.is_admin === true);
+    const cacheKey = adminCacheKey(session.user.id);
+    let cached = false;
+    try { cached = localStorage.getItem(cacheKey) === 'true'; if (cached) setIsSystemAdmin(true); } catch { /* storage may be unavailable */ }
+    let confirmed = false;
+    for (let attempt = 0; attempt < 3 && !confirmed; attempt += 1) {
+      const { data, error } = await supabase.functions.invoke('system-admin', { body: { action: 'status' } });
+      if (!error) {
+        confirmed = true;
+        const admin = data?.is_admin === true;
+        setIsSystemAdmin(admin);
+        try { if (admin) localStorage.setItem(cacheKey, 'true'); else localStorage.removeItem(cacheKey); } catch { /* storage may be unavailable */ }
+      } else if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 300 * (attempt + 1)));
+    }
+    if (!confirmed && !cached) setIsSystemAdmin(false);
     setAdminLoading(false);
   };
   const refreshWorkspace = async (preferredWorkspaceId?: string) => {

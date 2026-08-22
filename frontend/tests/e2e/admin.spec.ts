@@ -1,5 +1,6 @@
 import { expect, test } from 'playwright/test';
 import { signIn } from './helpers';
+import { E2E_USERS } from './globalSetup';
 
 const PASSPHRASE = 'Mathan-E2E-recovery-passphrase!';
 
@@ -8,7 +9,7 @@ test('admin controls, encrypted backup, purge, safe restore, and audit work end 
   await expect(page.getByLabel('Admin')).toBeVisible();
   await page.getByLabel('Admin').click();
   await expect(page.getByText('Secure administrator backups')).toBeVisible();
-  await page.getByPlaceholder('Recovery passphrase').fill(PASSPHRASE);
+  await page.getByPlaceholder('Passphrase').fill(PASSPHRASE);
   await page.getByPlaceholder('Confirm passphrase').fill(PASSPHRASE);
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: /Save and create today/ }).click();
@@ -21,16 +22,13 @@ test('admin controls, encrypted backup, purge, safe restore, and audit work end 
   await page.getByPlaceholder('Search name, email, or phone').fill('member@mathan-e2e.local');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByText('member@mathan-e2e.local · active').click();
-  let dialogNumber = 0;
-  page.on('dialog', async (dialog) => {
-    dialogNumber += 1;
-    await dialog.accept(dialogNumber === 1 ? '2' : undefined);
-  });
   await page.getByRole('button', { name: 'Suspend 24h' }).click();
+  await page.getByRole('dialog').getByLabel('Suspension duration (hours)').fill('2');
+  await page.getByRole('dialog').getByRole('button', { name: 'Suspend account' }).click();
   await expect(page.getByText('member@mathan-e2e.local · suspended')).toBeVisible();
   await page.getByRole('button', { name: 'Reactivate' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Reactivate account' }).click();
   await expect(page.getByText('member@mathan-e2e.local · active')).toBeVisible();
-  page.removeAllListeners('dialog');
 
   await page.getByRole('button', { name: 'Workspaces & Access' }).click();
   const company = page.locator('section').filter({ hasText: 'Admin Company' }).first();
@@ -50,17 +48,19 @@ test('admin controls, encrypted backup, purge, safe restore, and audit work end 
   await page.getByPlaceholder('Search name, email, or phone').fill('delete-me@mathan-e2e.local');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByText('delete-me@mathan-e2e.local · active').click();
-  page.once('dialog', (dialog) => dialog.accept('DELETE'));
   await page.getByRole('button', { name: 'Delete permanently' }).click();
+  await page.getByRole('dialog').getByLabel('Type DELETE to confirm').fill('DELETE');
+  await page.getByRole('dialog').getByLabel('Your password').fill(E2E_USERS.admin.password);
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
   await expect(page.getByText('0 users')).toBeVisible();
 
   await page.getByRole('button', { name: 'Backup & Restore' }).click();
   await page.locator('input[type=file]').setInputFiles(backupPath!);
-  await page.getByPlaceholder('Recovery passphrase').fill(PASSPHRASE);
+  await page.getByPlaceholder('Passphrase').fill(PASSPHRASE);
   await page.getByRole('button', { name: 'Inspect and verify backup' }).click();
   await expect(page.getByText(/Verified backup from/)).toBeVisible();
-  page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Restore selected as new workspaces' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Restore as new workspaces' }).click();
   await expect(page.getByText(/recovery workspaces created/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/delete-me@mathan-e2e.local/)).toBeVisible();
 

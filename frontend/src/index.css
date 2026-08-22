@@ -46,3 +46,12 @@ summary::-webkit-details-marker { display: none; }
 
 /* The contact-based member card replaces the older email link card in Settings. */
 section.mt-3.rounded-2xl.border-emerald-200.bg-emerald-50 { display: none; }
+
+/* Account-deletion choice actions: preserve the safer path as the primary action. */
+[role='dialog'] .grid > button:first-child { order: 2; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; }
+[role='dialog'] .grid > button:first-child span:last-child { color: #b91c1c; }
+[role='dialog'] .grid > button:nth-child(2) { order: 1; border: 1px solid #bbf7d0; background: #f0fdf4; color: #166534; }
+[role='dialog'] .grid > button:nth-child(2) span:last-child { color: #15803d; }
+[role='dialog'] .grid > button:last-child { order: 3; }
+[role='dialog'] .grid > button { display: flex; width: 100%; min-height: 4rem; flex-direction: column; justify-content: center; border-width: 2px; box-shadow: 0 2px 5px rgb(28 29 27 / 8%); }
+[role='dialog'] .grid > button:hover { transform: translateY(-1px); box-shadow: 0 5px 12px rgb(28 29 27 / 12%); }

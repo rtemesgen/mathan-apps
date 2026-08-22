@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(32);
 
 select has_function('public', 'can_view_workspace_app', ARRAY['uuid', 'text']);
 select has_function('public', 'can_edit_workspace_app', ARRAY['uuid', 'text']);
@@ -19,6 +19,20 @@ select has_function('public', 'is_system_admin', ARRAY[]::text[]);
 select has_function('public', 'system_admin_restore_workspace', ARRAY['uuid', 'jsonb', 'text']);
 select ok(to_regclass('public.system_restore_operations') is not null, 'system_restore_operations table exists');
 select ok(to_regclass('public.system_restore_workspaces') is not null, 'system_restore_workspaces table exists');
+select ok(to_regclass('public.notifications') is not null, 'notifications table exists');
+select ok(to_regclass('public.approval_requests') is not null, 'approval_requests table exists');
+select has_function('public', 'list_my_notifications', ARRAY['integer']);
+select has_function('public', 'mark_notification_read', ARRAY['uuid']);
+select has_function('public', 'create_approval_request', ARRAY['uuid', 'text', 'text', 'uuid', 'text', 'jsonb']);
+select has_function('public', 'decide_approval_request', ARRAY['uuid', 'text', 'text']);
+select has_function('public', 'list_workspace_trash', ARRAY['uuid']);
+select has_function('public', 'restore_workspace_trash', ARRAY['text', 'uuid']);
+select has_function('public', 'purge_expired_workspace_trash', ARRAY['uuid']);
+select has_function('public', 'transfer_workspace_ownership', ARRAY['uuid', 'uuid']);
+select has_function('public', 'request_account_deletion', ARRAY['boolean']);
+select ok(to_regclass('public.workspace_approval_settings') is not null, 'workspace approval settings table exists');
+select has_function('public', 'approval_is_granted', ARRAY['uuid', 'text', 'uuid', 'uuid']);
+select has_function('public', 'set_workspace_approval_required', ARRAY['uuid', 'text', 'boolean']);
 
 select * from finish();
 rollback;

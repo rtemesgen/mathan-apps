@@ -10,6 +10,10 @@ export type AdminOverview = {
   app_access: { book: number; payroll: number };
   recent_audit: AdminAuditEvent[];
   latest_backup: AdminBackupRun | null;
+  pending_approvals: number;
+  failed_actions_24h: number;
+  health: { database: 'ok' | 'error'; backup: 'fresh' | 'stale' | 'missing'; storage: 'ok' | 'warning' };
+  alerts: Array<{ type: string; severity: 'warning' | 'critical'; message: string }>;
 };
 
 export type AdminMembership = {

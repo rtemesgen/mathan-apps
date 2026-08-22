@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
 import { AppLauncher } from './components/AppLauncher';
 import { AppShell } from './components/AppShell';
 import { BookApp } from './apps/book';
@@ -21,7 +22,8 @@ function InviteRoute() {
 }
 
 function AppAccessGate({ app, children }: { app: AppId; children: React.ReactNode }) {
-  const { canViewApp, workspaceLoading } = useAuth();
+  const { canViewApp, workspaceLoading, refreshAccess } = useAuth();
+  useEffect(() => { void refreshAccess(); }, []);
   if (workspaceLoading) return <div className="flex min-h-[70vh] items-center justify-center text-sm font-semibold text-zinc-500">Checking app access…</div>;
   if (!canViewApp(app)) return <Navigate to="/" replace />;
   return <>{children}</>;

@@ -5,7 +5,8 @@ import { supabase } from '../lib/supabase';
 import { enqueueMutation, getQueuedMutations, replaceQueue } from '../lib/syncQueue';
 
 async function syncQueue(workspaceId: string) {
-  if (!navigator.onLine) return;
+  if (!navigator.onLine) { window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'offline' } })); return; }
+  window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'syncing' } }));
   const queue = await getQueuedMutations();
   const remaining = [];
   for (const mutation of queue) {
@@ -22,10 +23,12 @@ async function syncQueue(workspaceId: string) {
     if (error || !result || result.status === 'conflict') {
       if (result?.status === 'conflict') {
         window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: mutation.payload.domain, remote: result.payload, revision: result.revision } }));
-      } else remaining.push(mutation);
+        window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'conflict' } }));
+      } else { remaining.push(mutation); window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'retry', queued: remaining.length } })); }
     }
   }
   await replaceQueue(remaining);
+  if (!remaining.length) window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'synced' } }));
 }
 
 export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>, boolean] {
@@ -69,12 +72,14 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
           target_payload: payload.payload, audit_action: 'snapshot_written', affected_client_ids: [],
         });
         const result = (data as Array<{ status: string; revision: number; payload: T }> | null)?.[0];
-        if (!error && result?.status === 'written') { revision.current = result.revision; return; }
+        if (!error && result?.status === 'written') { revision.current = result.revision; window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'synced' } })); return; }
         if (result?.status === 'conflict') {
           window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: payload.domain, remote: result.payload, revision: result.revision } }));
+          window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'conflict' } }));
           return;
         }
       }
+      window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: navigator.onLine ? 'retry' : 'offline' } }));
       await enqueueMutation({ table: 'app_state_snapshots', operation: 'upsert', payload });
     })();
   }, [value, workspace?.id, domain, key, storageKey, appId, standalone, canEditApp]);

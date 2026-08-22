@@ -66,6 +66,10 @@ async function audit(actorId: string, action: string, result: 'success' | 'failu
   });
 }
 
+async function notifyUser(userId: string, type: string, title: string, body: string, route?: string) {
+  await admin.from('notifications').insert({ user_id: userId, notification_type: type, title, body, route: route ?? null });
+}
+
 async function ensureBootstrap(user: User) {
   const allowed = (Deno.env.get('ADMIN_BOOTSTRAP_EMAILS') ?? '')
     .split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
@@ -138,7 +142,7 @@ async function listUsers(body: Body) {
 
 async function overview() {
   const users = await getAllUsers(admin);
-  const [{ count: workspaceCount }, { count: snapshotCount }, { data: latestSnapshot }, { data: controls }, { data: recentAudit }, { data: latestBackup }, { data: attachments }] = await Promise.all([
+  const [{ count: workspaceCount }, { count: snapshotCount }, { data: latestSnapshot }, { data: controls }, { data: recentAudit }, { data: latestBackup }, { data: attachments }, { count: pendingApprovals }, { count: failedActions }] = await Promise.all([
     admin.from('workspaces').select('*', { count: 'exact', head: true }),
     admin.from('app_state_snapshots').select('*', { count: 'exact', head: true }),
     admin.from('app_state_snapshots').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
@@ -146,21 +150,36 @@ async function overview() {
     admin.from('system_admin_audit_events').select('id,action,result,created_at,target_user_id,target_workspace_id').order('created_at', { ascending: false }).limit(8),
     admin.from('system_backup_runs').select('*').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     admin.from('record_attachments').select('size_bytes'),
+    admin.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    admin.from('system_admin_audit_events').select('*', { count: 'exact', head: true }).eq('result', 'failure').gte('created_at', new Date(Date.now() - 24 * 3600000).toISOString()),
   ]);
   const suspended = (controls ?? []).filter((row) => row.status === 'blocked' || (row.status === 'suspended' && row.suspended_until && new Date(row.suspended_until).getTime() > Date.now())).length;
   const { data: appPermissions } = await admin.from('workspace_member_app_permissions').select('app_id,permission');
+  const latestBackupAt = latestBackup?.completed_at ?? latestBackup?.created_at ?? null;
+  const backupAge = latestBackupAt ? Date.now() - new Date(latestBackupAt).getTime() : Number.POSITIVE_INFINITY;
+  const storageBytes = (attachments ?? []).reduce((total, row) => total + Number(row.size_bytes ?? 0), 0);
+  const alerts = [
+    ...(backupAge > 24 * 3600000 ? [{ type: 'backup_stale', severity: 'warning', message: 'No completed backup in the last 24 hours.' }] : []),
+    ...((failedActions ?? 0) >= 5 ? [{ type: 'privileged_failures', severity: 'critical', message: `${failedActions} privileged operations failed in the last 24 hours.` }] : []),
+    ...((storageBytes >= 5 * 1024 ** 3) ? [{ type: 'storage_pressure', severity: 'warning', message: 'Attachment storage has reached the 5 GB warning threshold.' }] : []),
+    ...((pendingApprovals ?? 0) >= 20 ? [{ type: 'approval_backlog', severity: 'warning', message: `${pendingApprovals} approval requests are waiting for review.` }] : []),
+  ];
   return {
     users: { total: users.length, active: Math.max(0, users.length - suspended), suspended },
     workspaces: workspaceCount ?? 0,
     snapshots: snapshotCount ?? 0,
     snapshot_freshness: latestSnapshot?.updated_at ?? null,
-    storage_bytes: (attachments ?? []).reduce((total, row) => total + Number(row.size_bytes ?? 0), 0),
+    storage_bytes: storageBytes,
     app_access: {
       book: (appPermissions ?? []).filter((row) => row.app_id === 'book' && row.permission !== 'none').length,
       payroll: (appPermissions ?? []).filter((row) => row.app_id === 'payroll' && row.permission !== 'none').length,
     },
     recent_audit: recentAudit ?? [],
     latest_backup: latestBackup ?? null,
+    pending_approvals: pendingApprovals ?? 0,
+    failed_actions_24h: failedActions ?? 0,
+    health: { database: 'ok', backup: latestBackupAt ? (backupAge <= 24 * 3600000 ? 'fresh' : 'stale') : 'missing', storage: storageBytes >= 5 * 1024 ** 3 ? 'warning' : 'ok' },
+    alerts,
   };
 }
 
@@ -196,7 +215,7 @@ async function listWorkspaces(body: Body) {
   };
 }
 
-const backupResources = ['profiles', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'system_audit_events', 'backup_runs', 'invitations', 'attachments', 'attachment_links'] as const;
+const backupResources = ['profiles', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'system_audit_events', 'backup_runs', 'invitations', 'attachments', 'attachment_links', 'notifications', 'approvals'] as const;
 type BackupResource = typeof backupResources[number] | 'users';
 
 async function backupResource(actorId: string, runId: string, resource: BackupResource, offset: number, limit: number) {
@@ -219,6 +238,8 @@ async function backupResource(actorId: string, runId: string, resource: BackupRe
     invitations: { table: 'workspace_invitations', columns: 'id,workspace_id,email,invited_by,book_permission,payroll_permission,status,expires_at,accepted_by,created_at,accepted_at' },
     attachments: { table: 'record_attachments', columns: 'id,workspace_id,record_type,record_id,storage_path,file_name,mime_type,size_bytes,created_at' },
     attachment_links: { table: 'cash_transaction_attachments', columns: 'cash_transaction_id,attachment_id' },
+    notifications: { table: 'notifications', columns: 'id,user_id,workspace_id,notification_type,title,body,route,metadata,read_at,created_at' },
+    approvals: { table: 'approval_requests', columns: 'id,workspace_id,requester_id,approver_id,action_type,target_record_type,target_record_id,reason,metadata,status,decision_comment,created_at,decided_at,expires_at' },
   };
   const item = config[resource as Exclude<BackupResource, 'users'>];
   if (!item) throw new Error('Unsupported backup resource.');
@@ -238,14 +259,14 @@ async function startBackup(actorId: string, kind: 'automatic' | 'manual') {
   const users = await getAllUsers(admin);
   const counts: Record<string, number> = { users: users.length };
   for (const resource of backupResources) {
-    const table = ({ profiles: 'workspace_profiles', workspaces: 'workspaces', members: 'workspace_members', apps: 'workspace_apps', permissions: 'workspace_member_app_permissions', snapshots: 'app_state_snapshots', audit_events: 'audit_events', system_audit_events: 'system_admin_audit_events', backup_runs: 'system_backup_runs', invitations: 'workspace_invitations', attachments: 'record_attachments', attachment_links: 'cash_transaction_attachments' } as const)[resource];
+    const table = ({ profiles: 'workspace_profiles', workspaces: 'workspaces', members: 'workspace_members', apps: 'workspace_apps', permissions: 'workspace_member_app_permissions', snapshots: 'app_state_snapshots', audit_events: 'audit_events', system_audit_events: 'system_admin_audit_events', backup_runs: 'system_backup_runs', invitations: 'workspace_invitations', attachments: 'record_attachments', attachment_links: 'cash_transaction_attachments', notifications: 'notifications', approvals: 'approval_requests' } as const)[resource];
     const { count, error } = await admin.from(table).select('*', { count: 'exact', head: true });
     if (error) throw error;
     counts[resource] = count ?? 0;
   }
   const { data, error } = await admin.from('system_backup_runs').insert({ requested_by: actorId, backup_kind: kind, status: 'started' }).select('id,created_at').single();
   if (error) throw error;
-  return { run: data, schema_version: '1', counts, resources: ['users', ...backupResources] };
+  return { run: data, schema_version: '2', counts, resources: ['users', ...backupResources] };
 }
 
 async function finishBackup(actorId: string, body: Body) {
@@ -264,6 +285,7 @@ async function finishBackup(actorId: string, body: Body) {
   if (error) throw error;
   if (!updated) throw new Error('This backup run is no longer active.');
   await audit(actorId, 'backup_finished', status === 'completed' ? 'success' : 'failure', { next: { run_id: runId, status } });
+  await notifyUser(actorId, status === 'completed' ? 'backup_completed' : 'backup_failed', status === 'completed' ? 'Backup completed' : 'Backup failed', status === 'completed' ? 'Your encrypted administrator backup was verified and saved.' : `The administrator backup could not be completed: ${text(body.error_message) || 'unknown error'}.`, '/admin');
   return { ok: true };
 }
 
@@ -415,8 +437,10 @@ Deno.serve(async (request) => {
         }
         const { error } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: banDuration });
         if (error) throw error;
-        await admin.from('system_user_controls').upsert({ user_id: targetUserId, status, suspended_until: bannedUntil, reason: text(body.reason).slice(0, 500) || null, updated_by: actor.id, updated_at: new Date().toISOString() });
+        const { error: controlError } = await admin.from('system_user_controls').upsert({ user_id: targetUserId, status, suspended_until: bannedUntil, reason: text(body.reason).slice(0, 500) || null, updated_by: actor.id, updated_at: new Date().toISOString() });
+        if (controlError) throw controlError;
         await audit(actor.id, `user_${status}`, 'success', { targetUserId, next: { status, suspended_until: bannedUntil } });
+        await notifyUser(targetUserId, `account_${status}`, `Account ${status}`, status === 'active' ? 'Your account has been reactivated.' : status === 'blocked' ? 'Your account has been blocked by an administrator.' : `Your account has been suspended until ${bannedUntil}.`);
         return json({ ok: true, status, suspended_until: bannedUntil });
       }
       case 'set-permission': {

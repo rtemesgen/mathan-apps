@@ -1,0 +1,22 @@
+name: Account lifecycle cleanup
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process scheduled deletions and expired trash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          LIFECYCLE_CRON_SECRET: ${{ secrets.LIFECYCLE_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_URL"
+          test -n "$LIFECYCLE_CRON_SECRET"
+          curl --fail-with-body --retry 3 --request POST \
+            --url "$SUPABASE_URL/functions/v1/lifecycle" \
+            --header "x-lifecycle-secret: $LIFECYCLE_CRON_SECRET"
