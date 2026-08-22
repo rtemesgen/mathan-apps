@@ -9,6 +9,7 @@ import { MyCompanyMemberships, WorkspaceInvitations } from './WorkspaceInvitatio
 import { BackupRecoveryCard } from './BackupRecoveryCard';
 import { isValidPhone, normalizePhone, PHONE_COUNTRIES } from '../auth/phone';
 import { cancelAccountDeletion, getAccountDeletionRequest, listWorkspaceTrash, purgeExpiredTrash, requestAccountDeletion, restoreTrashRecord, type AccountDeletionRequest, type TrashRecord } from '../lib/operationsApi';
+import { AppVersionPanel } from './AppVersionPanel';
 
 type Member = { user_id: string; email: string; role: 'owner' | 'member'; display_name: string; book_permission: AppPermission; payroll_permission: AppPermission };
 type Invitation = { id: string; email: string; status: string; expires_at: string; book_permission: AppPermission; payroll_permission: AppPermission; created_at: string };
@@ -319,6 +320,7 @@ export function SettingsPage() {
         <DeleteConfirmModal isOpen={!!appToDisable} title={`Disable ${appToDisable ? appNames[appToDisable] : 'app'}?`} message={appToDisable ? <>Are you sure you want to disable <strong className="text-[#121212]">{appNames[appToDisable]}</strong>? Members will no longer be able to access it until you turn it back on.</> : ''} onClose={() => setAppToDisable(null)} onConfirm={() => { if (appToDisable) void toggleApp(appToDisable); setAppToDisable(null); }} confirmLabel="Disable app" />
       </div>
     </div>
+    <AppVersionPanel />
   </main>;
 }
 

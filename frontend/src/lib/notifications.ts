@@ -19,5 +19,5 @@ export async function sendNativeNotification(notification: AppNotification) {
   if (!Capacitor.isNativePlatform()) return;
   const permission = await LocalNotifications.checkPermissions();
   if (permission.display !== 'granted') return;
-  await LocalNotifications.schedule({ notifications: [{ id: Date.now() % 2147483647, title: notification.title, body: notification.body, extra: notification.url ? { url: notification.url } : undefined, schedule: { at: new Date(Date.now() + 250) } }] });
+  await LocalNotifications.schedule({ notifications: [{ id: Date.now() % 2147483647, title: notification.title, body: notification.body, smallIcon: 'ic_launcher', extra: notification.url ? { url: notification.url } : undefined, schedule: { at: new Date(Date.now() + 250) } }] });
 }
