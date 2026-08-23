@@ -70,13 +70,13 @@ body {
 @media (min-width: 1024px) { .erp-sidebar.settings-sidebar { width: 224px; } }
 @media (min-width: 1024px) { .erp-sidebar.admin-sidebar { width: 240px; padding-left: 12px; padding-right: 12px; } }
 @media (max-width: 1023px) { .erp-sidebar.settings-sidebar { padding-left: 0; padding-right: 0; } }
-@media (max-width: 767px) { .erp-sidebar:not(.settings-sidebar) { width: 288px; } }
+@media (max-width: 767px) { .erp-sidebar:not(.settings-sidebar):not(.admin-sidebar) { width: 288px; } }
 @media (max-width: 359px) {
   html, body, #root { max-width: 100%; overflow-x: hidden; }
   .erp-header { padding-left: 8px !important; padding-right: 8px !important; }
   .erp-header .erp-brand-subtitle { font-size: 8px; letter-spacing: .14em; }
   .app-control-company { max-width: 104px; }
-  .erp-sidebar:not(.settings-sidebar) { width: 288px; }
+  .erp-sidebar:not(.settings-sidebar):not(.admin-sidebar) { width: 288px; }
   .erp-sidebar { padding: 8px; }
   .erp-sidebar.settings-sidebar { padding-left: 0; padding-right: 0; }
 }
