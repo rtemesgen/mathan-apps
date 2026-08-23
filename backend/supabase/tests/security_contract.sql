@@ -1,5 +1,5 @@
 begin;
-select plan(32);
+select plan(36);
 
 select has_function('public', 'can_view_workspace_app', ARRAY['uuid', 'text']);
 select has_function('public', 'can_edit_workspace_app', ARRAY['uuid', 'text']);
@@ -33,6 +33,10 @@ select has_function('public', 'request_account_deletion', ARRAY['boolean']);
 select ok(to_regclass('public.workspace_approval_settings') is not null, 'workspace approval settings table exists');
 select has_function('public', 'approval_is_granted', ARRAY['uuid', 'text', 'uuid', 'uuid']);
 select has_function('public', 'set_workspace_approval_required', ARRAY['uuid', 'text', 'boolean']);
+select has_function('public', 'request_workspace_deletion', ARRAY['uuid']);
+select has_function('public', 'cancel_workspace_deletion', ARRAY['uuid']);
+select has_function('public', 'get_workspace_deletion_status', ARRAY['uuid']);
+select has_function('public', 'list_my_workspace_deletions', ARRAY[]::text[]);
 
 select * from finish();
 rollback;

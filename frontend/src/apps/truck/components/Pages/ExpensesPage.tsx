@@ -111,7 +111,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       referenceNo: expenseRef || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
     });
 
-    onBack();
+    // Keep the user on the current page after saving; navigation is explicit.
   };
 
   const handlePayOwnerSubmit = (e: React.FormEvent) => {
@@ -120,7 +120,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     if (isNaN(num) || num <= 0 || !currentPaySummary) return;
 
     onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo);
-    onBack();
+    // Keep the user on the current page after saving; navigation is explicit.
   };
 
   const handleProfitDividendSubmit = (e: React.FormEvent) => {
@@ -134,7 +134,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     }));
 
     onExecuteProfitDistribution(allocations);
-    onBack();
+    // Keep the user on the current page after saving; navigation is explicit.
   };
 
   const poolAmount = parseFloat(dividendPool) || 0;

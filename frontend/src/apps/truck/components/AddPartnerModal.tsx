@@ -36,8 +36,8 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
   const [name, setName] = useState('');
   const [assignedTruckId, setAssignedTruckId] = useState(editingOwner?.truckId || currentTruckId);
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [equityPercentage, setEquityPercentage] = useState('20');
-  const [monthlyDrawRate, setMonthlyDrawRate] = useState('5000');
+  const [equityPercentage, setEquityPercentage] = useState('');
+  const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
   const [linkedUserId, setLinkedUserId] = useState('');
 
   useEffect(() => {
@@ -52,8 +52,8 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
       setName('');
       setAssignedTruckId(currentTruckId || (trucks[0]?.id ?? ''));
       setStartDate(new Date().toISOString().split('T')[0]);
-      setEquityPercentage('20');
-      setMonthlyDrawRate('5000');
+      setEquityPercentage('');
+      setMonthlyDrawRate('');
       setLinkedUserId('');
     }
   }, [editingOwner, currentTruckId, isOpen, trucks]);

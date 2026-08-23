@@ -72,7 +72,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
       });
     }
 
-    onBack();
+    // Keep the user on the current page after saving; navigation is explicit.
   };
 
   return (

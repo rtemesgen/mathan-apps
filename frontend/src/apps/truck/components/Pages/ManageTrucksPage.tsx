@@ -32,14 +32,14 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
   const [showAddForm, setShowAddForm] = useState(false);
   const [name, setName] = useState('');
   const [unitNumber, setUnitNumber] = useState('');
-  const [makeModel, setMakeModel] = useState('2024 Kenworth T680');
+  const [makeModel, setMakeModel] = useState('');
   const [vin, setVin] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
-  const [cashOnHand, setCashOnHand] = useState('15000');
+  const [cashOnHand, setCashOnHand] = useState('');
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
 
   const resetForm = () => {
-    setEditingTruck(null); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel('2024 Kenworth T680'); setVin(''); setLicensePlate(''); setCashOnHand('15000');
+    setEditingTruck(null); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setLicensePlate(''); setCashOnHand('');
   };
 
   const startEdit = (truck: Truck) => {

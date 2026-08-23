@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Truck, Owner, Transaction, TransactionType } from './types';
 import { calculateTruckFinancials, formatCurrency, formatDate } from './utils/formatters';
 import { createTruck, createTruckOwner, createTruckTransaction, deleteTruck, deleteTruckOwner, loadTruckData, loadTruckWorkspaceMembers, softDeleteTruckTransaction, updateTruck, updateTruckOwner, updateTruckTransaction } from './truckApi';
 import { useAuth } from '../../auth/AuthProvider';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
+import { syncQueue } from '../../hooks/useCloudSnapshot';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { OwnerCard } from './components/OwnerCard';
@@ -66,8 +67,30 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [members, setMembers] = useState<Array<{ user_id: string; email: string; display_name: string }>>([]);
   const [error, setError] = useState('');
-  const refresh = async () => { if (!workspace) return; setLoading(true); try { const data = await loadTruckData(workspace.id); setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); setCurrentTruckId((current) => data.trucks.some((truck) => truck.id === current) ? current : (data.trucks[0]?.id ?? '')); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load Truck data.'); } finally { setLoading(false); } };
+  const preferencesReady = useRef(false);
+  const preferencesReadyKey = useRef('');
+  const preferenceKey = workspace ? `mathan_truck_preferences_${workspace.id}` : '';
+  useEffect(() => {
+    if (!preferencesReady.current || preferencesReadyKey.current !== preferenceKey || !preferenceKey) return;
+    localStorage.setItem(preferenceKey, JSON.stringify({ view: currentView, truckId: currentTruckId, date: calculationDate, sortBy }));
+  }, [preferenceKey, currentView, currentTruckId, calculationDate, sortBy]);
+  useEffect(() => {
+    preferencesReady.current = false;
+    preferencesReadyKey.current = '';
+    if (!preferenceKey) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(preferenceKey) ?? '{}') as { view?: string; truckId?: string; date?: string; sortBy?: string };
+      if (saved.view) setCurrentView(saved.view);
+      if (saved.truckId) setCurrentTruckId(saved.truckId);
+      if (saved.date) setCalculationDate(saved.date);
+      if (saved.sortBy) setSortBy(saved.sortBy);
+    } catch { /* preferences are optional */ }
+    preferencesReadyKey.current = preferenceKey;
+    preferencesReady.current = true;
+  }, [preferenceKey]);
+  const refresh = async () => { if (!workspace) return; setLoading(true); try { await syncQueue(workspace.id); const data = await loadTruckData(workspace.id); setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); setCurrentTruckId((current) => data.trucks.some((truck) => truck.id === current) ? current : (data.trucks[0]?.id ?? '')); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load Truck data.'); } finally { setLoading(false); } };
   useEffect(() => { void refresh(); if (workspace) void loadTruckWorkspaceMembers(workspace.id).then(setMembers).catch(() => undefined); }, [workspace?.id]);
+  useEffect(() => { const handler = () => { if (workspace) void refresh(); }; window.addEventListener('online', handler); return () => window.removeEventListener('online', handler); }, [workspace?.id]);
 
   const activeTruck = trucks.find((t) => t.id === currentTruckId) || trucks[0] || { id: '', name: 'No trucks yet', unitNumber: '', makeModel: '', vin: '', cashOnHand: 0, licensePlate: '' };
 

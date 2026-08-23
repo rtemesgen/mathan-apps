@@ -4,13 +4,23 @@ import { readOffline, writeOffline } from '../lib/localStore';
 import { supabase } from '../lib/supabase';
 import { enqueueMutation, getQueuedMutations, replaceQueue } from '../lib/syncQueue';
 
-async function syncQueue(workspaceId: string) {
+export async function syncQueue(workspaceId: string) {
   if (!navigator.onLine) { window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'offline' } })); return; }
   window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'syncing' } }));
   const queue = await getQueuedMutations();
   const remaining = [];
   for (const mutation of queue) {
-    if (mutation.table !== 'app_state_snapshots' || mutation.payload.workspace_id !== workspaceId) { remaining.push(mutation); continue; }
+    if (mutation.payload.workspace_id !== workspaceId) { remaining.push(mutation); continue; }
+    if (mutation.table !== 'app_state_snapshots') {
+      if (!['trucks', 'truck_owners', 'truck_transactions'].includes(mutation.table)) { remaining.push(mutation); continue; }
+      const row = { ...mutation.payload }; delete row.workspace_id;
+      const id = String(row.id ?? ''); delete row.id;
+      const result = row.deleted_at
+        ? await supabase.from(mutation.table).update(row).eq('workspace_id', workspaceId).eq('id', id)
+        : await supabase.from(mutation.table).upsert({ id, workspace_id: workspaceId, ...row }, { onConflict: 'id' });
+      if (result.error) { remaining.push(mutation); window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'retry', queued: remaining.length } })); }
+      continue;
+    }
     const { data, error } = await supabase.rpc('write_app_state_snapshot', {
       target_workspace: workspaceId,
       target_domain: mutation.payload.domain,
@@ -32,14 +42,14 @@ async function syncQueue(workspaceId: string) {
 }
 
 export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>, boolean] {
-  const { workspace, isGuest, canEditApp } = useAuth();
+  const { workspace, user, isGuest, canEditApp } = useAuth();
   const appId: AppId = domain === 'cash_book' ? 'book' : 'payroll';
   const standalone = import.meta.env.VITE_STANDALONE === 'true' || isGuest;
   const [value, setValue] = useState<T>(initialValue);
   const [ready, setReady] = useState(false);
   const hydrated = useRef(false);
   const revision = useRef(0);
-  const storageKey = `${standalone ? 'standalone' : workspace?.id ?? 'anonymous'}:${domain}:${key}`;
+  const storageKey = `${standalone ? 'standalone' : user?.id ?? 'anonymous'}:${workspace?.id ?? 'none'}:${domain}:${key}`;
   useEffect(() => {
     let active = true; hydrated.current = false; setReady(false);
     void (async () => {

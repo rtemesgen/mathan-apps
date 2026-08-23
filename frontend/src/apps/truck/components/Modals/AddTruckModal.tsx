@@ -32,7 +32,7 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
   const [unitNumber, setUnitNumber] = useState('');
   const [makeModel, setMakeModel] = useState('');
   const [vin, setVin] = useState('');
-  const [cashOnHand, setCashOnHand] = useState('25000');
+  const [cashOnHand, setCashOnHand] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
 
   if (!isOpen) return null;
@@ -44,8 +44,8 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
     onAddTruck({
       name,
       unitNumber,
-      makeModel: makeModel || 'Semi-Truck',
-      vin: vin || 'VIN-UNKNOWN',
+      makeModel,
+      vin,
       cashOnHand: parseFloat(cashOnHand) || 0,
       licensePlate: licensePlate || 'TRK-NEW',
     });
@@ -53,6 +53,10 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
     setShowAddForm(false);
     setName('');
     setUnitNumber('');
+    setMakeModel('');
+    setVin('');
+    setCashOnHand('');
+    setLicensePlate('');
   };
 
   return (

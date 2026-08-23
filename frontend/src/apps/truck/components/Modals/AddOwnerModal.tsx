@@ -24,8 +24,8 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [equityPercentage, setEquityPercentage] = useState('20');
-  const [monthlyDrawRate, setMonthlyDrawRate] = useState('5000');
+  const [equityPercentage, setEquityPercentage] = useState('');
+  const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
 
   useEffect(() => {
     if (editingOwner) {
@@ -36,8 +36,8 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
     } else {
       setName('');
       setStartDate(new Date().toISOString().split('T')[0]);
-      setEquityPercentage('20');
-      setMonthlyDrawRate('5000');
+      setEquityPercentage('');
+      setMonthlyDrawRate('');
     }
   }, [editingOwner, isOpen]);
 

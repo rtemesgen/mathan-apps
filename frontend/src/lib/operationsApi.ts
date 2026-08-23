@@ -17,6 +17,10 @@ export type AccountDeletionRequest = { user_id: string; status: 'pending' | 'can
 export async function requestAccountDeletion(deleteOwnedWorkspaces = false) { const { data, error } = await supabase.rpc('request_account_deletion', { delete_owned_workspaces: deleteOwnedWorkspaces }); if (error) throw error; return data as AccountDeletionRequest; }
 export async function cancelAccountDeletion() { const { data, error } = await supabase.rpc('cancel_account_deletion'); if (error) throw error; return data === true; }
 export async function getAccountDeletionRequest(userId: string) { const { data, error } = await supabase.from('account_deletion_requests').select('*').eq('user_id', userId).maybeSingle(); if (error) throw error; return data as AccountDeletionRequest | null; }
+export type WorkspaceDeletionStatus = { status: 'active' | 'scheduled'; scheduled_for: string | null; days_remaining: number | null };
+export async function requestWorkspaceDeletion(workspaceId: string) { const { data, error } = await supabase.rpc('request_workspace_deletion', { target_workspace: workspaceId }); if (error) throw error; return String(data); }
+export async function cancelWorkspaceDeletion(workspaceId: string) { const { data, error } = await supabase.rpc('cancel_workspace_deletion', { target_workspace: workspaceId }); if (error) throw error; return data === true; }
+export async function getWorkspaceDeletionStatus(workspaceId: string) { const { data, error } = await supabase.rpc('get_workspace_deletion_status', { target_workspace: workspaceId }); if (error) throw error; return ((data as WorkspaceDeletionStatus[] | null)?.[0] ?? { status: 'active', scheduled_for: null, days_remaining: null }) as WorkspaceDeletionStatus; }
 
 export type ReportRow = Record<string, string | number | null>;
 export function downloadCsv(filename: string, rows: ReportRow[]) {

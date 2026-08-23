@@ -6,12 +6,13 @@ import { Capacitor } from '@capacitor/core';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { disableGuestMode, enableGuestMode, isGuestMode } from './guestMode';
 import { readOffline, writeOffline } from '../lib/localStore';
+import { prefetchWorkspaceData } from '../lib/offlinePrefetch';
 
 export type AppId = 'book' | 'payroll' | 'truck';
 export type AppPermission = 'none' | 'view' | 'edit';
 export interface Workspace { id: string; name: string; accent_color: string; }
 export interface WorkspaceAppAccess { app_id: AppId; enabled: boolean; permission: AppPermission; }
-export interface WorkspaceMembership extends Workspace { role: 'owner' | 'member'; appAccess: Record<AppId, WorkspaceAppAccess>; }
+export interface WorkspaceMembership extends Workspace { role: 'owner' | 'member'; appAccess: Record<AppId, WorkspaceAppAccess>; deletionStatus?: 'active' | 'scheduled'; deletionScheduledFor?: string | null; }
 interface AuthState { configured: boolean; loading: boolean; workspaceLoading: boolean; adminLoading: boolean; passwordRecovery: boolean; session: Session | null; user: User | null; workspace: Workspace | null; workspaces: WorkspaceMembership[]; workspaceError: string | null; isOwner: boolean; isSystemAdmin: boolean; appAccess: Record<AppId, WorkspaceAppAccess>; continueAsGuest: () => void; refreshWorkspace: (preferredWorkspaceId?: string) => Promise<Workspace | null>; refreshAccess: () => Promise<void>; refreshAdmin: () => Promise<void>; switchWorkspace: (workspaceId: string) => void; finishPasswordRecovery: () => void; signOut: () => Promise<void>; canViewApp: (app: AppId) => boolean; canEditApp: (app: AppId) => boolean; isGuest: boolean; }
 const AuthContext = createContext<AuthState | null>(null);
 export const standaloneMode = import.meta.env.VITE_STANDALONE === 'true';
@@ -70,16 +71,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshWorkspace = async (preferredWorkspaceId?: string) => {
     if (!session) { setWorkspace(null); setWorkspaceError(null); setWorkspaceLoading(false); return null; }
     setWorkspaceLoading(true);
-    const cached = readWorkspaceCache(session.user.id);
-    const { data, error } = await supabase.rpc('list_my_workspaces');
+    const cached = readWorkspaceCache(session.user.id) ?? await readOffline<Workspace>(`workspace:${session.user.id}`);
+    const [{ data, error }, { data: deletionRows }] = await Promise.all([supabase.rpc('list_my_workspaces'), supabase.rpc('list_my_workspace_deletions')]);
     if (error) {
       if (cached) { applyWorkspace({ ...cached, role: 'owner', appAccess: defaultAppAccess() }); setWorkspaceError(null); setWorkspaceLoading(false); return cached; }
       setWorkspace(null); setWorkspaceError(error.message); setWorkspaceLoading(false); return null;
     }
     const memberships = ((data as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; book_enabled: boolean; book_permission: AppPermission; payroll_enabled: boolean; payroll_permission: AppPermission }> | null) ?? []).map((row) => ({
       id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role,
+      deletionStatus: 'active' as 'active' | 'scheduled', deletionScheduledFor: null,
       appAccess: { book: { app_id: 'book' as AppId, enabled: row.book_enabled, permission: row.book_permission }, payroll: { app_id: 'payroll' as AppId, enabled: row.payroll_enabled, permission: row.payroll_permission }, truck: { app_id: 'truck' as AppId, enabled: true, permission: 'none' as AppPermission } },
     }));
+    for (const row of ((deletionRows as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; deletion_status: 'scheduled'; deletion_scheduled_for: string | null }> | null) ?? [])) memberships.push({ id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role, deletionStatus: 'scheduled', deletionScheduledFor: row.deletion_scheduled_for, appAccess: defaultAppAccess() });
     const { data: truckAccess } = await supabase.rpc('list_my_truck_access');
     const accessByWorkspace = new Map(((truckAccess as Array<{ workspace_id: string; truck_enabled: boolean; truck_permission: AppPermission }> | null) ?? []).map((item) => [item.workspace_id, item]));
     memberships.forEach((membership) => { const access = accessByWorkspace.get(membership.id); membership.appAccess.truck = { app_id: 'truck', enabled: access?.truck_enabled ?? true, permission: access?.truck_permission ?? (membership.role === 'owner' ? 'edit' : 'none') }; });
@@ -87,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const current = memberships.find((item) => item.id === (preferredWorkspaceId ?? workspace?.id));
     const preferred = current ?? memberships.find((item) => item.role === 'owner') ?? memberships[0] ?? null;
     applyWorkspace(preferred); setWorkspaceError(null); setWorkspaceLoading(false);
-    if (preferred) { localStorage.setItem(workspaceCacheKey(session.user.id), JSON.stringify(preferred)); await writeOffline(`workspace:${session.user.id}`, preferred); }
+    if (preferred) { localStorage.setItem(workspaceCacheKey(session.user.id), JSON.stringify(preferred)); await writeOffline(`workspace:${session.user.id}`, preferred); void prefetchWorkspaceData(preferred.id, session.user.id); }
     return preferred ? { id: preferred.id, name: preferred.name, accent_color: preferred.accent_color } : null;
   };
   const switchWorkspace = (workspaceId: string) => {
@@ -106,6 +109,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.subscription.unsubscribe();
   }, [guest]);
   useEffect(() => { if (!loading) void refreshWorkspace(); }, [session, loading]);
+  useEffect(() => {
+    const refreshOfflineCache = () => { if (session && workspace && navigator.onLine) void prefetchWorkspaceData(workspace.id, session.user.id); };
+    window.addEventListener('online', refreshOfflineCache);
+    document.addEventListener('visibilitychange', refreshOfflineCache);
+    refreshOfflineCache();
+    return () => { window.removeEventListener('online', refreshOfflineCache); document.removeEventListener('visibilitychange', refreshOfflineCache); };
+  }, [session?.user.id, workspace?.id]);
   useEffect(() => { if (!loading) void refreshAdmin(); }, [session, loading, guest]);
   useEffect(() => {
     if (standaloneMode || guest || !isSupabaseConfigured || !Capacitor.isNativePlatform()) return;

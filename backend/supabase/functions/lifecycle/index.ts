@@ -44,10 +44,25 @@ async function processDeletions() {
   return completed;
 }
 
+async function processWorkspaceDeletions() {
+  const { data: workspaces, error } = await service.rpc('list_expired_workspace_deletions', { target_limit: 100 });
+  if (error) throw error;
+  const removed: string[] = [];
+  for (const row of (workspaces ?? []) as Array<{ workspace_id: string }>) {
+    await removeWorkspaceFiles(row.workspace_id);
+    const { error: deleteError } = await service.from('workspaces').delete().eq('id', row.workspace_id);
+    if (!deleteError) removed.push(row.workspace_id);
+  }
+  return removed;
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers });
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
   const expected = Deno.env.get('LIFECYCLE_CRON_SECRET') ?? '';
   if (!expected || request.headers.get('x-lifecycle-secret') !== expected) return json({ error: 'Unauthorized.' }, 401);
-  try { const [deleted, trash] = await Promise.all([processDeletions(), cleanupTrash()]); return json({ ok: true, deleted_accounts: deleted, trash }); } catch (error) { return json({ error: error instanceof Error ? error.message : 'Lifecycle processing failed.' }, 500); }
+  try {
+    const [deleted, trash, workspaces] = await Promise.all([processDeletions(), cleanupTrash(), processWorkspaceDeletions()]);
+    return json({ ok: true, deleted_accounts: deleted, deleted_workspaces: workspaces, trash });
+  } catch (error) { return json({ error: error instanceof Error ? error.message : 'Lifecycle processing failed.' }, 500); }
 });
