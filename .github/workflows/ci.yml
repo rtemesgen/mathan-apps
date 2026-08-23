@@ -36,6 +36,8 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+      - run: supabase start
+        working-directory: backend
       - run: supabase db reset
         working-directory: backend
       - run: supabase test db
