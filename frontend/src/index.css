@@ -59,7 +59,7 @@ body {
 .erp-control { min-height: var(--erp-control-height); border: 1px solid var(--erp-border); border-radius: var(--erp-radius-control); background: var(--erp-surface); color: var(--erp-ink); }
 .erp-sidebar { width: 240px; background: var(--erp-canvas); border-color: var(--erp-border); padding: 12px; }
 .erp-sidebar.settings-sidebar { width: 100%; }
-.erp-sidebar.admin-sidebar { width: 100%; padding-left: 0; padding-right: 0; }
+.erp-sidebar.admin-sidebar { width: 100% !important; max-width: 100%; min-width: 0; padding-left: 0; padding-right: 0; }
 .erp-sidebar button, .erp-sidebar a { min-height: 44px; border-radius: 11px; font-size: 14px; font-weight: 600; }
 .erp-sidebar .sidebar-compact-action { min-height: 24px; height: 24px; }
 .erp-sidebar svg { width: 18px; height: 18px; }
@@ -70,6 +70,7 @@ body {
 @media (min-width: 1024px) { .erp-sidebar.settings-sidebar { width: 224px; } }
 @media (min-width: 1024px) { .erp-sidebar.admin-sidebar { width: 240px; padding-left: 12px; padding-right: 12px; } }
 @media (max-width: 1023px) { .erp-sidebar.settings-sidebar { padding-left: 0; padding-right: 0; } }
+@media (max-width: 1023px) { .erp-sidebar.admin-sidebar { width: 100% !important; max-width: 100%; } .erp-sidebar.admin-sidebar nav { width: 100%; min-width: 0; } }
 @media (max-width: 767px) { .erp-sidebar:not(.settings-sidebar):not(.admin-sidebar) { width: 288px; } }
 @media (max-width: 359px) {
   html, body, #root { max-width: 100%; overflow-x: hidden; }
