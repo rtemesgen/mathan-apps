@@ -121,9 +121,10 @@ async function listUsers(body: Body) {
   const filtered = query ? all.filter((user) => `${user.email ?? ''} ${user.phone ?? ''} ${user.user_metadata?.name ?? ''}`.toLowerCase().includes(query)) : all;
   const selected = filtered.slice((page - 1) * perPage, page * perPage);
   const ids = selected.map((user) => user.id);
-  const [{ data: controls }, { data: systemAdmins }, memberships] = await Promise.all([
+  const [{ data: controls }, { data: systemAdmins }, { data: deletionRequests }, memberships] = await Promise.all([
     ids.length ? admin.from('system_user_controls').select('*').in('user_id', ids) : Promise.resolve({ data: [] }),
     ids.length ? admin.from('system_admins').select('user_id').in('user_id', ids) : Promise.resolve({ data: [] }),
+    ids.length ? admin.from('account_deletion_requests').select('user_id,status,scheduled_for,request_source,delete_owned_workspaces').in('user_id', ids) : Promise.resolve({ data: [] }),
     workspaceMemberships(ids),
   ]);
   return {
@@ -132,6 +133,7 @@ async function listUsers(body: Body) {
       status: (() => { const control = (controls ?? []).find((row) => row.user_id === user.id); return control?.status === 'suspended' && control.suspended_until && new Date(control.suspended_until).getTime() <= Date.now() ? 'active' : control?.status ?? (user.banned_until ? 'blocked' : 'active'); })(),
       suspended_until: (controls ?? []).find((row) => row.user_id === user.id)?.suspended_until ?? null,
       is_system_admin: (systemAdmins ?? []).some((row) => row.user_id === user.id),
+      deletion_request: (deletionRequests ?? []).find((row) => row.user_id === user.id && row.status === 'pending') ?? null,
       memberships: memberships.filter((membership) => membership.user_id === user.id),
     })),
     page,
@@ -188,7 +190,7 @@ async function listWorkspaces(body: Body) {
   const page = Math.max(1, integer(body.page, 1, 10000));
   const perPage = Math.max(5, integer(body.per_page, 20, 100));
   const queryText = text(body.query);
-  let query = admin.from('workspaces').select('id,name,accent_color,created_by,created_at,updated_at', { count: 'exact' }).order('created_at', { ascending: false });
+  let query = admin.from('workspaces').select('id,name,accent_color,created_by,created_at,updated_at,deletion_status,deletion_scheduled_for,deletion_origin,deletion_subject_user_id', { count: 'exact' }).order('created_at', { ascending: false });
   if (queryText) query = query.ilike('name', `%${queryText.replace(/[%_]/g, '')}%`);
   const { data: workspaces, count, error } = await query.range((page - 1) * perPage, page * perPage - 1);
   if (error) throw error;
@@ -236,7 +238,7 @@ async function backupResource(actorId: string, runId: string, resource: BackupRe
     audit_events: { table: 'audit_events', columns: 'id,workspace_id,actor_id,record_type,record_id,action,previous_data,next_data,created_at' },
     system_audit_events: { table: 'system_admin_audit_events', columns: 'id,actor_id,action,target_user_id,target_workspace_id,result,previous_data,next_data,error_message,created_at' },
     backup_runs: { table: 'system_backup_runs', columns: 'id,requested_by,backup_kind,status,record_count,attachment_count,size_bytes,checksum,created_at,completed_at' },
-    invitations: { table: 'workspace_invitations', columns: 'id,workspace_id,email,invited_by,book_permission,payroll_permission,status,expires_at,accepted_by,created_at,accepted_at' },
+    invitations: { table: 'workspace_invitations', columns: 'id,workspace_id,email,invited_by,book_permission,payroll_permission,truck_permission,status,expires_at,accepted_by,created_at,accepted_at' },
     attachments: { table: 'record_attachments', columns: 'id,workspace_id,record_type,record_id,storage_path,file_name,mime_type,size_bytes,created_at' },
     attachment_links: { table: 'cash_transaction_attachments', columns: 'cash_transaction_id,attachment_id' },
     notifications: { table: 'notifications', columns: 'id,user_id,workspace_id,notification_type,title,body,route,metadata,read_at,created_at' },
@@ -372,7 +374,7 @@ async function createRecoveryInvitation(actorId: string, body: Body) {
   await admin.from('workspace_invitations').update({ status: 'revoked' }).eq('workspace_id', mapping.target_workspace_id).eq('email', email).eq('status', 'pending');
   const { data, error } = await admin.from('workspace_invitations').insert({
     workspace_id: mapping.target_workspace_id, email, token_hash: tokenHash, invited_by: actorId,
-    book_permission: permission(body.book_permission), payroll_permission: permission(body.payroll_permission),
+    book_permission: permission(body.book_permission), payroll_permission: permission(body.payroll_permission), truck_permission: permission(body.truck_permission),
     expires_at: new Date(Date.now() + 7 * 24 * 3600000).toISOString(),
   }).select('id,expires_at').single();
   if (error) throw error;
@@ -493,23 +495,53 @@ Deno.serve(async (request) => {
         await audit(actor.id, 'workspace_ownership_transferred', 'success', { targetUserId: toUser, targetWorkspaceId: workspaceId, previous: { owner: fromUser }, next: { owner: toUser } });
         return json({ ok: true });
       }
-      case 'purge-user': {
+      case 'schedule-workspace-deletion': {
+        const workspaceId = text(body.workspace_id);
+        const { data: workspace } = await admin.from('workspaces').select('id,name,deletion_status').eq('id', workspaceId).maybeSingle();
+        if (!workspace) throw new Error('Company not found.');
+        if (text(body.confirmation) !== `DELETE ${workspace.name}`) throw new Error(`Type DELETE ${workspace.name} to confirm.`);
+        const { data, error } = await admin.rpc('system_admin_schedule_workspace_deletion', { target_admin: actor.id, target_workspace: workspaceId });
+        if (error) throw error;
+        await audit(actor.id, 'workspace_deletion_scheduled', 'success', { targetWorkspaceId: workspaceId, previous: { status: workspace.deletion_status }, next: { status: 'scheduled', scheduled_for: data } });
+        return json({ ok: true, scheduled_for: data });
+      }
+      case 'restore-workspace-deletion': {
+        const workspaceId = text(body.workspace_id);
+        const { error } = await admin.rpc('system_admin_restore_workspace_deletion', { target_admin: actor.id, target_workspace: workspaceId });
+        if (error) throw error;
+        await audit(actor.id, 'workspace_deletion_cancelled', 'success', { targetWorkspaceId: workspaceId, next: { status: 'active' } });
+        return json({ ok: true });
+      }
+      case 'schedule-user-deletion': {
         const targetUserId = text(body.user_id);
         await requireAdminTargetSafety(actor, targetUserId);
         const { data: targetAccount } = await admin.auth.admin.getUserById(targetUserId);
-        if (text(body.confirmation) !== 'DELETE') throw new Error('Type DELETE to confirm permanent deletion.');
-        const issuedAt = Number((JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { iat?: number }).iat ?? 0) * 1000;
-        if (!issuedAt || Date.now() - issuedAt > 10 * 60 * 1000) throw new Error('Sign in again before permanently deleting a user.');
-        const { data: backup } = await admin.from('system_backup_runs').select('id,completed_at').eq('status', 'completed').in('backup_kind', ['automatic', 'manual']).gte('completed_at', new Date(Date.now() - 24 * 3600000).toISOString()).order('completed_at', { ascending: false }).limit(1).maybeSingle();
-        if (!backup) throw new Error('Create and verify a successful backup before deleting this user.');
-        const { data: owned } = await admin.from('workspace_members').select('workspace_id').eq('user_id', targetUserId).eq('role', 'owner');
-        if ((owned ?? []).length) throw new Error('Transfer ownership of every owned workspace before deleting this user.');
-        await admin.from('system_user_controls').upsert({ user_id: targetUserId, status: 'purge_pending', suspended_until: null, updated_by: actor.id, updated_at: new Date().toISOString() });
-        await admin.from('workspace_invitations').update({ invited_by: actor.id }).eq('invited_by', targetUserId);
-        const { error } = await admin.auth.admin.deleteUser(targetUserId, false);
-        if (error) throw error;
-        await audit(actor.id, 'user_purged', 'success', { previous: { user_id: targetUserId, email: targetAccount.user?.email ?? null }, next: { backup_run_id: backup.id } });
-        return json({ ok: true });
+        const targetEmail = targetAccount.user?.email ?? '';
+        if (!targetAccount.user) throw new Error('User not found.');
+        if (text(body.confirmation) !== `DELETE ${targetEmail}`) throw new Error(`Type DELETE ${targetEmail} to confirm.`);
+        const scheduledFor = new Date(Date.now() + 30 * 24 * 3600000).toISOString();
+        const { error: blockError } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: '876000h' });
+        if (blockError) throw blockError;
+        const { data: companyCount, error } = await admin.rpc('system_admin_schedule_user_deletion', { target_admin: actor.id, target_user: targetUserId, scheduled_at: scheduledFor });
+        if (error) {
+          await admin.auth.admin.updateUserById(targetUserId, { ban_duration: 'none' });
+          throw error;
+        }
+        await audit(actor.id, 'user_deletion_scheduled', 'success', { targetUserId, previous: { email: targetEmail }, next: { scheduled_for: scheduledFor, owned_companies: companyCount } });
+        return json({ ok: true, scheduled_for: scheduledFor, owned_companies: companyCount });
+      }
+      case 'restore-user-deletion': {
+        const targetUserId = text(body.user_id);
+        await requireAdminTargetSafety(actor, targetUserId);
+        const { error: authError } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: 'none' });
+        if (authError) throw authError;
+        const { data: companyCount, error } = await admin.rpc('system_admin_restore_user_deletion', { target_admin: actor.id, target_user: targetUserId });
+        if (error) {
+          await admin.auth.admin.updateUserById(targetUserId, { ban_duration: '876000h' });
+          throw error;
+        }
+        await audit(actor.id, 'user_deletion_cancelled', 'success', { targetUserId, next: { status: 'active', restored_companies: companyCount } });
+        return json({ ok: true, restored_companies: companyCount });
       }
       case 'start-backup': return json(await startBackup(actor.id, body.kind === 'automatic' ? 'automatic' : 'manual'));
       case 'backup-resource': return json(await backupResource(actor.id, text(body.run_id), text(body.resource) as BackupResource, integer(body.offset, 0, Number.MAX_SAFE_INTEGER), Math.max(1, integer(body.limit, 100, 250))));

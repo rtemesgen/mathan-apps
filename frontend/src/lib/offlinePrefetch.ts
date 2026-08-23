@@ -1,19 +1,23 @@
 import { supabase } from './supabase';
 import { writeOffline } from './localStore';
 
-type SnapshotRow = { domain: string; payload: unknown };
+type SnapshotRow = { domain: string; payload: unknown; revision: number };
 
 /** Warm every app cache for a workspace without requiring the user to open each app. */
 export async function prefetchWorkspaceData(workspaceId: string, userId: string) {
   if (!navigator.onLine) return;
-  const snapshots = await supabase.from('app_state_snapshots').select('domain,payload').eq('workspace_id', workspaceId);
+  const snapshots = await supabase.from('app_state_snapshots').select('domain,payload,revision').eq('workspace_id', workspaceId);
   if (!snapshots.error) {
     for (const row of (snapshots.data as SnapshotRow[] | null) ?? []) {
       const separator = row.domain.indexOf(':');
       if (separator < 1) continue;
       const domain = row.domain.slice(0, separator);
       const key = row.domain.slice(separator + 1);
-      if (domain === 'cash_book' || domain === 'payroll') await writeOffline(`${userId}:${workspaceId}:${domain}:${key}`, row.payload);
+      if (domain === 'cash_book' || domain === 'payroll') {
+        const storageKey = `${userId}:${workspaceId}:${domain}:${key}`;
+        await writeOffline(storageKey, row.payload);
+        await writeOffline(`${storageKey}:revision`, row.revision);
+      }
     }
   }
 

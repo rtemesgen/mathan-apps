@@ -10,7 +10,7 @@ import { cancelAccountDeletion, getAccountDeletionRequest, type AccountDeletionR
 import { useEffect, useState } from 'react';
 
 export function AppLauncher() {
-  const { workspace, user, canViewApp, isSystemAdmin, refreshAccess } = useAuth();
+  const { workspace, user, canViewApp, isSystemAdmin, isGuest, refreshAccess } = useAuth();
   const [deletion, setDeletion] = useState<AccountDeletionRequest | null>(null);
   const [remainingDays, setRemainingDays] = useState(0);
   const [cancelling, setCancelling] = useState(false);
@@ -25,7 +25,7 @@ export function AppLauncher() {
       {deletion && <section role="status" className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-red-200 bg-red-50 p-4 text-red-950 shadow-sm"><AlertTriangle className="h-5 w-5 shrink-0 text-red-700" /><div className="min-w-0 flex-1"><p className="text-sm font-extrabold">Account deletion is scheduled</p><p className="mt-1 text-xs leading-5 text-red-800">{deletion.delete_owned_workspaces ? 'Your account and solely owned companies are scheduled for deletion.' : 'Your account deletion is scheduled after ownership is transferred.'} You have <strong>{remainingDays} day{remainingDays === 1 ? '' : 's'}</strong> to recover it.</p></div><button type="button" disabled={cancelling} onClick={() => void cancelDeletion()} className="rounded-xl border-2 border-red-300 bg-white px-4 py-2 text-xs font-extrabold text-red-800 shadow-sm hover:bg-red-100 disabled:opacity-50">{cancelling ? 'Cancelling…' : 'Cancel deletion'}</button></section>}
       <WorkspaceInvitations />
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {ERP_APPS.filter((app) => workspace && canViewApp(app.id)).map((app) => {
+        {ERP_APPS.filter((app) => (isGuest || workspace) && canViewApp(app.id)).map((app) => {
           const Icon = app.icon;
           return (
             <Link key={app.id} to={app.route} aria-label={app.name} className="group flex items-center gap-3 rounded-xl border border-[#e6e2d6] bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg sm:p-3.5">

@@ -1,10 +1,9 @@
 import { expect, test } from 'playwright/test';
 import { signIn } from './helpers';
-import { E2E_USERS } from './globalSetup';
 
 const PASSPHRASE = 'Mathan-E2E-recovery-passphrase!';
 
-test('admin controls, encrypted backup, purge, safe restore, and audit work end to end', async ({ page }) => {
+test('admin controls, encrypted backup, recoverable deletion, safe restore, and audit work end to end', async ({ page }) => {
   await signIn(page, 'admin');
   await expect(page.getByLabel('Admin')).toBeVisible();
   await page.getByLabel('Admin').click();
@@ -50,16 +49,16 @@ test('admin controls, encrypted backup, purge, safe restore, and audit work end 
   await page.getByPlaceholder('Search name, email, or phone').fill('delete-me@mathan-e2e.local');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByText('delete-me@mathan-e2e.local · active').click();
-  await page.getByRole('button', { name: 'Delete permanently' }).click();
-  await page.getByRole('dialog').getByLabel('Type DELETE to confirm').fill('DELETE');
-  await page.getByRole('dialog').getByLabel('Your password').fill(E2E_USERS.admin.password);
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
-  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
-  await page.getByRole('button', { name: 'Users', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible();
-  await page.getByPlaceholder('Search name, email, or phone').fill('delete-me@mathan-e2e.local');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await expect(page.getByText('0 users')).toBeVisible();
+  await page.getByRole('button', { name: 'Schedule deletion' }).click();
+  await page.getByRole('dialog').getByLabel('Type DELETE delete-me@mathan-e2e.local to confirm').fill('DELETE delete-me@mathan-e2e.local');
+  await page.getByRole('dialog').getByRole('button', { name: 'Schedule deletion' }).click();
+  await expect(page.getByText('delete-me@mathan-e2e.local · purge pending')).toBeVisible();
+  const deletedUser = page.locator('article').filter({ hasText: 'delete-me@mathan-e2e.local' }).first();
+  const restoreUser = deletedUser.getByRole('button', { name: 'Restore user' });
+  if (!await restoreUser.isVisible()) await deletedUser.getByRole('button').first().click();
+  await restoreUser.click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Restore user', exact: true }).click();
+  await expect(page.getByText('delete-me@mathan-e2e.local · active')).toBeVisible();
 
   await page.getByRole('button', { name: 'Backup & Restore' }).click();
   await page.locator('input[type=file]').setInputFiles(backupPath!);
@@ -69,11 +68,11 @@ test('admin controls, encrypted backup, purge, safe restore, and audit work end 
   await page.getByRole('button', { name: 'Restore selected as new workspaces' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Restore as new workspaces' }).click();
   await expect(page.getByText(/recovery workspaces created/)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/delete-me@mathan-e2e.local/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Audit Log' }).click();
   await expect(page.getByText('user suspended').first()).toBeVisible();
-  await expect(page.getByText('user purged')).toBeVisible();
+  await expect(page.getByText('user deletion scheduled')).toBeVisible();
+  await expect(page.getByText('user deletion cancelled')).toBeVisible();
   await expect(page.getByText('restore completed')).toBeVisible();
 });
 

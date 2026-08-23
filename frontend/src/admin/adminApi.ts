@@ -35,6 +35,7 @@ export type AdminUser = {
   status: 'active' | 'suspended' | 'blocked' | 'purge_pending';
   suspended_until: string | null;
   is_system_admin: boolean;
+  deletion_request: { user_id: string; status: 'pending'; scheduled_for: string; request_source: 'self' | 'admin'; delete_owned_workspaces: boolean } | null;
   memberships: AdminMembership[];
 };
 
@@ -45,6 +46,10 @@ export type AdminWorkspace = {
   created_by: string;
   created_at: string;
   updated_at: string;
+  deletion_status: 'active' | 'scheduled';
+  deletion_scheduled_for: string | null;
+  deletion_origin: 'owner' | 'admin_workspace' | 'admin_user';
+  deletion_subject_user_id: string | null;
   apps: Array<{ workspace_id: string; app_id: 'book' | 'payroll' | 'truck'; enabled: boolean }>;
   members: Array<{
     workspace_id: string;

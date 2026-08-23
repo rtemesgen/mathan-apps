@@ -4,7 +4,7 @@ import { calculateTruckFinancials, formatCurrency, formatDate } from './utils/fo
 import { createTruck, createTruckOwner, createTruckTransaction, deleteTruck, deleteTruckOwner, loadTruckData, loadTruckWorkspaceMembers, softDeleteTruckTransaction, updateTruck, updateTruckOwner, updateTruckTransaction } from './truckApi';
 import { useAuth } from '../../auth/AuthProvider';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
-import { syncQueue } from '../../hooks/useCloudSnapshot';
+import { syncQueue } from '../../lib/offlineSync';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { OwnerCard } from './components/OwnerCard';
@@ -24,7 +24,7 @@ import { UserPlus, Plus, Users, ArrowUpDown } from 'lucide-react';
 import './index.css';
 
 export default function App() {
-  const { workspace, canEditApp } = useAuth();
+  const { workspace, canEditApp, isGuest } = useAuth();
   const [trucks, setTrucks] = useState<Truck[]>([]);
 
   const [currentTruckId, setCurrentTruckId] = useState<string>(() => {
@@ -88,8 +88,8 @@ export default function App() {
     preferencesReadyKey.current = preferenceKey;
     preferencesReady.current = true;
   }, [preferenceKey]);
-  const refresh = async () => { if (!workspace) return; setLoading(true); try { await syncQueue(workspace.id); const data = await loadTruckData(workspace.id); setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); setCurrentTruckId((current) => data.trucks.some((truck) => truck.id === current) ? current : (data.trucks[0]?.id ?? '')); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load Truck data.'); } finally { setLoading(false); } };
-  useEffect(() => { void refresh(); if (workspace) void loadTruckWorkspaceMembers(workspace.id).then(setMembers).catch(() => undefined); }, [workspace?.id]);
+  const refresh = async () => { if (!workspace) return; setLoading(true); try { if (!isGuest) await syncQueue(workspace.id); const data = await loadTruckData(workspace.id, isGuest); setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); setCurrentTruckId((current) => data.trucks.some((truck) => truck.id === current) ? current : (data.trucks[0]?.id ?? '')); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load Truck data.'); } finally { setLoading(false); } };
+  useEffect(() => { void refresh(); if (workspace && !isGuest) void loadTruckWorkspaceMembers(workspace.id).then(setMembers).catch(() => undefined); else setMembers([]); }, [workspace?.id, isGuest]);
   useEffect(() => { const handler = () => { if (workspace) void refresh(); }; window.addEventListener('online', handler); return () => window.removeEventListener('online', handler); }, [workspace?.id]);
 
   const activeTruck = trucks.find((t) => t.id === currentTruckId) || trucks[0] || { id: '', name: 'No trucks yet', unitNumber: '', makeModel: '', vin: '', cashOnHand: 0, licensePlate: '' };
@@ -133,12 +133,12 @@ export default function App() {
     referenceNo?: string;
   }) => {
     if (!workspace || !editable) return;
-    try { await createTruckTransaction(workspace.id, txData); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save Truck transaction.'); }
+    try { await createTruckTransaction(workspace.id, txData, isGuest); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save Truck transaction.'); }
   };
 
   const handleUpdateTransaction = async (txData: Omit<Transaction, 'id'>) => {
     if (!workspace || !editable || !editingTransaction) return;
-    try { await updateTruckTransaction(workspace.id, { ...editingTransaction, ...txData }); await refresh(); setEditingTransaction(null); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update Truck transaction.'); }
+    try { await updateTruckTransaction(workspace.id, { ...editingTransaction, ...txData }, isGuest); await refresh(); setEditingTransaction(null); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update Truck transaction.'); }
   };
 
   const handlePayOwnerSubmit = async (ownerId: string, amount: number, memo: string) => {
@@ -183,9 +183,9 @@ export default function App() {
   }) => {
     if (ownerData.id) {
       const existing = owners.find((owner) => owner.id === ownerData.id);
-      if (workspace && editable && existing) { try { await updateTruckOwner(workspace.id, { ...existing, ...ownerData, id: ownerData.id }); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update partner.'); } }
+      if (workspace && editable && existing) { try { await updateTruckOwner(workspace.id, { ...existing, ...ownerData, id: ownerData.id }, isGuest); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update partner.'); } }
     } else {
-      if (workspace && editable) { try { await createTruckOwner(workspace.id, { ...ownerData, truckId: ownerData.truckId || activeTruck.id, avatarColor: 'bg-slate-800 text-white' }); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not add partner.'); } }
+      if (workspace && editable) { try { await createTruckOwner(workspace.id, { ...ownerData, truckId: ownerData.truckId || activeTruck.id, avatarColor: 'bg-slate-800 text-white' }, isGuest); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not add partner.'); } }
     }
   };
 
@@ -198,12 +198,12 @@ export default function App() {
     licensePlate: string;
   }) => {
     if (!workspace || !editable) return;
-    void createTruck(workspace.id, truckData).then((newTruck) => { setCurrentTruckId(newTruck.id); return refresh(); }).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not add truck.'));
+    void createTruck(workspace.id, truckData, isGuest).then((newTruck) => { setCurrentTruckId(newTruck.id); return refresh(); }).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not add truck.'));
   };
 
   const handleUpdateTruck = async (truckData: Truck) => {
     if (!workspace || !editable) return;
-    try { await updateTruck(workspace.id, truckData); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update truck.'); }
+    try { await updateTruck(workspace.id, truckData, isGuest); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update truck.'); }
   };
 
   const handleDeleteTruck = (truckId: string) => {
@@ -215,7 +215,7 @@ export default function App() {
       itemName: truck?.name ?? 'Truck',
       itemDetails: truck ? `Unit ${truck.unitNumber} · ${truck.makeModel || 'Fleet vehicle'}` : undefined,
       onConfirm: () => {
-        if (workspace && editable) void deleteTruck(workspace.id, truckId).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete truck.'));
+        if (workspace && editable) void deleteTruck(workspace.id, truckId, isGuest).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete truck.'));
         setDeleteModal((previous) => ({ ...previous, isOpen: false }));
       },
     });
@@ -230,7 +230,7 @@ export default function App() {
       itemName: tx ? `${tx.category || tx.type} • ${formatCurrency(tx.amount)}` : 'Transaction entry',
       itemDetails: tx ? `Date: ${formatDate(tx.date)} • ${tx.description}` : undefined,
       onConfirm: () => {
-        if (workspace && editable) void softDeleteTruckTransaction(workspace.id, txId).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete transaction.'));
+        if (workspace && editable) void softDeleteTruckTransaction(workspace.id, txId, isGuest).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete transaction.'));
         setDeleteModal((prev) => ({ ...prev, isOpen: false }));
       },
     });
@@ -247,7 +247,7 @@ export default function App() {
         ? `Monthly Draw: $${owner.monthlyDrawRate.toLocaleString()} • Truck: ${trucks.find((t) => t.id === owner.truckId)?.name || 'Active Unit'}`
         : undefined,
       onConfirm: () => {
-        if (workspace && editable) void deleteTruckOwner(workspace.id, ownerId).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete partner.'));
+        if (workspace && editable) void deleteTruckOwner(workspace.id, ownerId, isGuest).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete partner.'));
         setDeleteModal((prev) => ({ ...prev, isOpen: false }));
       },
     });

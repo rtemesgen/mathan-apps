@@ -11,7 +11,7 @@ type DurableNotification = { id: string; title: string; body: string; route?: st
 
 export function AppNotificationCenter() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const [notification, setNotification] = useState<AppNotification | null>(null);
   const [conflict, setConflict] = useState<{ domain: string; revision: number } | null>(null);
   const [permissionMessage, setPermissionMessage] = useState('');
@@ -52,7 +52,7 @@ export function AppNotificationCenter() {
     const timer = window.setInterval(() => { void checkInvitations(); void loadDurable(); }, 60000);
     return () => window.clearInterval(timer);
   }, [user?.id]);
-  useEffect(() => { if (!Capacitor.isNativePlatform()) return; void requestNotificationPermission().then((permission) => { if (permission !== 'granted') setPermissionMessage('Notifications are off. Enable them in Android Settings to receive invite and update alerts.'); }).catch(() => setPermissionMessage('Notifications could not be enabled. You can allow them later in Android Settings.')); }, []);
+  useEffect(() => { if (isGuest || !Capacitor.isNativePlatform()) return; void requestNotificationPermission().then((permission) => { if (permission !== 'granted') setPermissionMessage('Notifications are off. Enable them in Android Settings to receive invite and update alerts.'); }).catch(() => setPermissionMessage('Notifications could not be enabled. You can allow them later in Android Settings.')); }, [isGuest]);
   const unread = durable.filter((item) => !item.read_at).length;
   const markRead = async (item: DurableNotification) => { await supabase.rpc('mark_notification_read', { target_id: item.id }); setDurable((current) => { const next = current.map((entry) => entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: next.filter((entry) => !entry.read_at).length } })); return next; }); };
   const markAllRead = async () => { await supabase.rpc('mark_all_notifications_read'); setDurable((current) => { const next = current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: 0 } })); return next; }); };

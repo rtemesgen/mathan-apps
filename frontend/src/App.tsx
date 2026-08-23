@@ -12,7 +12,7 @@ import { AppUpdateNotice } from './components/AppUpdateNotice';
 import { AppToast } from './components/AppToast';
 import { AppNotificationCenter } from './components/AppNotificationCenter';
 import { AppUpdateProvider } from './hooks/useAppUpdate';
-import { InviteAcceptance, SettingsPage } from './components/SettingsPage';
+import { GuestSettingsPage, InviteAcceptance, SettingsPage } from './components/SettingsPage';
 import { CompanySelector } from './components/CompanySelector';
 import { useAuth, type AppId } from './auth/AuthProvider';
 import { AdminPage } from './admin/AdminPage';
@@ -42,6 +42,11 @@ function AndroidNavigationBridge() {
   return null;
 }
 
+function SettingsRoute() {
+  const { isGuest } = useAuth();
+  return isGuest ? <GuestSettingsPage /> : <SettingsPage />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -55,7 +60,7 @@ export default function App() {
             <Routes>
               <Route element={<AppShell />}>
                 <Route path="/" element={<AppLauncher />} />
-                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/settings" element={<SettingsRoute />} />
                 <Route path="/admin" element={<SystemAdminGate><AdminPage /></SystemAdminGate>} />
                 <Route path="/companies" element={<CompanySelector />} />
                 <Route path="/invite/:token" element={<InviteRoute />} />

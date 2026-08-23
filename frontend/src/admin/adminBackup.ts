@@ -203,6 +203,7 @@ export async function restoreAdminArchive(archive: AdminArchive, workspaceIds: s
         operation_id: operation.operation_id, source_workspace_id: sourceId, email,
         book_permission: permissions.find((permission) => permission.app_id === 'book')?.permission ?? 'none',
         payroll_permission: permissions.find((permission) => permission.app_id === 'payroll')?.permission ?? 'none',
+        truck_permission: permissions.find((permission) => permission.app_id === 'truck')?.permission ?? 'none',
       });
       invitations.push({ ...invitation, workspace_name: result.name });
     }

@@ -2,44 +2,10 @@ import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
 import { useAuth, type AppId } from '../auth/AuthProvider';
 import { readOffline, writeOffline } from '../lib/localStore';
 import { supabase } from '../lib/supabase';
-import { enqueueMutation, getQueuedMutations, replaceQueue } from '../lib/syncQueue';
+import { enqueueMutation } from '../lib/syncQueue';
+import { syncQueue } from '../lib/offlineSync';
 
-export async function syncQueue(workspaceId: string) {
-  if (!navigator.onLine) { window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'offline' } })); return; }
-  window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'syncing' } }));
-  const queue = await getQueuedMutations();
-  const remaining = [];
-  for (const mutation of queue) {
-    if (mutation.payload.workspace_id !== workspaceId) { remaining.push(mutation); continue; }
-    if (mutation.table !== 'app_state_snapshots') {
-      if (!['trucks', 'truck_owners', 'truck_transactions'].includes(mutation.table)) { remaining.push(mutation); continue; }
-      const row = { ...mutation.payload }; delete row.workspace_id;
-      const id = String(row.id ?? ''); delete row.id;
-      const result = row.deleted_at
-        ? await supabase.from(mutation.table).update(row).eq('workspace_id', workspaceId).eq('id', id)
-        : await supabase.from(mutation.table).upsert({ id, workspace_id: workspaceId, ...row }, { onConflict: 'id' });
-      if (result.error) { remaining.push(mutation); window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'retry', queued: remaining.length } })); }
-      continue;
-    }
-    const { data, error } = await supabase.rpc('write_app_state_snapshot', {
-      target_workspace: workspaceId,
-      target_domain: mutation.payload.domain,
-      expected_revision: mutation.payload.expected_revision ?? 0,
-      target_payload: mutation.payload.payload,
-      audit_action: mutation.payload.audit_action ?? 'snapshot_written_offline',
-      affected_client_ids: mutation.payload.affected_client_ids ?? [],
-    });
-    const result = (data as Array<{ status: string; revision: number; payload: unknown }> | null)?.[0];
-    if (error || !result || result.status === 'conflict') {
-      if (result?.status === 'conflict') {
-        window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: mutation.payload.domain, remote: result.payload, revision: result.revision } }));
-        window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'conflict' } }));
-      } else { remaining.push(mutation); window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'retry', queued: remaining.length } })); }
-    }
-  }
-  await replaceQueue(remaining);
-  if (!remaining.length) window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'synced' } }));
-}
+export { syncQueue } from '../lib/offlineSync';
 
 export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>, boolean] {
   const { workspace, user, isGuest, canEditApp } = useAuth();
@@ -49,18 +15,21 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
   const [ready, setReady] = useState(false);
   const hydrated = useRef(false);
   const revision = useRef(0);
+  const initialValueRef = useRef(initialValue);
   const storageKey = `${standalone ? 'standalone' : user?.id ?? 'anonymous'}:${workspace?.id ?? 'none'}:${domain}:${key}`;
   useEffect(() => {
     let active = true; hydrated.current = false; setReady(false);
     void (async () => {
       const local = await readOffline<T>(storageKey);
-      if (active && local !== null) setValue(local);
+      if (active) setValue(local !== null ? local : initialValueRef.current);
+      revision.current = (await readOffline<number>(`${storageKey}:revision`)) ?? 0;
       if (workspace && !standalone && navigator.onLine) {
+        await syncQueue(workspace.id);
         const { data } = await supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', workspace.id).eq('domain', `${domain}:${key}`).maybeSingle();
         const remote = data as unknown as { payload?: T; revision?: number } | null;
         revision.current = remote?.revision ?? 0;
+        if (remote?.revision !== undefined) await writeOffline(`${storageKey}:revision`, remote.revision);
         if (active && remote?.payload !== undefined) { setValue(remote.payload); await writeOffline(storageKey, remote.payload); }
-        await syncQueue(workspace.id);
       }
       if (active) { hydrated.current = true; setReady(true); }
     })();
@@ -82,7 +51,7 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
           target_payload: payload.payload, audit_action: 'snapshot_written', affected_client_ids: [],
         });
         const result = (data as Array<{ status: string; revision: number; payload: T }> | null)?.[0];
-        if (!error && result?.status === 'written') { revision.current = result.revision; window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'synced' } })); return; }
+        if (!error && result?.status === 'written') { revision.current = result.revision; await writeOffline(`${storageKey}:revision`, result.revision); window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'synced' } })); return; }
         if (result?.status === 'conflict') {
           window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: payload.domain, remote: result.payload, revision: result.revision } }));
           window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'conflict' } }));

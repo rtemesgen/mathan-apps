@@ -1,9 +1,11 @@
 begin;
-select plan(36);
+select plan(44);
 
 select has_function('public', 'can_view_workspace_app', ARRAY['uuid', 'text']);
 select has_function('public', 'can_edit_workspace_app', ARRAY['uuid', 'text']);
 select has_function('public', 'write_app_state_snapshot', ARRAY['uuid', 'text', 'bigint', 'jsonb', 'text', 'jsonb']);
+select ok(to_regclass('public.guest_workspace_import_receipts') is not null, 'guest workspace import receipts table exists');
+select has_function('public', 'import_guest_workspace', ARRAY['uuid', 'uuid', 'jsonb']);
 select has_function('public', 'count_my_workspace_invitations', ARRAY[]::text[]);
 select has_function('public', 'restore_workspace_backup', ARRAY['jsonb', 'text']);
 select ok(exists(select 1 from pg_policies where schemaname = 'public' and tablename = 'cash_books' and policyname = 'book viewers read cash books'), 'cash book read policy exists');
@@ -37,6 +39,12 @@ select has_function('public', 'request_workspace_deletion', ARRAY['uuid']);
 select has_function('public', 'cancel_workspace_deletion', ARRAY['uuid']);
 select has_function('public', 'get_workspace_deletion_status', ARRAY['uuid']);
 select has_function('public', 'list_my_workspace_deletions', ARRAY[]::text[]);
+select has_function('public', 'system_admin_schedule_workspace_deletion', ARRAY['uuid', 'uuid']);
+select has_function('public', 'system_admin_restore_workspace_deletion', ARRAY['uuid', 'uuid']);
+select has_function('public', 'system_admin_schedule_user_deletion', ARRAY['uuid', 'uuid', 'timestamp with time zone']);
+select has_function('public', 'system_admin_restore_user_deletion', ARRAY['uuid', 'uuid']);
+select has_function('public', 'list_my_workspaces', ARRAY[]::text[]);
+select has_function('public', 'set_member_workspace_access', ARRAY['uuid', 'uuid', 'boolean', 'uuid']);
 
 select * from finish();
 rollback;
