@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Employee } from '../types';
 import { getTodayString } from '../utils/calc';
 import { X, UserPlus, DollarSign, Calendar, Building, Briefcase, Mail } from 'lucide-react';
+import { AppDatePicker } from '../../../components/AppDatePicker';
 
 interface AddEmployeeModalProps {
   isOpen: boolean;
@@ -82,13 +83,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({ isOpen, onCl
                 Start Date <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <input
-                  type="date"
-                  required
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs text-slate-900"
-                />
+                <AppDatePicker value={startDate} onChange={setStartDate} required />
               </div>
             <p className="text-[10px] text-slate-500 mt-1">Calculates earnings from this date</p>
             </div>

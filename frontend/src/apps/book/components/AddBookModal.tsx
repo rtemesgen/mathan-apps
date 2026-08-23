@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Book } from '../types';
 import { X, BookPlus } from 'lucide-react';
+import { AppSelect } from '../../../components/AppSelect';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -99,17 +100,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
             <label className="block text-[10px] font-bold tracking-wider text-[#4B5563] uppercase mb-1">
               Category
             </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3 py-1.5 text-xs bg-[#FAF9F5] border border-[#D8D3C5] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#121212] transition-all"
-            >
-              <option value="Business">Business / Shop</option>
-              <option value="Payroll">Payroll & Staff</option>
-              <option value="Personal">Personal Ledger</option>
-              <option value="Projects">Client Project</option>
-              <option value="Other">Other Category</option>
-            </select>
+            <AppSelect value={category} onChange={setCategory} options={[{value:'Business',label:'Business / Shop'},{value:'Payroll',label:'Payroll & Staff'},{value:'Personal',label:'Personal Ledger'},{value:'Projects',label:'Client Project'},{value:'Other',label:'Other Category'}]} />
           </div>
 
           <div>
@@ -146,4 +137,3 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
     </div>
   );
 };
-

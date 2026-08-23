@@ -37,3 +37,28 @@ export async function writeOffline<T>(key: string, value: T): Promise<void> {
   }
 }
 
+export async function deleteOffline(key: string): Promise<void> {
+  try {
+    const store = await getStore('readwrite');
+    await new Promise<void>((resolve, reject) => {
+      const request = store.delete(key);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch {
+    localStorage.removeItem(`mathan_erp_offline_${key}`);
+  }
+}
+
+export async function listOfflineKeys(): Promise<string[]> {
+  try {
+    const store = await getStore('readonly');
+    return await new Promise<string[]>((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onsuccess = () => resolve(request.result.map(String));
+      request.onerror = () => reject(request.error);
+    });
+  } catch {
+    return Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length));
+  }
+}

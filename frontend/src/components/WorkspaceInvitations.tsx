@@ -4,10 +4,10 @@ import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../lib/supabase';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 
-type Invitation = { invitation_id: string; workspace_id: string; workspace_name: string; invited_by_name: string; book_permission: string; payroll_permission: string; expires_at: string };
+type Invitation = { invitation_id: string; workspace_id: string; workspace_name: string; invited_by_name: string; book_permission: string; payroll_permission: string; truck_permission: string; expires_at: string };
 
 function AccessText({ invitation }: { invitation: Invitation }) {
-  const access = [invitation.book_permission !== 'none' ? 'Cash Book' : '', invitation.payroll_permission !== 'none' ? 'Payroll' : ''].filter(Boolean).join(' and ');
+  const access = [invitation.book_permission !== 'none' ? 'Cash Book' : '', invitation.payroll_permission !== 'none' ? 'Payroll' : '', invitation.truck_permission !== 'none' ? 'Truck Equity' : ''].filter(Boolean).join(', ');
   return <span>{access || 'No app access selected'}</span>;
 }
 

@@ -21,9 +21,8 @@ export function AppVersionPanel() {
   }, []);
 
   return (
-    <div className="text-right text-[10px] leading-4 text-zinc-400">
-      <p className="font-mono font-semibold text-zinc-500">v{version}</p>
-      <p>Build {build}</p>
+    <div className="fixed bottom-3 right-3 z-[205] text-[10px] font-mono font-semibold text-zinc-400">
+      v{version}{build !== 'local' && <span className="sr-only"> build {build}</span>}
     </div>
   );
 }

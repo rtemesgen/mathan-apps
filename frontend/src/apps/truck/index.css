@@ -1,0 +1,44 @@
+.truck-app {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+.truck-app .font-serif-display {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+/* Keep native form controls compact and consistent with the ERP shell. */
+.truck-app select,
+.truck-app select option,
+.truck-app input[type='date'] {
+  font-size: 0.75rem !important;
+  line-height: 1.25rem;
+}
+
+.truck-app select {
+  min-height: 2.25rem;
+  appearance: none;
+  border: 1px solid #d8d0be;
+  border-radius: 0.75rem;
+  background-color: #f8f6f0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23787672' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 0.65rem center;
+  background-repeat: no-repeat;
+  background-size: 0.85rem;
+  padding-right: 2rem;
+}
+
+/* Custom scrollbar for ERP tables */
+.truck-app ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.truck-app ::-webkit-scrollbar-track {
+  background: #f1ebd9;
+}
+.truck-app ::-webkit-scrollbar-thumb {
+  background: #d4ccb8;
+  border-radius: 9999px;
+}
+.truck-app ::-webkit-scrollbar-thumb:hover {
+  background: #b5ac96;
+}

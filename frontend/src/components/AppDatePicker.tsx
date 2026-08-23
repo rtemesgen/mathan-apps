@@ -1,0 +1,25 @@
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+const pad = (value: number) => String(value).padStart(2, '0');
+const toIso = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+const fromIso = (value: string) => { const [year, month, day] = value.split('-').map(Number); return year && month && day ? new Date(year, month - 1, day) : new Date(); };
+
+export function AppDatePicker({ value, onChange, className = '', required = false }: { value: string; onChange: (value: string) => void; className?: string; required?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const [month, setMonth] = useState(() => { const date = fromIso(value); return new Date(date.getFullYear(), date.getMonth(), 1); });
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (!value) onChange(toIso(new Date())); }, []);
+  useEffect(() => { const close = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); }; document.addEventListener('mousedown', close); return () => document.removeEventListener('mousedown', close); }, []);
+  const positionMenu = () => { const button = ref.current?.querySelector('button'); if (!button) return; const rect = button.getBoundingClientRect(); const width = Math.min(256, window.innerWidth - 16); const estimatedHeight = 360; const below = window.innerHeight - rect.bottom; const top = below < estimatedHeight && rect.top > estimatedHeight ? rect.top - estimatedHeight - 6 : Math.min(rect.bottom + 6, window.innerHeight - estimatedHeight - 8); setMenuPosition({ top: Math.max(8, top), left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) }); };
+  useEffect(() => { if (!open) return; positionMenu(); const reposition = () => positionMenu(); window.addEventListener('resize', reposition); window.addEventListener('scroll', reposition, true); return () => { window.removeEventListener('resize', reposition); window.removeEventListener('scroll', reposition, true); }; }, [open]);
+  const days = useMemo(() => { const first = new Date(month.getFullYear(), month.getMonth(), 1); const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate(); const cells: (Date | null)[] = Array(first.getDay()).fill(null); for (let day = 1; day <= count; day += 1) cells.push(new Date(month.getFullYear(), month.getMonth(), day)); while (cells.length % 7) cells.push(null); return cells; }, [month]);
+  const selected = value ? fromIso(value) : null;
+  const display = value ? `${pad(fromIso(value).getMonth() + 1)}/${pad(fromIso(value).getDate())}/${fromIso(value).getFullYear()}` : '';
+  return <div ref={ref} className={`relative ${className}`}>
+    <button type="button" aria-label="Choose date" onClick={() => { setOpen((current) => !current); positionMenu(); }} className="erp-control flex min-h-10 w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold shadow-sm hover:border-[#54623e] focus:outline-none focus:ring-2 focus:ring-[#54623e]/20"><span className={display ? '' : 'text-[#8c8880]'}>{display || 'Select date'}</span><CalendarDays className="h-4 w-4 text-[#54623e]" /></button>
+    {required && <input tabIndex={-1} aria-hidden required value={value} onChange={() => undefined} className="pointer-events-none absolute h-0 w-0 opacity-0" />}
+    {open && <div style={{ top: menuPosition.top, left: menuPosition.left }} className="fixed z-[9999] w-64 rounded-2xl border border-[#e5dfd2] bg-[#fffdf8] p-3 shadow-2xl"><div className="mb-2 flex items-center justify-between"><button type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-lg p-1.5 text-[#54623e] hover:bg-[#f1f5eb]"><ChevronLeft className="h-4 w-4" /></button><span className="text-sm font-bold text-[#1c1d1f]">{month.toLocaleString(undefined, { month: 'long', year: 'numeric' })}</span><button type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-lg p-1.5 text-[#54623e] hover:bg-[#f1f5eb]"><ChevronRight className="h-4 w-4" /></button></div><div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[#8c8880]">{['S','M','T','W','T','F','S'].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}{days.map((day, index) => <button key={day ? toIso(day) : `empty-${index}`} type="button" disabled={!day} onClick={() => { if (day) { onChange(toIso(day)); setOpen(false); } }} className={`h-7 rounded-lg text-xs ${day && selected && toIso(day) === toIso(selected) ? 'bg-[#54623e] font-bold text-white' : day ? 'text-[#3f3d38] hover:bg-[#edf2e7]' : ''}`}>{day?.getDate() ?? ''}</button>)}</div><button type="button" onClick={() => { onChange(''); setOpen(false); }} className="mt-2 w-full rounded-lg py-1.5 text-xs font-semibold text-[#8c8880] hover:bg-[#f1f5eb]">Clear</button></div>}
+  </div>;
+}

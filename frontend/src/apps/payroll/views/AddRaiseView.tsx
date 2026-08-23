@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Employee, SalaryChange } from '../types';
 import { calculateEmployeeAccrual, getTodayString } from '../utils/calc';
 import { showAppToast } from '../../../lib/mobile';
+import { AppDatePicker } from '../../../components/AppDatePicker';
 import {
   TrendingUp,
   DollarSign,
@@ -173,13 +174,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
                 <label className="block text-zinc-700 font-bold mb-1 text-[11px]">
                   Effective Start Date <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="date"
-                  required
-                  value={effectiveDate}
-                  onChange={(e) => setEffectiveDate(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-[#f2f0e6] border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs text-zinc-900 font-bold"
-                />
+                <AppDatePicker value={effectiveDate} onChange={setEffectiveDate} required />
                 <p className="text-[9px] text-zinc-500 mt-0.5">Supports past dates for retroactive raise</p>
               </div>
 

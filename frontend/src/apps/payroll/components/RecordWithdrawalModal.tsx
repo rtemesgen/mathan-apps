@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Employee, Transaction } from '../types';
 import { calculateEmployeeAccrual, formatCurrency, getTodayString } from '../utils/calc';
 import { X, HandCoins, DollarSign, Calendar, CreditCard, FileText, AlertTriangle } from 'lucide-react';
+import { AppSelect } from '../../../components/AppSelect';
+import { AppDatePicker } from '../../../components/AppDatePicker';
 
 interface RecordWithdrawalModalProps {
   isOpen: boolean;
@@ -101,17 +103,7 @@ export const RecordWithdrawalModal: React.FC<RecordWithdrawalModalProps> = ({
           {/* Select Employee */}
           <div>
             <label className="block text-slate-700 font-semibold mb-1">Select Employee</label>
-            <select
-              value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 text-xs font-medium"
-            >
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name} ({emp.department})
-                </option>
-              ))}
-            </select>
+            <AppSelect value={employeeId} onChange={setEmployeeId} options={employees.map((emp) => ({ value: emp.id, label: `${emp.name} (${emp.department})` }))} />
           </div>
 
           {/* Current Balance & Remaining Preview */}
@@ -165,29 +157,14 @@ export const RecordWithdrawalModal: React.FC<RecordWithdrawalModalProps> = ({
               <label className="block text-slate-800 font-bold mb-1">
                 Transaction Date <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
-                required
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-xs text-slate-900"
-              />
+              <AppDatePicker value={date} onChange={setDate} required />
             </div>
           </div>
 
           {/* Type */}
           <div>
             <label className="block text-slate-700 font-semibold mb-1">Transaction Type</label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as Transaction['type'])}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800 text-xs"
-            >
-              <option value="withdrawal">Partial Withdrawal</option>
-              <option value="monthly_payout">Full Monthly Payout</option>
-              <option value="advance">Salary Advance</option>
-              <option value="adjustment">Balance Adjustment</option>
-            </select>
+            <AppSelect value={type} onChange={(value) => setType(value as Transaction['type'])} options={[{value:'withdrawal',label:'Partial Withdrawal'},{value:'monthly_payout',label:'Full Monthly Payout'},{value:'advance',label:'Salary Advance'},{value:'adjustment',label:'Balance Adjustment'}]} />
           </div>
 
           {/* Notes */}

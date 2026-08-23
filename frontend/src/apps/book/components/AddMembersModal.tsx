@@ -103,7 +103,7 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
     event.preventDefault();
     if (!workspace || !email.trim()) return;
     setBusy(true); setError('');
-    const { data, error: inviteError } = await supabase.rpc('create_workspace_invitation', { target_workspace: workspace.id, target_email: email.trim(), target_book_permission: 'edit', target_payroll_permission: 'none', expires_in_days: 7 });
+    const { data, error: inviteError } = await supabase.rpc('create_workspace_invitation', { target_workspace: workspace.id, target_email: email.trim(), target_book_permission: 'edit', target_payroll_permission: 'none', target_truck_permission: 'none', expires_in_days: 7 });
     if (inviteError) setError(inviteError.message);
     else {
       const token = (data as Array<{ invite_token: string }> | null)?.[0]?.invite_token;

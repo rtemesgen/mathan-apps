@@ -14,6 +14,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
+import { AppSelect } from '../../../components/AppSelect';
 
 interface TransactionsListProps {
   isOpen: boolean;
@@ -123,29 +124,9 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
             </div>
 
             <div className="flex items-center space-x-2 text-xs">
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                className="py-1.5 px-3 bg-white border border-slate-300 rounded-lg text-slate-800"
-              >
-                <option value="all">All Types</option>
-                <option value="withdrawal">Withdrawals</option>
-                <option value="advance">Advances</option>
-                <option value="monthly_payout">Monthly Payouts</option>
-                <option value="adjustment">Adjustments</option>
-              </select>
+              <AppSelect value={selectedType} onChange={setSelectedType} options={[{value:'all',label:'All Types'},{value:'withdrawal',label:'Withdrawals'},{value:'advance',label:'Advances'},{value:'monthly_payout',label:'Monthly Payouts'},{value:'adjustment',label:'Adjustments'}]} className="min-w-32" />
 
-              <select
-                value={selectedMethod}
-                onChange={(e) => setSelectedMethod(e.target.value)}
-                className="py-1.5 px-3 bg-white border border-slate-300 rounded-lg text-slate-800"
-              >
-                <option value="all">All Payment Methods</option>
-                <option value="Bank Transfer">Bank Transfer</option>
-                <option value="Cash">Cash</option>
-                <option value="Check">Check</option>
-                <option value="Digital Wallet">Digital Wallet</option>
-              </select>
+              <AppSelect value={selectedMethod} onChange={setSelectedMethod} options={[{value:'all',label:'All Payment Methods'},{value:'Bank Transfer',label:'Bank Transfer'},{value:'Cash',label:'Cash'},{value:'Check',label:'Check'},{value:'Digital Wallet',label:'Digital Wallet'}]} className="min-w-40" />
             </div>
           </div>
         </div>

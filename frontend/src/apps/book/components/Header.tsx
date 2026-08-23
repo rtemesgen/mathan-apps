@@ -1,5 +1,7 @@
 import React from 'react';
 import { Calendar } from 'lucide-react';
+import { AppBrand } from '../../../components/AppBrand';
+import { AppHeader } from '../../../components/AppHeader';
 
 interface HeaderProps {
   activeBookName?: string;
@@ -21,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   });
 
   return (
-    <header className="native-safe-top bg-[#FFFFFF] border-b border-[#E6E2D6] sticky top-0 z-30 shadow-2xs">
+    <AppHeader bare className="z-30 shadow-2xs">
       <div className="max-w-7xl mx-auto px-3 sm:px-5 py-2.5 flex items-center justify-between">
         {/* Left Side Branding - Matched to Image Spec */}
         <div className="flex items-center gap-2.5">
@@ -30,24 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
             title={isSidebarOpen ? 'Hide Cash Book menu' : 'Show Cash Book menu'}
             className="flex items-center gap-2.5 group text-left focus:outline-none"
           >
-            {/* Black Icon Box with Serif Italic 'M' */}
-            <div className="w-8 h-8 rounded-lg bg-[#121212] text-[#FFFFFF] flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
-              <span className="font-serif italic text-lg text-amber-200">M</span>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-1.5">
-                {/* Mathan ERP font serif italic */}
-                <span className="font-serif italic font-bold text-sm sm:text-base tracking-tight text-[#121212]">
-                  Mathan ERP
-                </span>
-              </div>
-
-              {/* Subtitle: CASH BOOK in uppercase grey */}
-              <p className="text-[10px] font-bold tracking-widest text-[#8E8E93] uppercase leading-none mt-0.5">
-                CASH BOOK
-              </p>
-            </div>
+            <AppBrand subtitle="CASH BOOK" />
           </button>
         </div>
 
@@ -67,6 +52,6 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
-    </header>
+    </AppHeader>
   );
 };

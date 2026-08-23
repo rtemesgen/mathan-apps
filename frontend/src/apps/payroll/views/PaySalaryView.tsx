@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Employee, Transaction } from '../types';
 import { calculateEmployeeAccrual, getTodayString } from '../utils/calc';
+import { AppDatePicker } from '../../../components/AppDatePicker';
 import {
   Banknote,
   DollarSign,
@@ -168,13 +169,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
             {/* Date */}
             <div>
               <label className="block text-zinc-700 font-bold mb-1 text-[11px]">Payment Date</label>
-              <input
-                type="date"
-                required
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-1.5 bg-[#f2f0e6] border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs text-zinc-900 font-bold"
-              />
+              <AppDatePicker value={date} onChange={setDate} required />
             </div>
 
             {/* Notes */}

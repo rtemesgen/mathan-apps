@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { exportPdfFile } from '../../../lib/mobile';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
+import { AppDatePicker } from '../../../components/AppDatePicker';
 
 interface EmployeeDetailModalProps {
   employee: Employee | null;
@@ -127,12 +128,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
           <div className="flex items-center space-x-1.5 text-xs">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             <span className="text-slate-500 text-[11px]">As of:</span>
-            <input
-              type="date"
-              value={evaluationDate}
-              onChange={(e) => setEvaluationDate(e.target.value)}
-              className="px-2 py-0.5 bg-white border border-slate-300 rounded text-xs text-slate-800 font-mono"
-            />
+            <AppDatePicker value={evaluationDate} onChange={setEvaluationDate} className="w-32" />
             <span className="ml-auto rounded-lg border border-[#e8e6dc] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 whitespace-nowrap">
               Start date: <strong className="font-mono text-slate-900">{formatDate(employee.startDate)}</strong>
             </span>
@@ -212,7 +208,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                       </div>}
                     </div>
                     {editingRaise?.id === change.id && onUpdateRaise && <div className="absolute left-3 right-3 top-full z-10 mt-1 grid gap-2 rounded-lg border border-indigo-200 bg-white p-3 shadow-lg sm:grid-cols-[150px_150px_1fr_auto]">
-                      <input type="date" value={editingRaise.effectiveDate} onChange={(event) => setEditingRaise({ ...editingRaise, effectiveDate: event.target.value })} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" />
+                      <AppDatePicker value={editingRaise.effectiveDate} onChange={(value) => setEditingRaise({ ...editingRaise, effectiveDate: value })} className="w-36" />
                       <input type="number" min="0" step="1" value={editingRaise.newMonthlySalary} onChange={(event) => setEditingRaise({ ...editingRaise, newMonthlySalary: Number(event.target.value) || 0 })} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" placeholder="Monthly salary" />
                       <input value={editingRaise.reason} onChange={(event) => setEditingRaise({ ...editingRaise, reason: event.target.value })} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" placeholder="Reason" />
                       <button type="button" onClick={() => { if (editingRaise.effectiveDate && editingRaise.reason.trim()) { onUpdateRaise(employee.id, { ...editingRaise, reason: editingRaise.reason.trim() }); setEditingRaise(null); } }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> Save</button>
@@ -267,7 +263,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                             </td>
                           )}
                         </tr>
-                        {editingTransaction?.id === tx.id && onUpdateTransaction && <tr className="bg-indigo-50/50"><td colSpan={4} className="p-3"><div className="grid gap-2 sm:grid-cols-[140px_120px_1fr_auto]"><input type="date" value={editingTransaction.date} onChange={(event) => setEditingTransaction({ ...editingTransaction, date: event.target.value })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" /><input type="number" min="0" step="0.01" value={editingTransaction.amount} onChange={(event) => setEditingTransaction({ ...editingTransaction, amount: Number(event.target.value) || 0 })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Amount" /><input value={editingTransaction.notes ?? ''} onChange={(event) => setEditingTransaction({ ...editingTransaction, notes: event.target.value })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Notes" /><button type="button" onClick={() => { if (editingTransaction.date && editingTransaction.amount >= 0) { onUpdateTransaction(editingTransaction); setEditingTransaction(null); } }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> Save</button></div></td></tr>}
+                        {editingTransaction?.id === tx.id && onUpdateTransaction && <tr className="bg-indigo-50/50"><td colSpan={4} className="p-3"><div className="grid gap-2 sm:grid-cols-[140px_120px_1fr_auto]"><AppDatePicker value={editingTransaction.date} onChange={(value) => setEditingTransaction({ ...editingTransaction, date: value })} className="w-36" /><input type="number" min="0" step="0.01" value={editingTransaction.amount} onChange={(event) => setEditingTransaction({ ...editingTransaction, amount: Number(event.target.value) || 0 })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Amount" /><input value={editingTransaction.notes ?? ''} onChange={(event) => setEditingTransaction({ ...editingTransaction, notes: event.target.value })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Notes" /><button type="button" onClick={() => { if (editingTransaction.date && editingTransaction.amount >= 0) { onUpdateTransaction(editingTransaction); setEditingTransaction(null); } }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> Save</button></div></td></tr>}
                         </React.Fragment>
                       ))}
                     </tbody>

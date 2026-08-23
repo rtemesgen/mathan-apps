@@ -1,4 +1,4 @@
-import { CheckCircle2, LoaderCircle, RefreshCw, Settings, Share2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw, Settings, Share2, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ERP_APPS } from '../appRegistry';
 import { shareApp } from '../lib/mobile';
@@ -6,17 +6,26 @@ import { useAppUpdate } from '../hooks/useAppUpdate';
 import { AppVersionPanel } from './AppVersionPanel';
 import { useAuth } from '../auth/AuthProvider';
 import { WorkspaceInvitations } from './WorkspaceInvitations';
+import { cancelAccountDeletion, getAccountDeletionRequest, type AccountDeletionRequest } from '../lib/operationsApi';
+import { useEffect, useState } from 'react';
 
 export function AppLauncher() {
-  const { workspace, canViewApp, isSystemAdmin } = useAuth();
+  const { workspace, user, canViewApp, isSystemAdmin, isGuest, refreshAccess } = useAuth();
+  const [deletion, setDeletion] = useState<AccountDeletionRequest | null>(null);
+  const [remainingDays, setRemainingDays] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
+  useEffect(() => { void refreshAccess(); const onFocus = () => void refreshAccess(); window.addEventListener('focus', onFocus); return () => window.removeEventListener('focus', onFocus); }, []);
+  useEffect(() => { if (!user) return; let active = true; const load = async () => { try { const request = await getAccountDeletionRequest(user.id); if (active && request?.status === 'pending') { setDeletion(request); setRemainingDays(Math.max(0, Math.ceil((new Date(request.scheduled_for).getTime() - Date.now()) / 86400000))); } } catch { /* The root page remains usable if the optional status check fails. */ } }; void load(); const timer = window.setInterval(() => { if (deletion) setRemainingDays(Math.max(0, Math.ceil((new Date(deletion.scheduled_for).getTime() - Date.now()) / 86400000))); }, 60000); return () => { active = false; window.clearInterval(timer); }; }, [user?.id, deletion?.scheduled_for]);
+  const cancelDeletion = async () => { setCancelling(true); try { await cancelAccountDeletion(); setDeletion(null); setRemainingDays(0); } finally { setCancelling(false); } };
   const { update, status, downloadStatus, checkForUpdate, downloadUpdate, installUpdate } = useAppUpdate();
   const downloading = downloadStatus === 'downloading';
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+    <main className="erp-app mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       {workspace?.name && <p className="mb-5 flex items-center justify-center gap-2 text-center font-serif text-2xl font-bold text-zinc-900 sm:text-3xl"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: workspace.accent_color }} />{workspace.name}</p>}
+      {deletion && <section role="status" className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-red-200 bg-red-50 p-4 text-red-950 shadow-sm"><AlertTriangle className="h-5 w-5 shrink-0 text-red-700" /><div className="min-w-0 flex-1"><p className="text-sm font-extrabold">Account deletion is scheduled</p><p className="mt-1 text-xs leading-5 text-red-800">{deletion.delete_owned_workspaces ? 'Your account and solely owned companies are scheduled for deletion.' : 'Your account deletion is scheduled after ownership is transferred.'} You have <strong>{remainingDays} day{remainingDays === 1 ? '' : 's'}</strong> to recover it.</p></div><button type="button" disabled={cancelling} onClick={() => void cancelDeletion()} className="rounded-xl border-2 border-red-300 bg-white px-4 py-2 text-xs font-extrabold text-red-800 shadow-sm hover:bg-red-100 disabled:opacity-50">{cancelling ? 'Cancelling…' : 'Cancel deletion'}</button></section>}
       <WorkspaceInvitations />
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {ERP_APPS.filter((app) => workspace && canViewApp(app.id)).map((app) => {
+        {ERP_APPS.filter((app) => (isGuest || workspace) && canViewApp(app.id)).map((app) => {
           const Icon = app.icon;
           return (
             <Link key={app.id} to={app.route} aria-label={app.name} className="group flex items-center gap-3 rounded-xl border border-[#e6e2d6] bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg sm:p-3.5">

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { TransactionType } from '../types';
 import { X, Check, Calendar, Plus, Paperclip, FileText, Image as ImageIcon } from 'lucide-react';
 import { getCurrentLocalDateTimeString } from '../utils/formatters';
+import { AppSelect } from '../../../components/AppSelect';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -252,18 +253,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <label className="block text-[10px] font-bold tracking-wider text-[#4B5563] uppercase mb-1">
               Category
             </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs bg-[#FAF9F5] border border-[#D8D3C5] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#121212]"
-            >
-              {CATEGORY_PRESETS[type].map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-              <option value="General">General</option>
-            </select>
+            <AppSelect value={category} onChange={setCategory} options={[...CATEGORY_PRESETS[type], 'General'].map((cat) => ({ value: cat, label: cat }))} />
           </div>
 
           {/* Payment Mode & Date Time */}
@@ -272,16 +262,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               <label className="block text-[10px] font-bold tracking-wider text-[#4B5563] uppercase mb-1">
                 Payment Mode
               </label>
-              <select
-                value={paymentMode}
-                onChange={(e) => setPaymentMode(e.target.value as any)}
-                className="w-full px-2.5 py-1 text-[11px] bg-[#FAF9F5] border border-[#D8D3C5] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#121212]"
-              >
-                <option value="Cash">Cash</option>
-                <option value="Bank Transfer">Bank Transfer</option>
-                <option value="UPI / Online">UPI / Online</option>
-                <option value="Cheque">Cheque</option>
-              </select>
+              <AppSelect value={paymentMode} onChange={(value) => setPaymentMode(value as any)} options={['Cash', 'Bank Transfer', 'UPI / Online', 'Cheque'].map((value) => ({ value, label: value }))} />
             </div>
 
             <div>
@@ -391,4 +372,3 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     </div>
   );
 };
-

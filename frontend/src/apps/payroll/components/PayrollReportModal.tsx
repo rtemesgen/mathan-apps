@@ -9,6 +9,7 @@ import {
   formatDate,
 } from '../utils/calc';
 import { exportPdfFile } from '../../../lib/mobile';
+import { AppSelect } from '../../../components/AppSelect';
 import {
   X,
   FileSpreadsheet,
@@ -120,18 +121,7 @@ export const PayrollReportModal: React.FC<PayrollReportModalProps> = ({
 
             <div className="flex items-center space-x-3">
               <span className="text-xs text-slate-500">Department Filter:</span>
-              <select
-                value={selectedDept}
-                onChange={(e) => setSelectedDept(e.target.value)}
-                className="py-1 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg font-semibold text-slate-800"
-              >
-                <option value="all">All Departments ({employees.length})</option>
-                {departments.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
-                  </option>
-                ))}
-              </select>
+              <AppSelect value={selectedDept} onChange={setSelectedDept} options={[{ value: 'all', label: `All Departments (${employees.length})` }, ...departments.map((dept) => ({ value: dept, label: dept }))]} />
             </div>
           </div>
 

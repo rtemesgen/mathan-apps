@@ -7,9 +7,13 @@ export type AdminOverview = {
   snapshots: number;
   snapshot_freshness: string | null;
   storage_bytes: number;
-  app_access: { book: number; payroll: number };
+  app_access: { book: number; payroll: number; truck: number };
   recent_audit: AdminAuditEvent[];
   latest_backup: AdminBackupRun | null;
+  pending_approvals: number;
+  failed_actions_24h: number;
+  health: { database: 'ok' | 'error'; backup: 'fresh' | 'stale' | 'missing'; storage: 'ok' | 'warning' };
+  alerts: Array<{ type: string; severity: 'warning' | 'critical'; message: string }>;
 };
 
 export type AdminMembership = {
@@ -17,7 +21,7 @@ export type AdminMembership = {
   user_id: string;
   role: 'owner' | 'member';
   workspace: { id: string; name: string } | null;
-  permissions: Array<{ app_id: 'book' | 'payroll'; permission: AppPermission }>;
+  permissions: Array<{ app_id: 'book' | 'payroll' | 'truck'; permission: AppPermission }>;
 };
 
 export type AdminUser = {
@@ -31,6 +35,7 @@ export type AdminUser = {
   status: 'active' | 'suspended' | 'blocked' | 'purge_pending';
   suspended_until: string | null;
   is_system_admin: boolean;
+  deletion_request: { user_id: string; status: 'pending'; scheduled_for: string; request_source: 'self' | 'admin'; delete_owned_workspaces: boolean } | null;
   memberships: AdminMembership[];
 };
 
@@ -41,13 +46,17 @@ export type AdminWorkspace = {
   created_by: string;
   created_at: string;
   updated_at: string;
-  apps: Array<{ workspace_id: string; app_id: 'book' | 'payroll'; enabled: boolean }>;
+  deletion_status: 'active' | 'scheduled';
+  deletion_scheduled_for: string | null;
+  deletion_origin: 'owner' | 'admin_workspace' | 'admin_user';
+  deletion_subject_user_id: string | null;
+  apps: Array<{ workspace_id: string; app_id: 'book' | 'payroll' | 'truck'; enabled: boolean }>;
   members: Array<{
     workspace_id: string;
     user_id: string;
     role: 'owner' | 'member';
     user: Pick<AdminUser, 'id' | 'email' | 'display_name'>;
-    permissions: Array<{ app_id: 'book' | 'payroll'; permission: AppPermission }>;
+    permissions: Array<{ app_id: 'book' | 'payroll' | 'truck'; permission: AppPermission }>;
   }>;
 };
 

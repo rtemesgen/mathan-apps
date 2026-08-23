@@ -66,6 +66,10 @@ async function audit(actorId: string, action: string, result: 'success' | 'failu
   });
 }
 
+async function notifyUser(userId: string, type: string, title: string, body: string, route?: string) {
+  await admin.from('notifications').insert({ user_id: userId, notification_type: type, title, body, route: route ?? null });
+}
+
 async function ensureBootstrap(user: User) {
   const allowed = (Deno.env.get('ADMIN_BOOTSTRAP_EMAILS') ?? '')
     .split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
@@ -117,9 +121,10 @@ async function listUsers(body: Body) {
   const filtered = query ? all.filter((user) => `${user.email ?? ''} ${user.phone ?? ''} ${user.user_metadata?.name ?? ''}`.toLowerCase().includes(query)) : all;
   const selected = filtered.slice((page - 1) * perPage, page * perPage);
   const ids = selected.map((user) => user.id);
-  const [{ data: controls }, { data: systemAdmins }, memberships] = await Promise.all([
+  const [{ data: controls }, { data: systemAdmins }, { data: deletionRequests }, memberships] = await Promise.all([
     ids.length ? admin.from('system_user_controls').select('*').in('user_id', ids) : Promise.resolve({ data: [] }),
     ids.length ? admin.from('system_admins').select('user_id').in('user_id', ids) : Promise.resolve({ data: [] }),
+    ids.length ? admin.from('account_deletion_requests').select('user_id,status,scheduled_for,request_source,delete_owned_workspaces').in('user_id', ids) : Promise.resolve({ data: [] }),
     workspaceMemberships(ids),
   ]);
   return {
@@ -128,6 +133,7 @@ async function listUsers(body: Body) {
       status: (() => { const control = (controls ?? []).find((row) => row.user_id === user.id); return control?.status === 'suspended' && control.suspended_until && new Date(control.suspended_until).getTime() <= Date.now() ? 'active' : control?.status ?? (user.banned_until ? 'blocked' : 'active'); })(),
       suspended_until: (controls ?? []).find((row) => row.user_id === user.id)?.suspended_until ?? null,
       is_system_admin: (systemAdmins ?? []).some((row) => row.user_id === user.id),
+      deletion_request: (deletionRequests ?? []).find((row) => row.user_id === user.id && row.status === 'pending') ?? null,
       memberships: memberships.filter((membership) => membership.user_id === user.id),
     })),
     page,
@@ -138,7 +144,7 @@ async function listUsers(body: Body) {
 
 async function overview() {
   const users = await getAllUsers(admin);
-  const [{ count: workspaceCount }, { count: snapshotCount }, { data: latestSnapshot }, { data: controls }, { data: recentAudit }, { data: latestBackup }, { data: attachments }] = await Promise.all([
+  const [{ count: workspaceCount }, { count: snapshotCount }, { data: latestSnapshot }, { data: controls }, { data: recentAudit }, { data: latestBackup }, { data: attachments }, { count: pendingApprovals }, { count: failedActions }] = await Promise.all([
     admin.from('workspaces').select('*', { count: 'exact', head: true }),
     admin.from('app_state_snapshots').select('*', { count: 'exact', head: true }),
     admin.from('app_state_snapshots').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
@@ -146,21 +152,37 @@ async function overview() {
     admin.from('system_admin_audit_events').select('id,action,result,created_at,target_user_id,target_workspace_id').order('created_at', { ascending: false }).limit(8),
     admin.from('system_backup_runs').select('*').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     admin.from('record_attachments').select('size_bytes'),
+    admin.from('approval_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    admin.from('system_admin_audit_events').select('*', { count: 'exact', head: true }).eq('result', 'failure').gte('created_at', new Date(Date.now() - 24 * 3600000).toISOString()),
   ]);
   const suspended = (controls ?? []).filter((row) => row.status === 'blocked' || (row.status === 'suspended' && row.suspended_until && new Date(row.suspended_until).getTime() > Date.now())).length;
   const { data: appPermissions } = await admin.from('workspace_member_app_permissions').select('app_id,permission');
+  const latestBackupAt = latestBackup?.completed_at ?? latestBackup?.created_at ?? null;
+  const backupAge = latestBackupAt ? Date.now() - new Date(latestBackupAt).getTime() : Number.POSITIVE_INFINITY;
+  const storageBytes = (attachments ?? []).reduce((total, row) => total + Number(row.size_bytes ?? 0), 0);
+  const alerts = [
+    ...(backupAge > 24 * 3600000 ? [{ type: 'backup_stale', severity: 'warning', message: 'No completed backup in the last 24 hours.' }] : []),
+    ...((failedActions ?? 0) >= 5 ? [{ type: 'privileged_failures', severity: 'critical', message: `${failedActions} privileged operations failed in the last 24 hours.` }] : []),
+    ...((storageBytes >= 5 * 1024 ** 3) ? [{ type: 'storage_pressure', severity: 'warning', message: 'Attachment storage has reached the 5 GB warning threshold.' }] : []),
+    ...((pendingApprovals ?? 0) >= 20 ? [{ type: 'approval_backlog', severity: 'warning', message: `${pendingApprovals} approval requests are waiting for review.` }] : []),
+  ];
   return {
     users: { total: users.length, active: Math.max(0, users.length - suspended), suspended },
     workspaces: workspaceCount ?? 0,
     snapshots: snapshotCount ?? 0,
     snapshot_freshness: latestSnapshot?.updated_at ?? null,
-    storage_bytes: (attachments ?? []).reduce((total, row) => total + Number(row.size_bytes ?? 0), 0),
+    storage_bytes: storageBytes,
     app_access: {
       book: (appPermissions ?? []).filter((row) => row.app_id === 'book' && row.permission !== 'none').length,
       payroll: (appPermissions ?? []).filter((row) => row.app_id === 'payroll' && row.permission !== 'none').length,
+      truck: (appPermissions ?? []).filter((row) => row.app_id === 'truck' && row.permission !== 'none').length,
     },
     recent_audit: recentAudit ?? [],
     latest_backup: latestBackup ?? null,
+    pending_approvals: pendingApprovals ?? 0,
+    failed_actions_24h: failedActions ?? 0,
+    health: { database: 'ok', backup: latestBackupAt ? (backupAge <= 24 * 3600000 ? 'fresh' : 'stale') : 'missing', storage: storageBytes >= 5 * 1024 ** 3 ? 'warning' : 'ok' },
+    alerts,
   };
 }
 
@@ -168,7 +190,7 @@ async function listWorkspaces(body: Body) {
   const page = Math.max(1, integer(body.page, 1, 10000));
   const perPage = Math.max(5, integer(body.per_page, 20, 100));
   const queryText = text(body.query);
-  let query = admin.from('workspaces').select('id,name,accent_color,created_by,created_at,updated_at', { count: 'exact' }).order('created_at', { ascending: false });
+  let query = admin.from('workspaces').select('id,name,accent_color,created_by,created_at,updated_at,deletion_status,deletion_scheduled_for,deletion_origin,deletion_subject_user_id', { count: 'exact' }).order('created_at', { ascending: false });
   if (queryText) query = query.ilike('name', `%${queryText.replace(/[%_]/g, '')}%`);
   const { data: workspaces, count, error } = await query.range((page - 1) * perPage, page * perPage - 1);
   if (error) throw error;
@@ -187,7 +209,7 @@ async function listWorkspaces(body: Body) {
       members: (members ?? []).filter((member) => member.workspace_id === workspace.id).map((member) => ({
         ...member,
         user: userById.get(member.user_id) ?? { id: member.user_id, email: 'Deleted account' },
-        permissions: member.role === 'owner' ? [{ app_id: 'book', permission: 'edit' }, { app_id: 'payroll', permission: 'edit' }] : (permissions ?? []).filter((permission) => permission.workspace_id === workspace.id && permission.user_id === member.user_id),
+        permissions: member.role === 'owner' ? [{ app_id: 'book', permission: 'edit' }, { app_id: 'payroll', permission: 'edit' }, { app_id: 'truck', permission: 'edit' }] : (permissions ?? []).filter((permission) => permission.workspace_id === workspace.id && permission.user_id === member.user_id),
       })),
     })),
     page,
@@ -196,7 +218,7 @@ async function listWorkspaces(body: Body) {
   };
 }
 
-const backupResources = ['profiles', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'system_audit_events', 'backup_runs', 'invitations', 'attachments', 'attachment_links'] as const;
+const backupResources = ['profiles', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'system_audit_events', 'backup_runs', 'invitations', 'attachments', 'attachment_links', 'notifications', 'approvals', 'trucks', 'truck_owners', 'truck_transactions'] as const;
 type BackupResource = typeof backupResources[number] | 'users';
 
 async function backupResource(actorId: string, runId: string, resource: BackupResource, offset: number, limit: number) {
@@ -216,9 +238,14 @@ async function backupResource(actorId: string, runId: string, resource: BackupRe
     audit_events: { table: 'audit_events', columns: 'id,workspace_id,actor_id,record_type,record_id,action,previous_data,next_data,created_at' },
     system_audit_events: { table: 'system_admin_audit_events', columns: 'id,actor_id,action,target_user_id,target_workspace_id,result,previous_data,next_data,error_message,created_at' },
     backup_runs: { table: 'system_backup_runs', columns: 'id,requested_by,backup_kind,status,record_count,attachment_count,size_bytes,checksum,created_at,completed_at' },
-    invitations: { table: 'workspace_invitations', columns: 'id,workspace_id,email,invited_by,book_permission,payroll_permission,status,expires_at,accepted_by,created_at,accepted_at' },
+    invitations: { table: 'workspace_invitations', columns: 'id,workspace_id,email,invited_by,book_permission,payroll_permission,truck_permission,status,expires_at,accepted_by,created_at,accepted_at' },
     attachments: { table: 'record_attachments', columns: 'id,workspace_id,record_type,record_id,storage_path,file_name,mime_type,size_bytes,created_at' },
     attachment_links: { table: 'cash_transaction_attachments', columns: 'cash_transaction_id,attachment_id' },
+    notifications: { table: 'notifications', columns: 'id,user_id,workspace_id,notification_type,title,body,route,metadata,read_at,created_at' },
+    approvals: { table: 'approval_requests', columns: 'id,workspace_id,requester_id,approver_id,action_type,target_record_type,target_record_id,reason,metadata,status,decision_comment,created_at,decided_at,expires_at' },
+    trucks: { table: 'trucks', columns: 'id,workspace_id,name,unit_number,make_model,vin,cash_on_hand,license_plate,deleted_at,created_at,updated_at' },
+    truck_owners: { table: 'truck_owners', columns: 'id,workspace_id,truck_id,user_id,name,start_date,equity_percentage,monthly_draw_rate,avatar_color,deleted_at,created_at,updated_at' },
+    truck_transactions: { table: 'truck_transactions', columns: 'id,workspace_id,truck_id,owner_id,occurred_on,transaction_type,category,amount,description,reference_no,deleted_at,created_at,updated_at' },
   };
   const item = config[resource as Exclude<BackupResource, 'users'>];
   if (!item) throw new Error('Unsupported backup resource.');
@@ -238,14 +265,14 @@ async function startBackup(actorId: string, kind: 'automatic' | 'manual') {
   const users = await getAllUsers(admin);
   const counts: Record<string, number> = { users: users.length };
   for (const resource of backupResources) {
-    const table = ({ profiles: 'workspace_profiles', workspaces: 'workspaces', members: 'workspace_members', apps: 'workspace_apps', permissions: 'workspace_member_app_permissions', snapshots: 'app_state_snapshots', audit_events: 'audit_events', system_audit_events: 'system_admin_audit_events', backup_runs: 'system_backup_runs', invitations: 'workspace_invitations', attachments: 'record_attachments', attachment_links: 'cash_transaction_attachments' } as const)[resource];
+    const table = ({ profiles: 'workspace_profiles', workspaces: 'workspaces', members: 'workspace_members', apps: 'workspace_apps', permissions: 'workspace_member_app_permissions', snapshots: 'app_state_snapshots', audit_events: 'audit_events', system_audit_events: 'system_admin_audit_events', backup_runs: 'system_backup_runs', invitations: 'workspace_invitations', attachments: 'record_attachments', attachment_links: 'cash_transaction_attachments', notifications: 'notifications', approvals: 'approval_requests', trucks: 'trucks', truck_owners: 'truck_owners', truck_transactions: 'truck_transactions' } as const)[resource];
     const { count, error } = await admin.from(table).select('*', { count: 'exact', head: true });
     if (error) throw error;
     counts[resource] = count ?? 0;
   }
   const { data, error } = await admin.from('system_backup_runs').insert({ requested_by: actorId, backup_kind: kind, status: 'started' }).select('id,created_at').single();
   if (error) throw error;
-  return { run: data, schema_version: '1', counts, resources: ['users', ...backupResources] };
+  return { run: data, schema_version: '2', counts, resources: ['users', ...backupResources] };
 }
 
 async function finishBackup(actorId: string, body: Body) {
@@ -264,6 +291,7 @@ async function finishBackup(actorId: string, body: Body) {
   if (error) throw error;
   if (!updated) throw new Error('This backup run is no longer active.');
   await audit(actorId, 'backup_finished', status === 'completed' ? 'success' : 'failure', { next: { run_id: runId, status } });
+  await notifyUser(actorId, status === 'completed' ? 'backup_completed' : 'backup_failed', status === 'completed' ? 'Backup completed' : 'Backup failed', status === 'completed' ? 'Your encrypted administrator backup was verified and saved.' : `The administrator backup could not be completed: ${text(body.error_message) || 'unknown error'}.`, '/admin');
   return { ok: true };
 }
 
@@ -346,7 +374,7 @@ async function createRecoveryInvitation(actorId: string, body: Body) {
   await admin.from('workspace_invitations').update({ status: 'revoked' }).eq('workspace_id', mapping.target_workspace_id).eq('email', email).eq('status', 'pending');
   const { data, error } = await admin.from('workspace_invitations').insert({
     workspace_id: mapping.target_workspace_id, email, token_hash: tokenHash, invited_by: actorId,
-    book_permission: permission(body.book_permission), payroll_permission: permission(body.payroll_permission),
+    book_permission: permission(body.book_permission), payroll_permission: permission(body.payroll_permission), truck_permission: permission(body.truck_permission),
     expires_at: new Date(Date.now() + 7 * 24 * 3600000).toISOString(),
   }).select('id,expires_at').single();
   if (error) throw error;
@@ -415,13 +443,15 @@ Deno.serve(async (request) => {
         }
         const { error } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: banDuration });
         if (error) throw error;
-        await admin.from('system_user_controls').upsert({ user_id: targetUserId, status, suspended_until: bannedUntil, reason: text(body.reason).slice(0, 500) || null, updated_by: actor.id, updated_at: new Date().toISOString() });
+        const { error: controlError } = await admin.from('system_user_controls').upsert({ user_id: targetUserId, status, suspended_until: bannedUntil, reason: text(body.reason).slice(0, 500) || null, updated_by: actor.id, updated_at: new Date().toISOString() });
+        if (controlError) throw controlError;
         await audit(actor.id, `user_${status}`, 'success', { targetUserId, next: { status, suspended_until: bannedUntil } });
+        await notifyUser(targetUserId, `account_${status}`, `Account ${status}`, status === 'active' ? 'Your account has been reactivated.' : status === 'blocked' ? 'Your account has been blocked by an administrator.' : `Your account has been suspended until ${bannedUntil}.`);
         return json({ ok: true, status, suspended_until: bannedUntil });
       }
       case 'set-permission': {
         const workspaceId = text(body.workspace_id); const userId = text(body.user_id); const appId = text(body.app_id); const permission = text(body.permission);
-        if (!['book', 'payroll'].includes(appId) || !['none', 'view', 'edit'].includes(permission)) throw new Error('Invalid app permission.');
+        if (!['book', 'payroll', 'truck'].includes(appId) || !['none', 'view', 'edit'].includes(permission)) throw new Error('Invalid app permission.');
         const { data: membership } = await admin.from('workspace_members').select('role').eq('workspace_id', workspaceId).eq('user_id', userId).maybeSingle();
         if (!membership) throw new Error('The user is not a member of this workspace.');
         if (membership.role === 'owner') throw new Error('Workspace owners always have edit access. Transfer ownership before restricting this user.');
@@ -432,7 +462,7 @@ Deno.serve(async (request) => {
       }
       case 'set-app-enabled': {
         const workspaceId = text(body.workspace_id); const appId = text(body.app_id); const enabled = body.enabled === true;
-        if (!['book', 'payroll'].includes(appId)) throw new Error('Invalid app.');
+        if (!['book', 'payroll', 'truck'].includes(appId)) throw new Error('Invalid app.');
         const { error } = await admin.from('workspace_apps').upsert({ workspace_id: workspaceId, app_id: appId, enabled, updated_at: new Date().toISOString() });
         if (error) throw error;
         await audit(actor.id, 'workspace_app_changed', 'success', { targetWorkspaceId: workspaceId, next: { app_id: appId, enabled } });
@@ -465,23 +495,53 @@ Deno.serve(async (request) => {
         await audit(actor.id, 'workspace_ownership_transferred', 'success', { targetUserId: toUser, targetWorkspaceId: workspaceId, previous: { owner: fromUser }, next: { owner: toUser } });
         return json({ ok: true });
       }
-      case 'purge-user': {
+      case 'schedule-workspace-deletion': {
+        const workspaceId = text(body.workspace_id);
+        const { data: workspace } = await admin.from('workspaces').select('id,name,deletion_status').eq('id', workspaceId).maybeSingle();
+        if (!workspace) throw new Error('Company not found.');
+        if (text(body.confirmation) !== `DELETE ${workspace.name}`) throw new Error(`Type DELETE ${workspace.name} to confirm.`);
+        const { data, error } = await admin.rpc('system_admin_schedule_workspace_deletion', { target_admin: actor.id, target_workspace: workspaceId });
+        if (error) throw error;
+        await audit(actor.id, 'workspace_deletion_scheduled', 'success', { targetWorkspaceId: workspaceId, previous: { status: workspace.deletion_status }, next: { status: 'scheduled', scheduled_for: data } });
+        return json({ ok: true, scheduled_for: data });
+      }
+      case 'restore-workspace-deletion': {
+        const workspaceId = text(body.workspace_id);
+        const { error } = await admin.rpc('system_admin_restore_workspace_deletion', { target_admin: actor.id, target_workspace: workspaceId });
+        if (error) throw error;
+        await audit(actor.id, 'workspace_deletion_cancelled', 'success', { targetWorkspaceId: workspaceId, next: { status: 'active' } });
+        return json({ ok: true });
+      }
+      case 'schedule-user-deletion': {
         const targetUserId = text(body.user_id);
         await requireAdminTargetSafety(actor, targetUserId);
         const { data: targetAccount } = await admin.auth.admin.getUserById(targetUserId);
-        if (text(body.confirmation) !== 'DELETE') throw new Error('Type DELETE to confirm permanent deletion.');
-        const issuedAt = Number((JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { iat?: number }).iat ?? 0) * 1000;
-        if (!issuedAt || Date.now() - issuedAt > 10 * 60 * 1000) throw new Error('Sign in again before permanently deleting a user.');
-        const { data: backup } = await admin.from('system_backup_runs').select('id,completed_at').eq('status', 'completed').in('backup_kind', ['automatic', 'manual']).gte('completed_at', new Date(Date.now() - 24 * 3600000).toISOString()).order('completed_at', { ascending: false }).limit(1).maybeSingle();
-        if (!backup) throw new Error('Create and verify a successful backup before deleting this user.');
-        const { data: owned } = await admin.from('workspace_members').select('workspace_id').eq('user_id', targetUserId).eq('role', 'owner');
-        if ((owned ?? []).length) throw new Error('Transfer ownership of every owned workspace before deleting this user.');
-        await admin.from('system_user_controls').upsert({ user_id: targetUserId, status: 'purge_pending', suspended_until: null, updated_by: actor.id, updated_at: new Date().toISOString() });
-        await admin.from('workspace_invitations').update({ invited_by: actor.id }).eq('invited_by', targetUserId);
-        const { error } = await admin.auth.admin.deleteUser(targetUserId, false);
-        if (error) throw error;
-        await audit(actor.id, 'user_purged', 'success', { previous: { user_id: targetUserId, email: targetAccount.user?.email ?? null }, next: { backup_run_id: backup.id } });
-        return json({ ok: true });
+        const targetEmail = targetAccount.user?.email ?? '';
+        if (!targetAccount.user) throw new Error('User not found.');
+        if (text(body.confirmation) !== `DELETE ${targetEmail}`) throw new Error(`Type DELETE ${targetEmail} to confirm.`);
+        const scheduledFor = new Date(Date.now() + 30 * 24 * 3600000).toISOString();
+        const { error: blockError } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: '876000h' });
+        if (blockError) throw blockError;
+        const { data: companyCount, error } = await admin.rpc('system_admin_schedule_user_deletion', { target_admin: actor.id, target_user: targetUserId, scheduled_at: scheduledFor });
+        if (error) {
+          await admin.auth.admin.updateUserById(targetUserId, { ban_duration: 'none' });
+          throw error;
+        }
+        await audit(actor.id, 'user_deletion_scheduled', 'success', { targetUserId, previous: { email: targetEmail }, next: { scheduled_for: scheduledFor, owned_companies: companyCount } });
+        return json({ ok: true, scheduled_for: scheduledFor, owned_companies: companyCount });
+      }
+      case 'restore-user-deletion': {
+        const targetUserId = text(body.user_id);
+        await requireAdminTargetSafety(actor, targetUserId);
+        const { error: authError } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: 'none' });
+        if (authError) throw authError;
+        const { data: companyCount, error } = await admin.rpc('system_admin_restore_user_deletion', { target_admin: actor.id, target_user: targetUserId });
+        if (error) {
+          await admin.auth.admin.updateUserById(targetUserId, { ban_duration: '876000h' });
+          throw error;
+        }
+        await audit(actor.id, 'user_deletion_cancelled', 'success', { targetUserId, next: { status: 'active', restored_companies: companyCount } });
+        return json({ ok: true, restored_companies: companyCount });
       }
       case 'start-backup': return json(await startBackup(actor.id, body.kind === 'automatic' ? 'automatic' : 'manual'));
       case 'backup-resource': return json(await backupResource(actor.id, text(body.run_id), text(body.resource) as BackupResource, integer(body.offset, 0, Number.MAX_SAFE_INTEGER), Math.max(1, integer(body.limit, 100, 250))));

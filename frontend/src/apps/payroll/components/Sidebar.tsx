@@ -18,9 +18,11 @@ import {
   AppWindow
 } from 'lucide-react';
 import { CompanyStats } from '../types';
-import { AppSwitcher } from '../../../components/AppSwitcher';
+import { AppSidebarFooter } from '../../../components/AppSidebarFooter';
+import { AppBrand } from '../../../components/AppBrand';
 import { useAuth } from '../../../auth/AuthProvider';
-import { LogIn, LogOut } from 'lucide-react';
+import { AppDatePicker } from '../../../components/AppDatePicker';
+import { AppSidebar } from '../../../components/AppSidebar';
 
 export type ActiveTab =
   | 'dashboard'
@@ -100,21 +102,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }).format(val);
 
   return (
-    <aside className="w-full md:w-56 bg-[#fbfaf6] text-zinc-900 flex flex-col shrink-0 border-r border-[#e8e6dc] select-none min-h-screen">
+    <AppSidebar className="w-full md:w-60 bg-[#f8f6f0] text-zinc-900 flex flex-col shrink-0 border-r border-[#e5dfd2] select-none min-h-screen">
       {/* Brand & Header */}
       <div className="p-2.5 border-b border-[#e8e6dc] bg-white/60">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2 text-left">
-            <div className="w-7 h-7 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-serif-title font-bold text-sm shadow-2xs shrink-0">
-              M
-            </div>
-            <div>
-              <h1 className="font-serif-title text-xs font-bold tracking-tight text-zinc-900 leading-none">Mathan ERP</h1>
-              <p className="text-[8px] font-extrabold uppercase tracking-[0.15em] text-zinc-400 mt-0.5">
-                {currentAppName}
-              </p>
-            </div>
-          </div>
+          <AppBrand subtitle={currentAppName} compact />
 
           {onClose && (
             <button
@@ -201,15 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer / Evaluation Date Controls */}
       <div className="p-2.5 border-t border-[#e8e6dc] bg-white/60 space-y-2">
-        <div className="rounded-xl border border-[#e8e6dc] bg-white p-2 space-y-1.5">
-          <span className="block truncate text-[9px] font-extrabold uppercase tracking-widest text-zinc-400" title={workspace?.name}>
-            {workspace?.name || 'Workspace'}
-          </span>
-          <AppSwitcher label="Apps" fullWidth />
-          <button onClick={() => void signOut()} className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[10px] font-bold ${isGuest ? 'border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border border-red-100 bg-red-50 text-red-700 hover:bg-red-100'}`} title={isGuest ? 'Log in' : 'Log out'}>
-            {isGuest ? <LogIn className="w-3.5 h-3.5" /> : <LogOut className="w-3.5 h-3.5" />} {isGuest ? 'Log in' : 'Log out'}
-          </button>
-        </div>
+        <AppSidebarFooter workspaceName={workspace?.name} isGuest={isGuest} onSignOut={() => void signOut()} compact />
         <div>
           <label className="block text-[9px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1 flex items-center justify-between">
             <span className="flex items-center gap-1">
@@ -219,15 +203,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               AS OF
             </span>
           </label>
-          <input
-            type="date"
-            value={asOfDate}
-            onChange={(e) => onAsOfDateChange(e.target.value)}
-            className="w-full px-2 py-1 bg-[#f2f0e6] border border-zinc-300/70 rounded-lg text-[11px] font-mono font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-800"
-          />
+          <AppDatePicker value={asOfDate} onChange={onAsOfDateChange} className="w-full" />
         </div>
 
       </div>
-    </aside>
+    </AppSidebar>
   );
 };

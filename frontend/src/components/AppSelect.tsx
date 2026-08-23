@@ -1,0 +1,10 @@
+import { ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+
+export type AppSelectOption = { value: string; label: string };
+export function AppSelect({ value, onChange, options, placeholder = 'Select…', disabled = false, className = '' }: { value: string; onChange: (value: string) => void; options: AppSelectOption[]; placeholder?: string; disabled?: boolean; className?: string }) {
+  const [open, setOpen] = useState(false); const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { const close = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); }; document.addEventListener('mousedown', close); return () => document.removeEventListener('mousedown', close); }, []);
+  const selected = options.find((option) => option.value === value);
+  return <div ref={ref} className={`relative ${className}`}><button type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)} className="erp-control flex min-h-10 w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold shadow-sm transition hover:border-[#54623e] disabled:cursor-not-allowed disabled:opacity-50"><span className={`min-w-0 truncate ${selected ? '' : 'text-[#6b6a64]'}`}>{selected?.label ?? placeholder}</span><ChevronDown className={`h-4 w-4 shrink-0 text-[#6b6a64] transition-transform ${open ? 'rotate-180' : ''}`} /></button>{open && !disabled && <div role="listbox" className="absolute left-0 right-0 top-[calc(100%+0.3rem)] z-[80] max-h-64 overflow-y-auto rounded-xl border border-[#e8e6dc] bg-white p-1 shadow-xl">{options.length ? options.map((option) => <button key={option.value} type="button" role="option" aria-selected={option.value === value} onClick={() => { onChange(option.value); setOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold ${option.value === value ? 'bg-[#54623e] text-white' : 'text-[#1c1d1b] hover:bg-[#f1f5eb]'}`}>{option.label}</button>) : <p className="px-3 py-2 text-xs text-[#6b6a64]">No options</p>}</div>}</div>;
+}

@@ -12,7 +12,7 @@ export function AppSwitcher({ label, fullWidth = false }: AppSwitcherProps) {
 
   return (
     <details className={`relative ${fullWidth ? 'w-full' : ''}`}>
-      <summary className={`flex cursor-pointer list-none items-center gap-2 rounded-xl border border-[#e6e2d6] bg-white px-3 py-2 text-xs font-bold text-zinc-800 shadow-sm hover:bg-[#faf9f5] ${fullWidth ? 'w-full justify-center' : ''}`}>
+      <summary className={`erp-control flex cursor-pointer list-none items-center gap-2 px-3 text-xs font-bold shadow-sm hover:bg-[#edf2e7] ${fullWidth ? 'w-full justify-center' : ''}`}>
         <Grid2X2 className="h-3.5 w-3.5 text-emerald-700" />
         <span className={label ? '' : 'hidden sm:inline'}>{label ?? currentApp?.name ?? 'Apps'}</span>
         <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />

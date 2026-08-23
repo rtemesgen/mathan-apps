@@ -262,7 +262,7 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
 
 export async function shareApp() {
   const url = await getLatestAppDownloadUrl();
-  const message = 'Download Mathan ERP directly — Cash Book and Payroll business tools.';
+  const message = 'Download Mathan ERP directly — Cash Book, Payroll, and Truck Equity business tools.';
   if (isNativeMobile()) {
     await Share.share({ title: 'Share Mathan ERP', text: message, ...(url ? { url } : {}), dialogTitle: 'Share Mathan ERP' });
     return;
