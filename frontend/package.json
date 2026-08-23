@@ -11,8 +11,9 @@
     "lint": "tsc --noEmit",
     "test:accounting": "node --import tsx tests/accounting.test.ts",
     "test:admin-backup": "node --import tsx tests/admin-backup.test.ts",
+    "test:truck": "node --import tsx tests/truck-financials.test.ts",
     "test:e2e": "playwright test",
-    "test": "npm run lint && npm run test:accounting && npm run test:admin-backup"
+    "test": "npm run lint && npm run test:accounting && npm run test:admin-backup && npm run test:truck"
   },
   "dependencies": {
     "@capacitor-community/contacts": "^7.2.0",

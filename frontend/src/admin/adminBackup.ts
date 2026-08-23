@@ -191,6 +191,9 @@ export async function restoreAdminArchive(archive: AdminArchive, workspaceIds: s
       snapshots: filterRows('snapshots'),
       audit_events: filterRows('audit_events'),
       invitations: filterRows('invitations'),
+      trucks: filterRows('trucks'),
+      truck_owners: filterRows('truck_owners'),
+      truck_transactions: filterRows('truck_transactions'),
     };
     const result = await adminRequest<{ source_workspace_id: string; workspace_id: string; name: string; missing_users: string[] }>('restore-workspace', { operation_id: operation.operation_id, workspace_backup: workspaceBackup });
     restored.push(result); result.missing_users.forEach((email) => missingUsers.add(email)); completed += 1;

@@ -9,8 +9,8 @@ test('admin controls, encrypted backup, purge, safe restore, and audit work end 
   await expect(page.getByLabel('Admin')).toBeVisible();
   await page.getByLabel('Admin').click();
   await expect(page.getByText('Secure administrator backups')).toBeVisible();
-  await page.getByPlaceholder('Passphrase').fill(PASSPHRASE);
-  await page.getByPlaceholder('Confirm passphrase').fill(PASSPHRASE);
+  await page.getByRole('textbox', { name: 'Passphrase', exact: true }).fill(PASSPHRASE);
+  await page.getByRole('textbox', { name: 'Confirm passphrase', exact: true }).fill(PASSPHRASE);
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: /Save and create today/ }).click();
   const backupDownload = await downloadPromise;
@@ -33,11 +33,13 @@ test('admin controls, encrypted backup, purge, safe restore, and audit work end 
   await page.getByRole('button', { name: 'Workspaces & Access' }).click();
   const company = page.locator('section').filter({ hasText: 'Admin Company' }).first();
   await company.getByRole('button', { name: /Admin Company/ }).click();
-  const memberRow = company.getByText('member@mathan-e2e.local · member', { exact: true }).locator('xpath=../../..');
-  await memberRow.locator('select').first().selectOption('none');
-  await expect(memberRow.locator('select').first()).toHaveValue('none');
-  await memberRow.locator('select').first().selectOption('edit');
-  await expect(memberRow.locator('select').first()).toHaveValue('edit');
+  const memberRow = company.getByText('member@mathan-e2e.local · member', { exact: true }).locator('xpath=../..');
+  await memberRow.getByRole('button', { name: 'Cash Book', exact: true }).click();
+  await page.getByRole('option', { name: 'No access', exact: true }).click();
+  await expect(memberRow.getByRole('button', { name: 'Cash Book', exact: true })).toContainText('No access');
+  await memberRow.getByRole('button', { name: 'Cash Book', exact: true }).click();
+  await page.getByRole('option', { name: 'Edit', exact: true }).click();
+  await expect(memberRow.getByRole('button', { name: 'Cash Book', exact: true })).toContainText('Edit');
   const cashBookControl = company.locator('div').filter({ hasText: /^Cash Book · OnDisable$/ }).first();
   await cashBookControl.getByRole('button', { name: 'Disable' }).click();
   await expect(company.getByText('Cash Book · Off')).toBeVisible();
@@ -52,11 +54,16 @@ test('admin controls, encrypted backup, purge, safe restore, and audit work end 
   await page.getByRole('dialog').getByLabel('Type DELETE to confirm').fill('DELETE');
   await page.getByRole('dialog').getByLabel('Your password').fill(E2E_USERS.admin.password);
   await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  await page.getByRole('button', { name: 'Users', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible();
+  await page.getByPlaceholder('Search name, email, or phone').fill('delete-me@mathan-e2e.local');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
   await expect(page.getByText('0 users')).toBeVisible();
 
   await page.getByRole('button', { name: 'Backup & Restore' }).click();
   await page.locator('input[type=file]').setInputFiles(backupPath!);
-  await page.getByPlaceholder('Passphrase').fill(PASSPHRASE);
+  await page.getByRole('textbox', { name: 'Passphrase', exact: true }).fill(PASSPHRASE);
   await page.getByRole('button', { name: 'Inspect and verify backup' }).click();
   await expect(page.getByText(/Verified backup from/)).toBeVisible();
   await page.getByRole('button', { name: 'Restore selected as new workspaces' }).click();

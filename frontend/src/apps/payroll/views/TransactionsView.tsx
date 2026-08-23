@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { exportPdfFile } from '../../../lib/mobile';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
+import { AppSelect } from '../../../components/AppSelect';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -93,18 +94,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           <div className="flex items-center space-x-1.5 text-xs">
             <User className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
             <span className="font-bold text-zinc-700">Staff:</span>
-            <select
-              value={employeeFilter}
-              onChange={(e) => setEmployeeFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-[#f2f0e6] border border-zinc-200 rounded-xl text-xs font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-800 cursor-pointer max-w-[180px] truncate"
-            >
-              <option value="All">All Staff ({employees.length})</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name}
-                </option>
-              ))}
-            </select>
+            <AppSelect value={employeeFilter} onChange={setEmployeeFilter} options={[{ value: 'All', label: `All Staff (${employees.length})` }, ...employees.map((emp) => ({ value: emp.id, label: emp.name }))]} className="max-w-[180px]" />
           </div>
 
           <div className="flex items-center gap-2 shrink-0 border-l border-zinc-200 pl-2 ml-1">

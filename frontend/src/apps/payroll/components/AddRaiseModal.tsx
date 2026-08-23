@@ -3,6 +3,8 @@ import { Employee, SalaryChange } from '../types';
 import { formatCurrency, formatDate, getTodayString } from '../utils/calc';
 import { X, TrendingUp, Calendar, AlertCircle, Info } from 'lucide-react';
 import { showAppToast } from '../../../lib/mobile';
+import { AppSelect } from '../../../components/AppSelect';
+import { AppDatePicker } from '../../../components/AppDatePicker';
 
 interface AddRaiseModalProps {
   isOpen: boolean;
@@ -100,24 +102,7 @@ export const AddRaiseModal: React.FC<AddRaiseModalProps> = ({
           {/* Select Employee */}
           <div>
             <label className="block text-slate-700 font-semibold mb-1">Select Employee</label>
-            <select
-              value={employeeId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setEmployeeId(id);
-                const emp = employees.find((item) => item.id === id);
-                if (emp) {
-                  setNewSalary('');
-                }
-              }}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 text-xs font-medium"
-            >
-              {[...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })).map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name} ({emp.department} - Current Rate: ${emp.initialSalary}/mo)
-                </option>
-              ))}
-            </select>
+            <AppSelect value={employeeId} onChange={(id) => { setEmployeeId(id); setNewSalary(''); }} options={[...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })).map((emp) => ({ value: emp.id, label: `${emp.name} (${emp.department} - Current Rate: $${emp.initialSalary}/mo)` }))} />
           </div>
 
           {/* Current Rate vs New Rate */}
@@ -168,13 +153,7 @@ export const AddRaiseModal: React.FC<AddRaiseModalProps> = ({
               When Did / Will This Raise Start? <span className="text-red-500">*</span>
             </label>
             <div className="relative">
-              <input
-                type="date"
-                required
-                value={effectiveDate}
-                onChange={(e) => setEffectiveDate(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs text-slate-900 font-bold"
-              />
+              <AppDatePicker value={effectiveDate} onChange={setEffectiveDate} required />
             </div>
             <div className="bg-amber-50 border border-amber-200/80 rounded-lg p-2.5 mt-1.5 flex items-start space-x-2 text-[11px] text-amber-900">
               <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />

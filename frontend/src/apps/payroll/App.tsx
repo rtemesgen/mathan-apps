@@ -165,7 +165,7 @@ export default function App() {
   const stats = calculateCompanyStats(employees, transactions, asOfDate);
 
   return (
-    <div className="min-h-screen bg-[#f6f5ef] text-zinc-900 flex flex-col md:flex-row font-sans antialiased selection:bg-zinc-800 selection:text-white">
+    <div className="erp-app min-h-screen bg-[#f8f6f0] text-zinc-900 flex flex-col md:flex-row font-sans antialiased selection:bg-zinc-800 selection:text-white">
       {/* Sidebar for Desktop (visible when isSidebarOpen is true) */}
       {isSidebarOpen && (
         <div ref={desktopSidebarRef} className="hidden md:block shrink-0 z-30 transition-all duration-300">
@@ -191,7 +191,7 @@ export default function App() {
             className="fixed inset-0 bg-zinc-900/60 backdrop-blur-xs"
             onClick={() => setIsSidebarOpen(false)}
           ></div>
-          <div ref={mobileSidebarRef} className="relative z-10 w-56 h-full flex flex-col shadow-2xl">
+          <div ref={mobileSidebarRef} className="mobile-sidebar-drawer relative z-10 flex h-[100dvh] max-h-[100dvh] w-72 flex-col overflow-y-auto overscroll-contain shadow-2xl">
             <Sidebar
               activeTab={activeTab}
               setActiveTab={(tab) => {
@@ -220,7 +220,7 @@ export default function App() {
           toggleButtonRef={toggleBtnRef}
         />
 
-        <main className="flex-1 p-2 sm:p-3 max-w-7xl w-full mx-auto">
+        <main className="mobile-content-safe flex-1 max-w-7xl w-full mx-auto p-2 pb-16 sm:p-3 sm:pb-6">
           {activeTab === 'dashboard' && (
             <DashboardView
               employees={employees}

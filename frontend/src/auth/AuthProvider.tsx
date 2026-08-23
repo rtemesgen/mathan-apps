@@ -7,7 +7,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { disableGuestMode, enableGuestMode, isGuestMode } from './guestMode';
 import { readOffline, writeOffline } from '../lib/localStore';
 
-export type AppId = 'book' | 'payroll';
+export type AppId = 'book' | 'payroll' | 'truck';
 export type AppPermission = 'none' | 'view' | 'edit';
 export interface Workspace { id: string; name: string; accent_color: string; }
 export interface WorkspaceAppAccess { app_id: AppId; enabled: boolean; permission: AppPermission; }
@@ -17,7 +17,7 @@ const AuthContext = createContext<AuthState | null>(null);
 export const standaloneMode = import.meta.env.VITE_STANDALONE === 'true';
 const workspaceCacheKey = (userId: string) => `mathan_workspace_cache_${userId}`;
 const adminCacheKey = (userId: string) => `mathan_system_admin_${userId}`;
-const defaultAppAccess = (): Record<AppId, WorkspaceAppAccess> => ({ book: { app_id: 'book', enabled: true, permission: 'edit' }, payroll: { app_id: 'payroll', enabled: true, permission: 'edit' } });
+const defaultAppAccess = (): Record<AppId, WorkspaceAppAccess> => ({ book: { app_id: 'book', enabled: true, permission: 'edit' }, payroll: { app_id: 'payroll', enabled: true, permission: 'edit' }, truck: { app_id: 'truck', enabled: true, permission: 'edit' } });
 function readWorkspaceCache(userId: string): Workspace | null {
   try { const value = localStorage.getItem(workspaceCacheKey(userId)); return value ? JSON.parse(value) as Workspace : null; } catch { return null; }
 }
@@ -78,8 +78,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const memberships = ((data as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; book_enabled: boolean; book_permission: AppPermission; payroll_enabled: boolean; payroll_permission: AppPermission }> | null) ?? []).map((row) => ({
       id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role,
-      appAccess: { book: { app_id: 'book' as AppId, enabled: row.book_enabled, permission: row.book_permission }, payroll: { app_id: 'payroll' as AppId, enabled: row.payroll_enabled, permission: row.payroll_permission } },
+      appAccess: { book: { app_id: 'book' as AppId, enabled: row.book_enabled, permission: row.book_permission }, payroll: { app_id: 'payroll' as AppId, enabled: row.payroll_enabled, permission: row.payroll_permission }, truck: { app_id: 'truck' as AppId, enabled: true, permission: 'none' as AppPermission } },
     }));
+    const { data: truckAccess } = await supabase.rpc('list_my_truck_access');
+    const accessByWorkspace = new Map(((truckAccess as Array<{ workspace_id: string; truck_enabled: boolean; truck_permission: AppPermission }> | null) ?? []).map((item) => [item.workspace_id, item]));
+    memberships.forEach((membership) => { const access = accessByWorkspace.get(membership.id); membership.appAccess.truck = { app_id: 'truck', enabled: access?.truck_enabled ?? true, permission: access?.truck_permission ?? (membership.role === 'owner' ? 'edit' : 'none') }; });
     setWorkspaces(memberships);
     const current = memberships.find((item) => item.id === (preferredWorkspaceId ?? workspace?.id));
     const preferred = current ?? memberships.find((item) => item.role === 'owner') ?? memberships[0] ?? null;

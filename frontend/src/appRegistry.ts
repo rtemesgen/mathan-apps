@@ -1,7 +1,7 @@
-import { BookOpen, WalletCards, type LucideIcon } from 'lucide-react';
+import { BookOpen, WalletCards, Truck as TruckIcon, type LucideIcon } from 'lucide-react';
 
 export interface ErpAppDefinition {
-  id: 'book' | 'payroll';
+  id: 'book' | 'payroll' | 'truck';
   name: string;
   route: string;
   description: string;
@@ -28,5 +28,14 @@ export const ERP_APPS: ErpAppDefinition[] = [
     status: 'available',
     icon: WalletCards,
     accent: 'indigo',
+  },
+  {
+    id: 'truck',
+    name: 'Truck Equity',
+    route: '/truck',
+    description: 'Manage fleet cash, partners, equity, trips, and payouts.',
+    status: 'available',
+    icon: TruckIcon,
+    accent: 'amber',
   },
 ];

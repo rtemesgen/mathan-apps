@@ -7,7 +7,7 @@ export type AdminOverview = {
   snapshots: number;
   snapshot_freshness: string | null;
   storage_bytes: number;
-  app_access: { book: number; payroll: number };
+  app_access: { book: number; payroll: number; truck: number };
   recent_audit: AdminAuditEvent[];
   latest_backup: AdminBackupRun | null;
   pending_approvals: number;
@@ -21,7 +21,7 @@ export type AdminMembership = {
   user_id: string;
   role: 'owner' | 'member';
   workspace: { id: string; name: string } | null;
-  permissions: Array<{ app_id: 'book' | 'payroll'; permission: AppPermission }>;
+  permissions: Array<{ app_id: 'book' | 'payroll' | 'truck'; permission: AppPermission }>;
 };
 
 export type AdminUser = {
@@ -45,13 +45,13 @@ export type AdminWorkspace = {
   created_by: string;
   created_at: string;
   updated_at: string;
-  apps: Array<{ workspace_id: string; app_id: 'book' | 'payroll'; enabled: boolean }>;
+  apps: Array<{ workspace_id: string; app_id: 'book' | 'payroll' | 'truck'; enabled: boolean }>;
   members: Array<{
     workspace_id: string;
     user_id: string;
     role: 'owner' | 'member';
     user: Pick<AdminUser, 'id' | 'email' | 'display_name'>;
-    permissions: Array<{ app_id: 'book' | 'payroll'; permission: AppPermission }>;
+    permissions: Array<{ app_id: 'book' | 'payroll' | 'truck'; permission: AppPermission }>;
   }>;
 };
 

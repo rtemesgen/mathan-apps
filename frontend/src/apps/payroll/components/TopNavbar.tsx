@@ -1,5 +1,8 @@
 import React from 'react';
 import { ActiveTab } from './Sidebar';
+import { AppDatePicker } from '../../../components/AppDatePicker';
+import { AppBrand } from '../../../components/AppBrand';
+import { AppHeader } from '../../../components/AppHeader';
 import {
   Menu,
   X,
@@ -45,6 +48,11 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           title: 'Add Employee',
           icon: UserPlus,
         };
+      case 'manage-employees':
+        return {
+          title: 'Manage Employees',
+          icon: UserPlus,
+        };
       case 'pay-salary':
         return {
           title: 'Pay',
@@ -57,7 +65,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
         };
       case 'reports':
         return {
-          title: 'Reports & Export',
+          title: 'Payroll Reports',
           icon: FileSpreadsheet,
         };
       case 'transactions':
@@ -74,69 +82,44 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   };
 
   const currentInfo = getPageTitle(activeTab);
-  const Icon = currentInfo.icon;
 
   return (
-    <header className="native-safe-top bg-[#f6f5ef] border-b border-[#e8e6dc] sticky top-0 z-40 px-2.5 sm:px-4 py-1.5 flex items-center justify-between shadow-2xs">
+    <AppHeader bare className="z-40 px-3 sm:px-4 py-1.5 flex items-center justify-between shadow-2xs">
       {/* Title & Menu Toggle Logo Button */}
-      <div className="flex items-center space-x-2.5 sm:space-x-3.5">
+      <div className="flex min-w-0 flex-none items-center gap-2">
         {isSidebarOpen ? (
           /* Mobile Logo Button (only when sidebar is open on mobile) */
           <button
             ref={toggleButtonRef}
             onClick={onToggleSidebar}
-            className="flex md:hidden items-center space-x-2 p-1 hover:opacity-85 rounded-xl transition cursor-pointer group shrink-0 select-none border border-transparent hover:border-zinc-200 hover:bg-white/60"
+            className="flex w-fit md:hidden items-center space-x-1.5 p-0.5 hover:opacity-85 rounded-xl transition cursor-pointer group shrink-0 select-none border border-transparent hover:border-zinc-200 hover:bg-white/60"
             title="Close Navigation Menu"
           >
-            <div className="w-8 h-8 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-serif-title font-bold text-base italic shadow-2xs shrink-0">
-              <span className="bg-gradient-to-tr from-amber-200 via-white to-sky-200 bg-clip-text text-transparent">M</span>
-            </div>
-            <div className="text-left leading-none">
-              <div className="font-serif-title text-sm font-bold tracking-tight text-zinc-900 italic">
-                Mathan ERP
-              </div>
-              <div className="text-[8px] font-extrabold uppercase tracking-[0.18em] text-zinc-400 mt-0.5">
-                Payroll Tracker
-              </div>
-            </div>
+            <AppBrand subtitle="PAYROLL TRACKER" compact />
           </button>
         ) : (
           /* When sidebar is closed/collapsed, show Mathan ERP logo button on all screens */
           <button
             ref={toggleButtonRef}
             onClick={onToggleSidebar}
-            className="flex items-center space-x-2 p-1 hover:opacity-85 rounded-xl transition cursor-pointer group shrink-0 select-none border border-transparent hover:border-zinc-200 hover:bg-white/60"
+            className="flex w-fit items-center space-x-1.5 p-0.5 hover:opacity-85 rounded-xl transition cursor-pointer group shrink-0 select-none border border-transparent hover:border-zinc-200 hover:bg-white/60"
             title="Open Navigation Menu"
           >
-            <div className="w-8 h-8 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-serif-title font-bold text-base italic shadow-2xs shrink-0 group-hover:scale-105 transition-transform">
-              <span className="bg-gradient-to-tr from-amber-200 via-white to-sky-200 bg-clip-text text-transparent">M</span>
-            </div>
-            <div className="text-left hidden sm:block leading-none">
-              <div className="font-serif-title text-sm font-bold tracking-tight text-zinc-900 italic">
-                Mathan ERP
-              </div>
-              <div className="text-[8px] font-extrabold uppercase tracking-[0.18em] text-zinc-400 mt-0.5">
-                Payroll Tracker
-              </div>
-            </div>
+            <AppBrand subtitle="PAYROLL TRACKER" compact />
           </button>
         )}
 
-        <div className="h-5 w-px bg-zinc-300 hidden sm:block"></div>
+        <div className="hidden h-4 w-px bg-zinc-300 sm:block"></div>
 
-        <div className="p-1.5 bg-white text-zinc-800 rounded-lg border border-[#e8e6dc] shadow-2xs flex items-center justify-center">
-          <Icon className="w-3.5 h-3.5 text-zinc-800" />
-        </div>
-
-        <div>
-          <h1 className="font-sans text-xs sm:text-sm font-bold text-zinc-900 tracking-tight leading-none uppercase">
+        <div className="min-w-0 max-w-[108px] flex-none sm:max-w-[180px]">
+          <h1 className="truncate font-sans text-[10px] font-bold uppercase leading-none tracking-tight text-zinc-900 sm:text-xs">
             {currentInfo.title}
           </h1>
         </div>
       </div>
 
       {/* Right side evaluation date badge & LIVE badge */}
-      <div className="flex items-center space-x-2 sm:space-x-3">
+      <div className="ml-2 flex shrink-0 items-center gap-1 sm:ml-3 sm:gap-3">
         {/* Live Pill Badge */}
         <div className="hidden sm:flex items-center gap-1 bg-white border border-zinc-200 px-2 py-0.5 rounded-full text-[9px] font-extrabold text-zinc-700 uppercase tracking-widest shadow-2xs">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -144,19 +127,14 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
         </div>
 
         {/* Date Selector */}
-        <div className="flex items-center bg-white border border-[#e8e6dc] rounded-xl px-2 sm:px-2.5 py-1 text-xs shadow-2xs">
-          <Calendar className="w-3 h-3 text-zinc-600 mr-1.5 shrink-0" />
+        <div className="payroll-header-date flex min-w-0 items-center rounded-xl border border-[#e8e6dc] bg-white px-0.5 py-0.5 text-xs shadow-2xs sm:px-2.5 sm:py-1">
+          <Calendar className="mr-1 h-3 w-3 shrink-0 text-zinc-600 sm:mr-1.5" />
           <span className="text-zinc-400 text-[9px] uppercase font-bold tracking-wider mr-1.5 hidden md:inline">
             EVAL DATE:
           </span>
-          <input
-            type="date"
-            value={asOfDate}
-            onChange={(e) => onAsOfDateChange(e.target.value)}
-            className="bg-[#f2f0e6] border border-zinc-200 text-zinc-900 font-mono text-[11px] font-bold rounded-lg px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-zinc-800 cursor-pointer"
-          />
+          <AppDatePicker value={asOfDate} onChange={onAsOfDateChange} className="w-[84px] sm:w-32" />
         </div>
       </div>
-    </header>
+    </AppHeader>
   );
 };

@@ -18,21 +18,93 @@
   --color-cash-out: #DC2626;
 }
 
+:root {
+  --erp-font: "Plus Jakarta Sans", system-ui, sans-serif;
+  --erp-ink: #1C1D1F;
+  --erp-ink-secondary: #787672;
+  --erp-ink-muted: #9A978F;
+  --erp-canvas: #F8F6F0;
+  --erp-surface: #FFFFFF;
+  --erp-border: #E5DFD2;
+  --erp-moss: #54623E;
+  --erp-moss-tint: #EDF2E7;
+  --erp-danger: #B42318;
+  --erp-warning: #B26A00;
+  --erp-radius-card: 16px;
+  --erp-radius-control: 11px;
+  --erp-control-height: 42px;
+}
+
 body {
   margin: 0;
   min-width: 320px;
-  font-family: var(--font-sans);
-  background: #F6F5EF;
-  color: #1C1D1B;
+  font-family: var(--erp-font);
+  background: var(--erp-canvas);
+  color: var(--erp-ink);
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
 }
+
+.erp-header { min-height: 60px; background: color-mix(in srgb, var(--erp-canvas) 95%, transparent); border-color: var(--erp-border); }
+.erp-brand-icon { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 9px; background: var(--erp-ink); color: white; font-family: Georgia, serif; font-size: 1rem; font-weight: 800; }
+.erp-brand-name { display: block; color: var(--erp-ink); font-size: 15px; font-weight: 800; line-height: 1; }
+.erp-brand-subtitle { display: block; color: var(--erp-ink-muted); font-size: 9px; font-weight: 800; letter-spacing: .18em; line-height: 1; text-transform: uppercase; }
+.app-brand-compact { width: max-content; margin-left: -2px; }
+.app-brand-compact-icon.erp-brand-icon { width: 28px; height: 28px; font-size: .875rem; }
+.app-brand-compact-name { max-width: 64px; font-size: 13px; line-height: .95; }
+.app-brand-compact-subtitle { max-width: 68px; font-size: 8px; letter-spacing: .14em; }
+.payroll-header-date .erp-control { min-height: 32px; padding: 4px 6px; font-size: 11px; }
+.payroll-header-date .erp-control svg { width: 13px; height: 13px; }
+.erp-card { border: 1px solid var(--erp-border); border-radius: var(--erp-radius-card); background: var(--erp-surface); box-shadow: 0 2px 8px rgb(28 29 31 / 5%); }
+.erp-control { min-height: var(--erp-control-height); border: 1px solid var(--erp-border); border-radius: var(--erp-radius-control); background: var(--erp-surface); color: var(--erp-ink); }
+.erp-sidebar { width: 240px; background: var(--erp-canvas); border-color: var(--erp-border); padding: 12px; }
+.erp-sidebar.settings-sidebar { width: 100%; }
+.erp-sidebar button, .erp-sidebar a { min-height: 44px; border-radius: 11px; font-size: 14px; font-weight: 600; }
+.erp-sidebar .sidebar-compact-action { min-height: 24px; height: 24px; }
+.erp-sidebar svg { width: 18px; height: 18px; }
+.erp-sidebar nav { gap: 4px; }
+.erp-sidebar nav button, .erp-sidebar nav a { color: var(--erp-ink-secondary); }
+.erp-sidebar nav button:hover, .erp-sidebar nav a:hover { background: var(--erp-moss-tint); color: var(--erp-ink); }
+.erp-sidebar nav button.bg-zinc-900, .erp-sidebar nav button.bg-\[\#1c1d1f\], .erp-sidebar nav button.bg-\[\#1c1d1b\], .erp-sidebar nav button.bg-\[\#121212\], .erp-sidebar nav a.bg-zinc-900 { background: var(--erp-ink); color: white; }
+@media (min-width: 1024px) { .erp-sidebar.settings-sidebar { width: 224px; } }
+@media (max-width: 1023px) { .erp-sidebar.settings-sidebar { padding-left: 0; padding-right: 0; } }
+@media (max-width: 767px) { .erp-sidebar:not(.settings-sidebar) { width: 288px; } }
+@media (max-width: 359px) {
+  html, body, #root { max-width: 100%; overflow-x: hidden; }
+  .erp-header { padding-left: 8px !important; padding-right: 8px !important; }
+  .erp-header .erp-brand-subtitle { font-size: 8px; letter-spacing: .14em; }
+  .app-control-company { max-width: 104px; }
+  .erp-sidebar:not(.settings-sidebar) { width: 288px; }
+  .erp-sidebar { padding: 8px; }
+  .erp-sidebar.settings-sidebar { padding-left: 0; padding-right: 0; }
+}
+.erp-app { font-family: var(--erp-font); color: var(--erp-ink); }
+.erp-app .font-serif, .erp-app .font-serif-title, .erp-app .font-serif-display { font-family: var(--erp-font); }
+.erp-app .erp-card { border-radius: var(--erp-radius-card); }
+.erp-app .rounded-3xl { border-radius: var(--erp-radius-card); }
+.erp-app .rounded-2xl { border-radius: var(--erp-radius-card); }
+.erp-app .rounded-xl { border-radius: var(--erp-radius-control); }
+.erp-app input:not([type='checkbox']):not([type='file']), .erp-app textarea { min-height: 42px; border-radius: var(--erp-radius-control); }
+.erp-app button { border-radius: var(--erp-radius-control); }
+.erp-app header:not(.erp-header) { min-height: 60px; background: var(--erp-canvas); border-color: var(--erp-border); }
+/* Normalize legacy palette utilities inside app surfaces to the ERP palette. */
+.erp-app .bg-slate-900, .erp-app .bg-zinc-900 { background-color: var(--erp-ink); }
+.erp-app .bg-indigo-600, .erp-app .bg-indigo-700 { background-color: var(--erp-moss); }
+.erp-app .hover\:bg-indigo-500:hover, .erp-app .hover\:bg-indigo-700:hover { background-color: #455231; }
+.erp-app .border-slate-800, .erp-app .border-slate-700, .erp-app .border-indigo-500\/30 { border-color: var(--erp-border); }
+.erp-app .text-indigo-300, .erp-app .text-indigo-400, .erp-app .text-indigo-600 { color: var(--erp-moss); }
+/* Legacy Admin/Settings shells inherit the same shared surface rules while their markup is being consolidated. */
+.erp-app aside > nav, main.mx-auto.max-w-7xl aside > nav { border-color: var(--erp-border); border-radius: var(--erp-radius-card); }
+main.mx-auto.max-w-7xl { font-family: var(--erp-font); color: var(--erp-ink); }
+main.mx-auto.max-w-7xl input, main.mx-auto.max-w-7xl textarea { min-height: 42px; border-radius: var(--erp-radius-control); }
+main.mx-auto.max-w-7xl button { border-radius: var(--erp-radius-control); }
 
 button, input, select, textarea { font: inherit; }
 input, select, textarea { font-size: 16px; }
 select { appearance: none; border: 1px solid var(--color-warm-border-strong); border-radius: 0.75rem; background-color: var(--color-warm-card); color: var(--color-ink); min-height: 2.75rem; padding: 0.625rem 2.25rem 0.625rem 0.75rem; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b6a64' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.7rem center; transition: border-color 150ms ease, box-shadow 150ms ease; }
 select:hover { border-color: var(--color-moss); }
 select:focus { outline: none; border-color: var(--color-moss); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-moss) 14%, transparent); }
+select option { background: var(--color-warm-card); color: var(--color-ink); font-size: 0.75rem; font-weight: 600; }
 .app-dropdown-trigger { display: flex; min-height: 2.75rem; width: 100%; align-items: center; justify-content: space-between; gap: 0.75rem; border: 1px solid var(--color-warm-border-strong); border-radius: 0.75rem; background: var(--color-warm-card); padding: 0.625rem 0.75rem; text-align: left; font-size: 0.75rem; font-weight: 700; color: var(--color-ink); transition: border-color 150ms ease, box-shadow 150ms ease; }
 .app-dropdown-trigger:hover:not(:disabled), .app-dropdown-trigger[aria-expanded='true'] { border-color: var(--color-moss); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-moss) 10%, transparent); }
 .app-dropdown-menu { position: absolute; z-index: 40; margin-top: 0.35rem; overflow: hidden; border: 1px solid var(--color-warm-border); border-radius: 0.75rem; background: var(--color-warm-card); padding: 0.3rem; box-shadow: 0 12px 28px rgb(28 29 27 / 14%); }
@@ -42,6 +114,9 @@ select:focus { outline: none; border-color: var(--color-moss); box-shadow: 0 0 0
 .app-dropdown-option-selected:hover { background: var(--color-moss-dark); color: white; }
 .native-safe-top { padding-top: env(safe-area-inset-top); }
 .native-safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.mobile-sidebar-drawer { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.mobile-content-safe { padding-bottom: max(4rem, calc(4rem + env(safe-area-inset-bottom))); }
+@media (min-width: 768px) { .mobile-content-safe { padding-bottom: 1.5rem; } }
 summary::-webkit-details-marker { display: none; }
 
 /* The contact-based member card replaces the older email link card in Settings. */

@@ -162,7 +162,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F5EE] text-[#18181B] flex flex-col font-sans">
+    <div className="erp-app min-h-screen bg-[#f8f6f0] text-[#1c1d1f] flex flex-col font-sans">
       {/* Top Header Bar */}
       <Header
         activeBookName={activeBook?.name}
@@ -173,8 +173,8 @@ export default function App() {
 
       <div className="flex flex-1 min-h-0">
         {isSidebarOpen && <div className="hidden lg:block shrink-0"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div>}
-        {isSidebarOpen && <div className="lg:hidden fixed inset-0 z-[100] flex"><button aria-label="Close Cash Book menu" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/40" /><div className="relative z-10 h-full w-56 shadow-2xl"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div></div>}
-        <main className="flex-1 min-w-0">
+        {isSidebarOpen && <div className="lg:hidden fixed inset-0 z-[100] flex"><button aria-label="Close Cash Book menu" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-0 bg-black/40" /><div className="mobile-sidebar-drawer relative z-10 h-[100dvh] max-h-[100dvh] w-72 overflow-y-auto overscroll-contain shadow-2xl"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div></div>}
+        <main className="mobile-content-safe flex-1 min-w-0 pb-16 sm:pb-6">
           {activeBookId && activeBook ? (
             <BookDetailView
               book={activeBook}

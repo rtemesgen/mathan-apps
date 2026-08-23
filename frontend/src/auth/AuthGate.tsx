@@ -6,8 +6,9 @@ import { standaloneMode, useAuth } from './AuthProvider';
 import { supabase } from '../lib/supabase';
 import { writeOffline } from '../lib/localStore';
 import { isValidPhone, normalizePhone, PHONE_COUNTRIES } from './phone';
+import { AppCard } from '../components/AppCard';
 
-function Panel({ children }: { children: React.ReactNode }) { return <main className="flex min-h-[calc(100vh-61px)] items-center justify-center p-4"><section className="w-full max-w-md rounded-3xl border border-[#e6e2d6] bg-white p-6 shadow-xl">{children}</section></main>; }
+function Panel({ children }: { children: React.ReactNode }) { return <main className="erp-app flex min-h-[calc(100vh-61px)] items-center justify-center p-4"><AppCard className="w-full max-w-md p-6 shadow-xl">{children}</AppCard></main>; }
 
 function readableError(message: string) {
   const value = message.toLowerCase();

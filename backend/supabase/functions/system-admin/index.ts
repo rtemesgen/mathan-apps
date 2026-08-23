@@ -173,6 +173,7 @@ async function overview() {
     app_access: {
       book: (appPermissions ?? []).filter((row) => row.app_id === 'book' && row.permission !== 'none').length,
       payroll: (appPermissions ?? []).filter((row) => row.app_id === 'payroll' && row.permission !== 'none').length,
+      truck: (appPermissions ?? []).filter((row) => row.app_id === 'truck' && row.permission !== 'none').length,
     },
     recent_audit: recentAudit ?? [],
     latest_backup: latestBackup ?? null,
@@ -206,7 +207,7 @@ async function listWorkspaces(body: Body) {
       members: (members ?? []).filter((member) => member.workspace_id === workspace.id).map((member) => ({
         ...member,
         user: userById.get(member.user_id) ?? { id: member.user_id, email: 'Deleted account' },
-        permissions: member.role === 'owner' ? [{ app_id: 'book', permission: 'edit' }, { app_id: 'payroll', permission: 'edit' }] : (permissions ?? []).filter((permission) => permission.workspace_id === workspace.id && permission.user_id === member.user_id),
+        permissions: member.role === 'owner' ? [{ app_id: 'book', permission: 'edit' }, { app_id: 'payroll', permission: 'edit' }, { app_id: 'truck', permission: 'edit' }] : (permissions ?? []).filter((permission) => permission.workspace_id === workspace.id && permission.user_id === member.user_id),
       })),
     })),
     page,
@@ -215,7 +216,7 @@ async function listWorkspaces(body: Body) {
   };
 }
 
-const backupResources = ['profiles', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'system_audit_events', 'backup_runs', 'invitations', 'attachments', 'attachment_links', 'notifications', 'approvals'] as const;
+const backupResources = ['profiles', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'system_audit_events', 'backup_runs', 'invitations', 'attachments', 'attachment_links', 'notifications', 'approvals', 'trucks', 'truck_owners', 'truck_transactions'] as const;
 type BackupResource = typeof backupResources[number] | 'users';
 
 async function backupResource(actorId: string, runId: string, resource: BackupResource, offset: number, limit: number) {
@@ -240,6 +241,9 @@ async function backupResource(actorId: string, runId: string, resource: BackupRe
     attachment_links: { table: 'cash_transaction_attachments', columns: 'cash_transaction_id,attachment_id' },
     notifications: { table: 'notifications', columns: 'id,user_id,workspace_id,notification_type,title,body,route,metadata,read_at,created_at' },
     approvals: { table: 'approval_requests', columns: 'id,workspace_id,requester_id,approver_id,action_type,target_record_type,target_record_id,reason,metadata,status,decision_comment,created_at,decided_at,expires_at' },
+    trucks: { table: 'trucks', columns: 'id,workspace_id,name,unit_number,make_model,vin,cash_on_hand,license_plate,deleted_at,created_at,updated_at' },
+    truck_owners: { table: 'truck_owners', columns: 'id,workspace_id,truck_id,user_id,name,start_date,equity_percentage,monthly_draw_rate,avatar_color,deleted_at,created_at,updated_at' },
+    truck_transactions: { table: 'truck_transactions', columns: 'id,workspace_id,truck_id,owner_id,occurred_on,transaction_type,category,amount,description,reference_no,deleted_at,created_at,updated_at' },
   };
   const item = config[resource as Exclude<BackupResource, 'users'>];
   if (!item) throw new Error('Unsupported backup resource.');
@@ -259,7 +263,7 @@ async function startBackup(actorId: string, kind: 'automatic' | 'manual') {
   const users = await getAllUsers(admin);
   const counts: Record<string, number> = { users: users.length };
   for (const resource of backupResources) {
-    const table = ({ profiles: 'workspace_profiles', workspaces: 'workspaces', members: 'workspace_members', apps: 'workspace_apps', permissions: 'workspace_member_app_permissions', snapshots: 'app_state_snapshots', audit_events: 'audit_events', system_audit_events: 'system_admin_audit_events', backup_runs: 'system_backup_runs', invitations: 'workspace_invitations', attachments: 'record_attachments', attachment_links: 'cash_transaction_attachments', notifications: 'notifications', approvals: 'approval_requests' } as const)[resource];
+    const table = ({ profiles: 'workspace_profiles', workspaces: 'workspaces', members: 'workspace_members', apps: 'workspace_apps', permissions: 'workspace_member_app_permissions', snapshots: 'app_state_snapshots', audit_events: 'audit_events', system_audit_events: 'system_admin_audit_events', backup_runs: 'system_backup_runs', invitations: 'workspace_invitations', attachments: 'record_attachments', attachment_links: 'cash_transaction_attachments', notifications: 'notifications', approvals: 'approval_requests', trucks: 'trucks', truck_owners: 'truck_owners', truck_transactions: 'truck_transactions' } as const)[resource];
     const { count, error } = await admin.from(table).select('*', { count: 'exact', head: true });
     if (error) throw error;
     counts[resource] = count ?? 0;
@@ -445,7 +449,7 @@ Deno.serve(async (request) => {
       }
       case 'set-permission': {
         const workspaceId = text(body.workspace_id); const userId = text(body.user_id); const appId = text(body.app_id); const permission = text(body.permission);
-        if (!['book', 'payroll'].includes(appId) || !['none', 'view', 'edit'].includes(permission)) throw new Error('Invalid app permission.');
+        if (!['book', 'payroll', 'truck'].includes(appId) || !['none', 'view', 'edit'].includes(permission)) throw new Error('Invalid app permission.');
         const { data: membership } = await admin.from('workspace_members').select('role').eq('workspace_id', workspaceId).eq('user_id', userId).maybeSingle();
         if (!membership) throw new Error('The user is not a member of this workspace.');
         if (membership.role === 'owner') throw new Error('Workspace owners always have edit access. Transfer ownership before restricting this user.');
@@ -456,7 +460,7 @@ Deno.serve(async (request) => {
       }
       case 'set-app-enabled': {
         const workspaceId = text(body.workspace_id); const appId = text(body.app_id); const enabled = body.enabled === true;
-        if (!['book', 'payroll'].includes(appId)) throw new Error('Invalid app.');
+        if (!['book', 'payroll', 'truck'].includes(appId)) throw new Error('Invalid app.');
         const { error } = await admin.from('workspace_apps').upsert({ workspace_id: workspaceId, app_id: appId, enabled, updated_at: new Date().toISOString() });
         if (error) throw error;
         await audit(actor.id, 'workspace_app_changed', 'success', { targetWorkspaceId: workspaceId, next: { app_id: appId, enabled } });

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { exportPdfFile, showAppToast } from '../../../lib/mobile';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
+import { AppSelect } from '../../../components/AppSelect';
 
 interface BookDetailViewProps {
   book: Book;
@@ -233,25 +234,9 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             </div>
 
             <div className="flex gap-1.5">
-              <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as 'all' | 'in' | 'out')}
-              className="px-1.5 py-1 text-[10px] font-semibold bg-[#FAF9F5] border border-[#D8D3C5] rounded-md focus:outline-none focus:ring-1 focus:ring-[#121212]"
-            >
-              <option value="all">All Entries</option>
-              <option value="in">Cash In Only</option>
-              <option value="out">Cash Out Only</option>
-              </select>
+              <AppSelect value={typeFilter} onChange={(value) => setTypeFilter(value as 'all' | 'in' | 'out')} options={[{value:'all',label:'All Entries'},{value:'in',label:'Cash In Only'},{value:'out',label:'Cash Out Only'}]} className="min-w-28" />
 
-              <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'highest')}
-              className="px-1.5 py-1 text-[10px] font-semibold bg-[#FAF9F5] border border-[#D8D3C5] rounded-md focus:outline-none focus:ring-1 focus:ring-[#121212]"
-            >
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
-              <option value="highest">Highest Amount</option>
-              </select>
+              <AppSelect value={sortBy} onChange={(value) => setSortBy(value as 'newest' | 'oldest' | 'highest')} options={[{value:'newest',label:'Newest First'},{value:'oldest',label:'Oldest First'},{value:'highest',label:'Highest Amount'}]} className="min-w-32" />
             </div>
           </div>
 

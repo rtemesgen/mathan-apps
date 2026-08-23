@@ -4,6 +4,7 @@ import { AppLauncher } from './components/AppLauncher';
 import { AppShell } from './components/AppShell';
 import { BookApp } from './apps/book';
 import { PayrollApp } from './apps/payroll';
+import { TruckApp } from './apps/truck';
 import { AuthProvider } from './auth/AuthProvider';
 import { AuthGate } from './auth/AuthGate';
 import { useAndroidBackButton } from './hooks/useAndroidBackButton';
@@ -60,6 +61,7 @@ export default function App() {
                 <Route path="/invite/:token" element={<InviteRoute />} />
                 <Route path="/book" element={<AppAccessGate app="book"><BookApp /></AppAccessGate>} />
                 <Route path="/payroll" element={<AppAccessGate app="payroll"><PayrollApp /></AppAccessGate>} />
+                <Route path="/truck" element={<AppAccessGate app="truck"><TruckApp /></AppAccessGate>} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>

@@ -36,6 +36,6 @@ test('existing Cash Book, Payroll, and Settings flows still load and save', asyn
   await expect(page.getByText('Payroll Tracker').first()).toBeVisible();
   await expect(page.getByText('Total Owed')).toBeVisible();
   await page.goto('/settings');
-  await expect(page.getByText('Your profile')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your profile', exact: true })).toBeVisible();
   await expect(page.getByText('Password', { exact: true }).first()).toBeVisible();
 });

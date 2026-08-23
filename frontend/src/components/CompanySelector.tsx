@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth, type AppId } from '../auth/AuthProvider';
 import { supabase } from '../lib/supabase';
 
-const appNames: Record<AppId, string> = { book: 'Cash Book', payroll: 'Payroll' };
+const appNames: Record<AppId, string> = { book: 'Cash Book', payroll: 'Payroll', truck: 'Truck Equity' };
 
 export function CompanySelector() {
   const { workspace, workspaces, switchWorkspace, refreshWorkspace } = useAuth();
@@ -45,7 +45,7 @@ export function CompanySelector() {
   };
 
   const renderCompany = (item: typeof workspaces[number]) => <button key={item.id} onClick={() => selectCompany(item.id)} className={`group w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${item.id === workspace?.id ? 'border-zinc-900 ring-2 ring-zinc-900/5' : 'border-[#e6e2d6]'}`}>
-    <div className="flex items-start gap-3"><span className="mt-0.5 h-10 w-10 shrink-0 rounded-xl" style={{ backgroundColor: item.accent_color }} /><span className="min-w-0 flex-1"><span className="flex items-center gap-2"><span className="truncate font-serif text-lg font-bold text-zinc-900">{item.name}</span>{item.id === workspace?.id && <Check className="h-4 w-4 shrink-0 text-emerald-700" />}</span><span className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider"><span className={item.role === 'owner' ? 'text-emerald-700' : 'text-indigo-700'}>{item.role === 'owner' ? 'Owner' : 'Member'}</span>{(['book', 'payroll'] as AppId[]).map((app) => item.appAccess[app].enabled && item.appAccess[app].permission !== 'none' ? <span key={app} className="rounded-full bg-zinc-100 px-2 py-1 text-zinc-600">{appNames[app]} · {item.appAccess[app].permission}</span> : null)}</span></span><ArrowRight className="mt-2 h-4 w-4 shrink-0 text-zinc-400 transition group-hover:translate-x-1" /></div>
+    <div className="flex items-start gap-3"><span className="mt-0.5 h-10 w-10 shrink-0 rounded-xl" style={{ backgroundColor: item.accent_color }} /><span className="min-w-0 flex-1"><span className="flex items-center gap-2"><span className="truncate font-serif text-lg font-bold text-zinc-900">{item.name}</span>{item.id === workspace?.id && <Check className="h-4 w-4 shrink-0 text-emerald-700" />}</span><span className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider"><span className={item.role === 'owner' ? 'text-emerald-700' : 'text-indigo-700'}>{item.role === 'owner' ? 'Owner' : 'Member'}</span>{(['book', 'payroll', 'truck'] as AppId[]).map((app) => item.appAccess[app].enabled && item.appAccess[app].permission !== 'none' ? <span key={app} className="rounded-full bg-zinc-100 px-2 py-1 text-zinc-600">{appNames[app]} · {item.appAccess[app].permission}</span> : null)}</span></span><ArrowRight className="mt-2 h-4 w-4 shrink-0 text-zinc-400 transition group-hover:translate-x-1" /></div>
   </button>;
 
   return <><main className="mx-auto max-w-4xl px-4 py-7 sm:px-6 sm:py-10"><div className="mb-7 flex items-start justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-emerald-700">Your companies</p><h1 className="mt-1 font-serif text-3xl font-bold">Choose a company</h1><p className="mt-2 text-sm text-zinc-500">Each company has its own apps, records, and permissions.</p></div><Building2 className="h-7 w-7 text-emerald-700" /></div>

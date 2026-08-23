@@ -20,7 +20,7 @@ export function AppLauncher() {
   const { update, status, downloadStatus, checkForUpdate, downloadUpdate, installUpdate } = useAppUpdate();
   const downloading = downloadStatus === 'downloading';
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+    <main className="erp-app mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
       {workspace?.name && <p className="mb-5 flex items-center justify-center gap-2 text-center font-serif text-2xl font-bold text-zinc-900 sm:text-3xl"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: workspace.accent_color }} />{workspace.name}</p>}
       {deletion && <section role="status" className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-red-200 bg-red-50 p-4 text-red-950 shadow-sm"><AlertTriangle className="h-5 w-5 shrink-0 text-red-700" /><div className="min-w-0 flex-1"><p className="text-sm font-extrabold">Account deletion is scheduled</p><p className="mt-1 text-xs leading-5 text-red-800">{deletion.delete_owned_workspaces ? 'Your account and solely owned companies are scheduled for deletion.' : 'Your account deletion is scheduled after ownership is transferred.'} You have <strong>{remainingDays} day{remainingDays === 1 ? '' : 's'}</strong> to recover it.</p></div><button type="button" disabled={cancelling} onClick={() => void cancelDeletion()} className="rounded-xl border-2 border-red-300 bg-white px-4 py-2 text-xs font-extrabold text-red-800 shadow-sm hover:bg-red-100 disabled:opacity-50">{cancelling ? 'Cancelling…' : 'Cancel deletion'}</button></section>}
       <WorkspaceInvitations />

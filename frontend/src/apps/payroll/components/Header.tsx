@@ -12,6 +12,8 @@ import {
   Calendar,
   Receipt,
 } from 'lucide-react';
+import { AppDatePicker } from '../../../components/AppDatePicker';
+import { AppHeader } from '../../../components/AppHeader';
 
 interface HeaderProps {
   stats: CompanyStats;
@@ -31,14 +33,14 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTransactions,
 }) => {
   return (
-    <header className="native-safe-top bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
+    <AppHeader bare className="z-30 shadow-md">
       {/* Top Banner */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           {/* Logo & Title */}
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30">
-              <Building2 className="w-6 h-6" />
+            <div className="erp-brand-icon">
+              <span>M</span>
             </div>
             <div>
               <div className="flex items-center space-x-2">
@@ -61,12 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center bg-slate-800/80 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs">
               <Calendar className="w-3.5 h-3.5 text-indigo-400 mr-2 shrink-0" />
               <span className="text-slate-400 mr-2 whitespace-nowrap">As of Date:</span>
-              <input
-                type="date"
-                value={asOfDate}
-                onChange={(e) => onAsOfDateChange(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
+              <AppDatePicker value={asOfDate} onChange={onAsOfDateChange} className="min-w-32" />
             </div>
 
             <button
@@ -166,6 +163,6 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
-    </header>
+    </AppHeader>
   );
 };

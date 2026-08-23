@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Employee } from '../types';
 import { calculateDaysBetween } from '../utils/calc';
+import { AppDatePicker } from '../../../components/AppDatePicker';
 import {
   UserPlus,
   DollarSign,
@@ -131,13 +132,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
                 <label className="block text-zinc-800 font-bold mb-0.5 text-[11px]">
                   Start Date <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="date"
-                  required
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs text-zinc-900 font-bold"
-                />
+                <AppDatePicker value={startDate} onChange={setStartDate} required />
                 <p className="text-[9px] text-zinc-500 mt-0.5">Supports past dates for backdated hire</p>
               </div>
 
