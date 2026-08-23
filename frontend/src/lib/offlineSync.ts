@@ -1,11 +1,18 @@
 import { supabase } from './supabase';
 import { getQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
+import { writeOfflineMetadata } from './localStore';
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'retry' | 'conflict';
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'retry' | 'conflicted' | 'error';
 
-function report(status: SyncStatus, queued?: number) {
-  window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status, queued } }));
+function report(status: SyncStatus, queued?: number, detail: Record<string, unknown> = {}) {
+  window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status, queued, ...detail } }));
 }
+
+const permanentError = (error: { code?: string; message?: string } | null | undefined) => {
+  const code = error?.code ?? '';
+  return ['42501', '23505', '23503', '23514', 'PGRST116', 'PGRST202'].includes(code) || /permission|forbidden|validation|invalid|does not exist|not found/i.test(error?.message ?? '');
+};
+const wait = (attempt: number) => new Promise((resolve) => window.setTimeout(resolve, Math.min(30000, 500 * (2 ** Math.min(attempt, 6)) + Math.random() * 400)));
 
 /** Flush queued changes for one or more workspaces in a single pass. */
 let activeSync: Promise<void> = Promise.resolve();
@@ -18,10 +25,19 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
   const queue = await getQueuedMutations();
   const remaining: QueuedMutation[] = [];
   let conflict = false;
+  let failed = false;
+  const ordered = queue.filter((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? ''))).sort((a, b) => {
+    const rank = (item: QueuedMutation) => item.entityType.includes('transaction') || item.table.includes('transaction') ? 3 : item.entityType.includes('owner') || item.entityType.includes('membership') ? 2 : 1;
+    return rank(a) - rank(b) || a.queuedAt.localeCompare(b.queuedAt);
+  });
 
   for (const mutation of queue) {
-    const workspaceId = String(mutation.payload.workspace_id ?? '');
+    const workspaceId = mutation.companyId || String(mutation.payload.workspace_id ?? '');
     if (!allowed.has(workspaceId)) { remaining.push(mutation); continue; }
+  }
+  for (const mutation of ordered) {
+    const workspaceId = mutation.companyId || String(mutation.payload.workspace_id ?? '');
+    try {
     if (mutation.table !== 'app_state_snapshots') {
       if (!['trucks', 'truck_owners', 'truck_transactions'].includes(mutation.table)) { remaining.push(mutation); continue; }
       const row = { ...mutation.payload }; delete row.workspace_id;
@@ -29,7 +45,10 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
       const result = row.deleted_at
         ? await supabase.from(mutation.table).update(row).eq('workspace_id', workspaceId).eq('id', id)
         : await supabase.from(mutation.table).upsert({ id, workspace_id: workspaceId, ...row }, { onConflict: 'id' });
-      if (result.error) remaining.push(mutation);
+      if (result.error) {
+        if (permanentError(result.error)) remaining.push({ ...mutation, syncStatus: 'error', lastError: result.error.message });
+        else { failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: result.error.message }); }
+      }
       continue;
     }
     const { data, error } = await supabase.rpc('write_app_state_snapshot', {
@@ -39,18 +58,31 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
       target_payload: mutation.payload.payload,
       audit_action: mutation.payload.audit_action ?? 'snapshot_written_offline',
       affected_client_ids: mutation.payload.affected_client_ids ?? [],
+      mutation_id: mutation.mutationId,
     });
     const result = (data as Array<{ status: string; revision: number; payload: unknown }> | null)?.[0];
     if (result?.status === 'conflict') {
       conflict = true;
-      window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: mutation.payload.domain, remote: result.payload, revision: result.revision } }));
-    } else if (error || !result) remaining.push(mutation);
+      remaining.push({ ...mutation, syncStatus: 'conflicted', lastError: 'Remote revision changed' });
+      window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: mutation.payload.domain, remote: result.payload, revision: result.revision, mutationId: mutation.mutationId } }));
+    } else if (error || !result) {
+      if (permanentError(error)) remaining.push({ ...mutation, syncStatus: 'error', lastError: error?.message ?? 'Synchronization failed' });
+      else { failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error?.message ?? 'Synchronization failed' }); }
+    }
+    } catch (error) {
+      failed = true;
+      remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error instanceof Error ? error.message : 'Synchronization failed' });
+    }
   }
 
   await replaceQueue(remaining);
-  if (conflict) report('conflict');
-  else if (remaining.some((mutation) => allowed.has(String(mutation.payload.workspace_id ?? '')))) report('retry', remaining.length);
-  else report('synced');
+  if (conflict) report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length });
+  else if (failed || remaining.some((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')))) report('retry', remaining.length);
+  else {
+    const lastSyncedAt = new Date().toISOString();
+    await Promise.all([...allowed].map((companyId) => writeOfflineMetadata(`sync:${companyId}`, { lastSyncedAt, pendingCount: 0, conflictCount: 0 })));
+    report('synced', 0, { lastSyncedAt, pendingCount: 0, conflictCount: 0 });
+  }
 }
 
 export function syncWorkspaceQueues(workspaceIds: string | string[]) {

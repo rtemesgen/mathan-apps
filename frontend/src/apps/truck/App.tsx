@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Truck, Owner, Transaction, TransactionType } from './types';
 import { calculateTruckFinancials, formatCurrency, formatDate } from './utils/formatters';
-import { createTruck, createTruckOwner, createTruckTransaction, deleteTruck, deleteTruckOwner, loadTruckData, loadTruckWorkspaceMembers, softDeleteTruckTransaction, updateTruck, updateTruckOwner, updateTruckTransaction } from './truckApi';
+import { createTruck, createTruckOwner, createTruckTransaction, deleteTruck, deleteTruckOwner, loadTruckData, loadTruckWorkspaceMembers, refreshTruckDataFromCloud, softDeleteTruckTransaction, updateTruck, updateTruckOwner, updateTruckTransaction } from './truckApi';
 import { useAuth } from '../../auth/AuthProvider';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { syncQueue } from '../../lib/offlineSync';
@@ -88,7 +88,9 @@ export default function App() {
     preferencesReadyKey.current = preferenceKey;
     preferencesReady.current = true;
   }, [preferenceKey]);
-  const refresh = async () => { if (!workspace) return; setLoading(true); try { if (!isGuest) await syncQueue(workspace.id); const data = await loadTruckData(workspace.id, isGuest); setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); setCurrentTruckId((current) => data.trucks.some((truck) => truck.id === current) ? current : (data.trucks[0]?.id ?? '')); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load Truck data.'); } finally { setLoading(false); } };
+  const refresh = async () => { if (!workspace) return; setLoading(true); try { const data = await loadTruckData(workspace.id, true); setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); setCurrentTruckId((current) => data.trucks.some((truck) => truck.id === current) ? current : (data.trucks[0]?.id ?? '')); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load Truck data.'); } finally { setLoading(false); }
+    if (!isGuest && navigator.onLine) void syncQueue(workspace.id).then(() => refreshTruckDataFromCloud(workspace.id)).then((data) => { setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); }).catch(() => undefined);
+  };
   useEffect(() => { void refresh(); if (workspace && !isGuest) void loadTruckWorkspaceMembers(workspace.id).then(setMembers).catch(() => undefined); else setMembers([]); }, [workspace?.id, isGuest]);
   useEffect(() => { const handler = () => { if (workspace) void refresh(); }; window.addEventListener('online', handler); return () => window.removeEventListener('online', handler); }, [workspace?.id]);
 
