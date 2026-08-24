@@ -17,7 +17,7 @@ import {
   History,
   ChevronDown
 } from 'lucide-react';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface PaySalaryViewProps {
   employees: Employee[];
@@ -44,7 +44,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [lastTx, setLastTx] = useState<Transaction | null>(null);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
   const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {

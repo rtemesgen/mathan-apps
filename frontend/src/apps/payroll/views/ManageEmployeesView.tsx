@@ -5,7 +5,7 @@ import { formatCurrency, formatDate } from '../utils/calc';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppSelect } from '../../../components/AppSelect';
 import { AppDatePicker } from '../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface Props { employees: Employee[]; onSaveEmployee: (employee: Employee) => void | Promise<void>; onDeleteEmployee: (employeeId: string) => void | Promise<void>; }
 const createRaise = (): SalaryChange => ({ id: `raise-${Date.now()}`, effectiveDate: new Date().toISOString().slice(0, 10), newMonthlySalary: 0, reason: '', createdAt: new Date().toISOString() });
@@ -13,7 +13,7 @@ const normalize = (employee: Employee): Employee => ({ ...employee, initialSalar
 
 export function ManageEmployeesView({ employees, onSaveEmployee, onDeleteEmployee }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null); const [draft, setDraft] = useState<Employee | null>(null); const [message, setMessage] = useState(''); const [confirmDelete, setConfirmDelete] = useState(false);
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
   const open = (employee: Employee) => { setExpandedId(employee.id); setDraft(normalize(employee)); setMessage(''); }; const close = () => { setExpandedId(null); setDraft(null); setMessage(''); setConfirmDelete(false); };
   const update = <K extends keyof Employee>(field: K, value: Employee[K]) => setDraft((current) => current ? { ...current, [field]: value } : current);
   const updateRaise = (id: string, field: keyof SalaryChange, value: string) => setDraft((current) => current ? { ...current, salaryHistory: current.salaryHistory.map((raise) => raise.id === id ? { ...raise, [field]: field === 'newMonthlySalary' ? Number(value) || 0 : value } : raise) } : current);

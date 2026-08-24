@@ -27,7 +27,7 @@ assert.match(read('apps/truck/components/Modals/ExportModal.tsx'), /downloadCsvF
 assert.match(read('apps/payroll/views/ReportsView.tsx'), /downloadCsvFile/);
 assert.match(read('apps/truck/components/Pages/ExportPage.tsx'), /exportPdfFile/);
 assert.match(read('apps/truck/components/Pages/ExportPage.tsx'), /downloadCsvFile/);
-assert.match(read('components/CompanySelector.tsx'), /useSubmitGuard/);
+assert.match(read('components/CompanySelector.tsx'), /useAsyncAction/);
 assert.match(read('lib/repositories/snapshotRepository.ts'), /snapshotTails/);
 assert.match(read('lib/repositories/snapshotRepository.ts'), /relevant\.length > 0/);
 assert.match(read('hooks/useAsyncAction.ts'), /gate\.current/);
@@ -63,7 +63,7 @@ assert.doesNotMatch(read('apps/payroll/App.tsx'), /payrollRepository/);
 assert.match(read('apps/book/cashBookStore.ts'), /actions:/);
 assert.match(read('apps/payroll/payrollStore.ts'), /actions:/);
 assert.match(read('apps/truck/components/Pages/CashReportView.tsx'), /DeleteConfirmModal/);
-assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /useSubmitGuard/);
+assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /useAsyncAction/);
 assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /submitting/);
 assert.match(read('apps/book/components/BookDetailView.tsx'), /await onDeleteTransaction/);
 assert.match(read('apps/truck/useTruckFinancials.ts'), /calculateTruckFinancials/);
@@ -83,11 +83,11 @@ assert.ok(snapshotSource.indexOf('await offlineStore.write(context.storageKey, v
 assert.ok(snapshotSource.indexOf('relevant.length > 0') < snapshotSource.indexOf('await offlineStore.write(context.storageKey, remote.payload)'), 'pending local snapshots must be protected from cloud hydration');
 const snapshotHookSource = read('lib/repositories/useSnapshotRepository.ts');
 assert.ok(snapshotHookSource.indexOf('await persistSnapshot(context, nextValue') < snapshotHookSource.indexOf('setValue(nextValue)'), 'snapshot state must update after durable persistence');
-assert.match(read('apps/book/components/AddBookModal.tsx'), /useSubmitGuard/);
-assert.match(read('apps/book/components/ImportBookModal.tsx'), /useSubmitGuard/);
-assert.match(read('apps/book/components/AddMembersModal.tsx'), /useSubmitGuard/);
-assert.match(read('apps/payroll/views/PaySalaryView.tsx'), /useSubmitGuard/);
-assert.match(read('apps/truck/components/AddPartnerModal.tsx'), /useSubmitGuard/);
+assert.match(read('apps/book/components/AddBookModal.tsx'), /useAsyncAction/);
+assert.match(read('apps/book/components/ImportBookModal.tsx'), /useAsyncAction/);
+assert.match(read('apps/book/components/AddMembersModal.tsx'), /useAsyncAction/);
+assert.match(read('apps/payroll/views/PaySalaryView.tsx'), /useAsyncAction/);
+assert.match(read('apps/truck/components/AddPartnerModal.tsx'), /useAsyncAction/);
 assert.match(read('apps/truck/components/Pages/RecordTransactionPage.tsx'), /useTruckTransactionForm/);
 assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /useTruckTransactionForm/);
 for (const obsolete of [

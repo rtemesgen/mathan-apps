@@ -11,7 +11,7 @@ import { formatCurrency } from '../../utils/formatters';
 import { CategoryAutocomplete } from '../CategoryAutocomplete';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 interface ExpensesPageProps {
   summary: TruckFinancialSummary;
@@ -71,7 +71,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [dividendPool, setDividendPool] = useState<string>(
     availableCash > 0 ? (availableCash * 0.5).toFixed(0) : '0'
   );
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   useEffect(() => {
     if (defaultTab) {

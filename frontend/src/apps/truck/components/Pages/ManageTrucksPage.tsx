@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Truck as TruckIcon, Plus, Check, Edit2, Trash2 } from 'lucide-react';
 import { Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
-import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 interface ManageTrucksPageProps {
   trucks: Truck[];
@@ -38,7 +38,7 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
   const [licensePlate, setLicensePlate] = useState('');
   const [cashOnHand, setCashOnHand] = useState('');
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   const resetForm = () => {
     setEditingTruck(null); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setLicensePlate(''); setCashOnHand('');

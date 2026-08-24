@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Book } from '../types';
 import { X, BookPlus } from 'lucide-react';
 import { AppSelect } from '../../../components/AppSelect';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -20,7 +20,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const [currency, setCurrency] = useState('$');
   const [category, setCategory] = useState('Business');
   const [error, setError] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   if (!isOpen) return null;
 

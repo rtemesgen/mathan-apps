@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { X, Pencil } from 'lucide-react';
 import { Book } from '../types';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 export function RenameBookModal({ book, onClose, onSave }: { book: Book | null; onClose: () => void; onSave: (bookId: string, name: string) => void }) {
   const [name, setName] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
   useEffect(() => { setName(book?.name ?? ''); }, [book]);
   if (!book) return null;
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={onClose}>

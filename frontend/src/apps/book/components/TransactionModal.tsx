@@ -3,7 +3,7 @@ import { TransactionType } from '../types';
 import { X, Check, Calendar, Plus, Paperclip, FileText, Image as ImageIcon } from 'lucide-react';
 import { getCurrentLocalDateTimeString } from '../utils/formatters';
 import { AppSelect } from '../../../components/AppSelect';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -44,7 +44,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [attachmentName, setAttachmentName] = useState<string>('');
   const [error, setError] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   const isCashIn = type === 'in';
 

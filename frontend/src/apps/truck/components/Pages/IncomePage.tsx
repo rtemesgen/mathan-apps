@@ -4,7 +4,7 @@ import { Owner, TransactionType, Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 interface IncomePageProps {
   owners: Owner[];
@@ -43,7 +43,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   const resetForm = () => { setAmount(''); setCustomerOrCompany(''); setDescription(''); setReferenceNo(''); setDate(new Date().toISOString().split('T')[0]); };
   const handleSubmit = async (e: React.FormEvent) => {

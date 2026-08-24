@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Owner, Transaction, TransactionType, Truck } from '../types';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 export type TruckTransactionInput = {
   truckId: string;
@@ -42,7 +42,7 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
   const truckOptionsKey = trucks.map((truck) => truck.id).join(',');
   const ownerOptionsKey = owners.map((owner) => owner.id).join(',');
 

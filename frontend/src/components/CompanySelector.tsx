@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth, type AppId } from '../auth/AuthProvider';
 import { supabase } from '../lib/supabase';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 const appNames: Record<AppId, string> = { book: 'Cash Book', payroll: 'Payroll', truck: 'Truck Equity' };
 
@@ -14,7 +14,7 @@ export function CompanySelector() {
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
   const [pendingCompany, setPendingCompany] = useState<typeof workspaces[number] | null>(null);
   const online = useOnlineStatus();
   const scheduled = workspaces.filter((item) => item.role === 'owner' && item.deletionStatus === 'scheduled');

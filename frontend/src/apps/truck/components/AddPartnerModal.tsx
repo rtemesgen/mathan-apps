@@ -3,7 +3,7 @@ import { Save, Truck as TruckIcon, X, Trash2, Users } from 'lucide-react';
 import { Owner, Truck } from '../types';
 import { TruckSelect } from './TruckSelect';
 import { AppDatePicker } from '../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface AddPartnerModalProps {
   isOpen: boolean;
@@ -40,7 +40,7 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
   const [linkedUserId, setLinkedUserId] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   useEffect(() => {
     if (editingOwner) {

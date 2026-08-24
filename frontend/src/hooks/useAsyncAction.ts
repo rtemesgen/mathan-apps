@@ -65,5 +65,5 @@ export function useAsyncAction() {
     });
   }, [run]);
 
-  return { busy, run, runAction };
+  return { busy, submitting: busy, run, runAction };
 }

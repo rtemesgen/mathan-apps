@@ -3,7 +3,7 @@ import { Save, Truck as TruckIcon } from 'lucide-react';
 import { Owner, Truck } from '../../types';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 interface AddOwnerPageProps {
   editingOwner?: Owner | null;
@@ -32,7 +32,7 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   useEffect(() => {
     if (editingOwner) {

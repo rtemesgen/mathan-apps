@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Truck as TruckIcon, Plus, Check } from 'lucide-react';
 import { Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
-import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 interface AddTruckModalProps {
   isOpen: boolean;
@@ -35,7 +35,7 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
   const [vin, setVin] = useState('');
   const [cashOnHand, setCashOnHand] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   if (!isOpen) return null;
 

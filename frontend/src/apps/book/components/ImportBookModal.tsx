@@ -3,7 +3,7 @@ import { Download, FileUp, LoaderCircle, X } from 'lucide-react';
 import { Book, Transaction } from '../types';
 import { parseBookImport, ImportedBook } from '../utils/importers';
 import { saveTextFile } from '../../../lib/mobile';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 type ImportPayload = { book: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] }[];
 const template = 'Book Name,Description,Category,Currency,Date,Type,Amount,Remark,Payment Mode\nRetail Shop,Daily cash book,Business,$,2026-08-11 09:00,Cash In,1500,Opening cash,Cash\nRetail Shop,Daily cash book,Business,$,2026-08-11 17:00,Cash Out,200,Transport,Cash\n';
@@ -14,7 +14,7 @@ export function ImportBookModal({ isOpen, onClose, onImport }: { isOpen: boolean
   const [parsed, setParsed] = useState<ImportedBook[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
   if (!isOpen) return null;
   const chooseFile = async (file?: File) => {
     if (!file) return;

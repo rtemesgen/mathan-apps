@@ -6,7 +6,7 @@ import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../auth/AuthProvider';
 import { getLatestAppDownloadUrl } from '../../../lib/mobile';
 import { Book } from '../types';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 type Member = { user_id: string; email: string; display_name: string; role: 'owner' | 'member'; book_permission: 'none' | 'view' | 'edit' };
 type ContactEntry = { name?: string[]; tel?: string[]; email?: string[] };
@@ -21,7 +21,7 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
   const [email, setEmail] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   useEffect(() => {
     if (!book || !workspace || !isOwner) return;

@@ -22,7 +22,7 @@ import {
 import { exportPdfFile } from '../../../lib/mobile';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppDatePicker } from '../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface EmployeeDetailModalProps {
   employee: Employee | null;
@@ -57,7 +57,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   const [editingRaise, setEditingRaise] = useState<SalaryChange | null>(null);
   const [confirmDeleteTransaction, setConfirmDeleteTransaction] = useState<string | null>(null);
   const [confirmDeleteRaise, setConfirmDeleteRaise] = useState<string | null>(null);
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   if (!employee) return null;
 

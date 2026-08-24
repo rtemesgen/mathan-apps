@@ -15,7 +15,7 @@ import {
   ArrowRight,
   ChevronDown
 } from 'lucide-react';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface AddRaiseViewProps {
   employees: Employee[];
@@ -38,7 +38,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const [validationMessage, setValidationMessage] = useState('');
   const [savedRaise, setSavedRaise] = useState<{ employeeName: string; amount: number; effectiveDate: string } | null>(null);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
-  const { submitting, runAction } = useSubmitGuard();
+  const { submitting, runAction } = useAsyncAction();
   const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {

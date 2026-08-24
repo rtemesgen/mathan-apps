@@ -10,7 +10,7 @@ import {
   ArrowRight,
   Calculator
 } from 'lucide-react';
-import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface AddEmployeeViewProps {
   onAddEmployee: (employee: Employee) => void;
@@ -28,7 +28,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
   const [initialSalary, setInitialSalary] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdEmpName, setCreatedEmpName] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   const monthlySalaryNum = parseFloat(initialSalary) || 0;
   const daysWorked = startDate ? Math.max(0, calculateDaysBetween(startDate, asOfDate)) : 0;

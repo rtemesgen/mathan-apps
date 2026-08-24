@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, UserPlus, PieChart, DollarSign, Calendar } from 'lucide-react';
 import { Owner } from '../../types';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 interface AddOwnerModalProps {
   isOpen: boolean;
@@ -27,7 +27,7 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, run } = useAsyncAction();
 
   useEffect(() => {
     if (editingOwner) {
