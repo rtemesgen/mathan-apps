@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Employee, Transaction } from '../types';
-import { calculateCompanyStats, calculateEmployeeAccrual, downloadFile } from '../utils/calc';
+import { calculateCompanyStats, calculateEmployeeAccrual } from '../utils/calc';
 import { exportPdfFile } from '../../../lib/mobile';
+import { downloadCsvFile } from '../../../lib/fileExport';
 import {
   FileSpreadsheet,
   Download,
@@ -63,7 +64,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
       return [
         emp.id,
-        `"${emp.name}"`,
+        emp.name,
         emp.startDate,
         info.currentMonthlySalary.toFixed(2),
         info.totalAccruedWages.toFixed(2),
@@ -72,7 +73,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       ];
     });
 
-    downloadFile(`Payroll_Report_AsOf_${asOfDate}.csv`, [headers.join(','), ...rows.map((r) => r.join(','))].join('\n'));
+    void downloadCsvFile(`Payroll_Report_AsOf_${asOfDate}.csv`, headers, rows);
   };
 
   const handlePrint = () => {

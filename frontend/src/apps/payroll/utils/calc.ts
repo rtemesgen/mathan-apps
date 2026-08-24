@@ -1,5 +1,5 @@
 import { Employee, Transaction, EmployeeAccrualSummary, AccrualInterval, CompanyStats } from '../types';
-import { saveTextFile } from '../../../lib/mobile';
+import { createCsv, downloadTextFile } from '../../../lib/fileExport';
 
 /**
  * Format currency to USD or standard localized format
@@ -281,19 +281,19 @@ export function exportPayrollCSV(
   const rows = employees.map((emp) => {
     const summary = calculateEmployeeAccrual(emp, transactions, asOfDateStr);
     return [
-      `"${emp.id}"`,
-      `"${emp.name}"`,
-      `"${emp.startDate}"`,
+      emp.id,
+      emp.name,
+      emp.startDate,
       summary.currentMonthlySalary.toFixed(2),
       summary.totalAccruedWages.toFixed(2),
       summary.totalWithdrawn.toFixed(2),
       summary.remainingBalance.toFixed(2),
-      `"${emp.status}"`,
-      `"${summary.lastPayoutDate || 'None'}"`,
+      emp.status,
+      summary.lastPayoutDate || 'None',
     ];
   });
 
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  return createCsv(headers, rows);
 }
 
 /**
@@ -318,24 +318,24 @@ export function exportTransactionsCSV(
   const rows = transactions.map((t) => {
     const empName = employeesMap[t.employeeId]?.name || t.employeeName || 'Unknown';
     return [
-      `"${t.id}"`,
-      `"${t.date}"`,
-      `"${empName}"`,
-      `"${t.employeeId}"`,
-      `"${t.type}"`,
+      t.id,
+      t.date,
+      empName,
+      t.employeeId,
+      t.type,
       t.amount.toFixed(2),
-      `"${t.paymentMethod}"`,
-      `"${t.referenceNo || ''}"`,
-      `"${(t.notes || '').replace(/"/g, '""')}"`,
+      t.paymentMethod,
+      t.referenceNo || '',
+      t.notes || '',
     ];
   });
 
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  return createCsv(headers, rows);
 }
 
 /**
  * Trigger browser file download for a text string (CSV, JSON, etc.)
  */
 export function downloadFile(filename: string, content: string, type = 'text/csv;charset=utf-8;') {
-  void saveTextFile(filename, content, type);
+  void downloadTextFile(filename, content, type);
 }

@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Download, Printer, FileText, CheckCircle2 } from 'lucide-react';
 import { TruckFinancialSummary, Transaction } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { downloadCsvFile } from '../../../../lib/fileExport';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -27,22 +28,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const rows = transactions.map((t) => [
       t.date,
       t.type,
-      `"${t.category}"`,
-      `"${t.ownerId || 'Truck Treasury'}"`,
-      `"${t.description}"`,
-      `"${t.referenceNo || ''}"`,
+      t.category,
+      t.ownerId || 'Truck Treasury',
+      t.description,
+      t.referenceNo || '',
       t.amount,
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${summary.truckName}_Financial_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    void downloadCsvFile(`${summary.truckName}_Financial_Ledger_${new Date().toISOString().split('T')[0]}.csv`, headers, rows);
   };
 
   return (

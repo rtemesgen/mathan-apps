@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { downloadCsvFile } from './fileExport';
 
 export type NotificationRecord = { id: string; user_id: string; workspace_id: string | null; notification_type: string; title: string; body: string; route: string | null; metadata: Record<string, unknown>; read_at: string | null; created_at: string };
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired';
@@ -25,6 +26,5 @@ export async function getWorkspaceDeletionStatus(workspaceId: string) { const { 
 export type ReportRow = Record<string, string | number | null>;
 export function downloadCsv(filename: string, rows: ReportRow[]) {
   const headers = Object.keys(rows[0] ?? {});
-  const csv = [headers, ...rows.map((row) => headers.map((key) => String(row[key] ?? '').replaceAll('"', '""')))].map((row) => row.map((value) => `"${value}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
+  void downloadCsvFile(filename, headers, rows.map((row) => headers.map((key) => row[key])));
 }

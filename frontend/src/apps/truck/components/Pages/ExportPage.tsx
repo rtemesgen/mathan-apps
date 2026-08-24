@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Download, Printer, FileText, CheckCircle2 } from 'lucide-react';
 import { TruckFinancialSummary, Transaction, Owner, Truck } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { downloadCsvFile } from '../../../../lib/fileExport';
+import { exportPdfFile } from '../../../../lib/mobile';
 
 interface ExportPageProps {
   summary: TruckFinancialSummary;
@@ -21,13 +23,38 @@ export const ExportPage: React.FC<ExportPageProps> = ({
   const [reportType, setReportType] = useState<'FULL' | 'OWNERS' | 'TRANSACTIONS'>('FULL');
   const [format, setFormat] = useState<'PDF' | 'CSV' | 'PRINT'>('PDF');
   const [isExported, setIsExported] = useState(false);
+  const [exportError, setExportError] = useState('');
 
-  const handleTriggerExport = () => {
-    if (format === 'PRINT') {
-      window.print();
-    } else {
+  const transactionRows = transactions.map((transaction) => [
+    transaction.date,
+    transaction.type,
+    transaction.category,
+    transaction.description,
+    transaction.referenceNo || '',
+    transaction.amount,
+  ] as const);
+
+  const handleTriggerExport = async () => {
+    setExportError('');
+    try {
+      if (format === 'PRINT') {
+        window.print();
+      } else if (format === 'CSV') {
+        if (reportType === 'OWNERS') {
+          await downloadCsvFile(`${truck.name}_owner_ledger_${new Date().toISOString().slice(0, 10)}.csv`, ['Owner', 'Equity %', 'Lent to Truck', 'Repaid', 'Remaining Owed'], summary.ownerSummaries.map((item) => [item.owner.name, item.owner.equityPercentage, item.totalInjected, item.totalRepaid, item.totalUnpaidMoneyOwed]));
+        } else {
+          await downloadCsvFile(`${truck.name}_${reportType.toLowerCase()}_ledger_${new Date().toISOString().slice(0, 10)}.csv`, ['Date', 'Type', 'Category', 'Description', 'Reference', 'Amount'], transactionRows);
+        }
+      } else {
+        const lines = reportType === 'OWNERS'
+          ? summary.ownerSummaries.map((item) => `${item.owner.name} | ${item.owner.equityPercentage}% | ${formatCurrency(item.totalInjected)} | ${formatCurrency(item.totalRepaid)} | ${formatCurrency(item.totalUnpaidMoneyOwed)}`)
+          : transactions.map((transaction) => `${transaction.date} | ${transaction.type} | ${transaction.category} | ${formatCurrency(transaction.amount)} | ${transaction.description}`);
+        await exportPdfFile(`${truck.name}_${reportType.toLowerCase()}_report_${new Date().toISOString().slice(0, 10)}.pdf`, `${truck.name} ${reportType === 'OWNERS' ? 'Owner Ledger' : 'Financial Statement'}`, [`Generated ${new Date().toLocaleDateString()}`, `Cash balance: ${formatCurrency(summary.cashOnHand)}`, `Gross income: ${formatCurrency(summary.grossIncome)}`, `Operating expenses: ${formatCurrency(summary.operatingExpenses)}`, '', ...lines]);
+      }
       setIsExported(true);
-      setTimeout(() => setIsExported(false), 3000);
+      window.setTimeout(() => setIsExported(false), 3000);
+    } catch (reason) {
+      setExportError(reason instanceof Error ? reason.message : 'Could not generate this report.');
     }
   };
 
@@ -177,6 +204,7 @@ export const ExportPage: React.FC<ExportPageProps> = ({
             <span>Report generated and ready!</span>
           </div>
         )}
+        {exportError && <div role="alert" className="bg-red-50 border border-red-200 text-red-800 p-2.5 rounded-lg text-xs font-bold">{exportError}</div>}
 
         {/* Action Buttons */}
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#f0ebd9]">
