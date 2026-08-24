@@ -7,7 +7,6 @@ export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'retry' | 'conflicte
 
 function reportTruckMutationStatus(status: 'sync pending' | 'sync conflict') {
   reportPersistenceNotice({ app: 'truck', state: status });
-  window.dispatchEvent(new CustomEvent('mathan:truck-storage-status', { detail: { status } }));
 }
 
 function reportSnapshotMutationStatus(domain: unknown, status: 'sync pending' | 'sync conflict') {

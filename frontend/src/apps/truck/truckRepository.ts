@@ -9,7 +9,6 @@ const TRUCK_TABLES = ['trucks', 'truck_owners', 'truck_transactions'];
 
 function reportTruckStatus(status: TruckPersistenceStatus) {
   reportPersistenceNotice({ app: 'truck', state: status as PersistenceState });
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mathan:truck-storage-status', { detail: { status } }));
 }
 
 function explain(error: { message?: string; code?: string }) {

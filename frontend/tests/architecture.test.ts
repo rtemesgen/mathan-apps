@@ -12,6 +12,8 @@ assert.doesNotMatch(appFiles, /supabase|localStore|offlineStore|app_state_snapsh
 assert.match(read('lib/repositories/useSnapshotRepository.ts'), /persistSnapshot/);
 assert.match(read('components/AppToast.tsx'), /mathan:toast/);
 assert.match(read('components/AppToast.tsx'), /lastKey/);
+assert.doesNotMatch(read('lib/offlineSync.ts'), /mathan:truck-storage-status/);
+assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /mathan:truck-storage-status/);
 assert.match(read('components/AppToast.tsx'), /toast\.tone/);
 assert.match(read('lib/mobile.ts'), /ToastTone/);
 assert.match(read('components/AppConnectivityBanner.tsx'), /useOnlineStatus/);
