@@ -69,7 +69,7 @@ export default function App() {
     };
   }, [isSidebarOpen]);
 
-  const { employees: [employees, setEmployees], transactions: [transactions, setTransactions] } = usePayrollRepository();
+  const { employees: [employees, , , , saveEmployees], transactions: [transactions, , , , saveTransactions] } = usePayrollRepository();
 
   // Global evaluation as-of date (defaults to today)
   const [asOfDate, setAsOfDate] = useState<string>(getTodayString());
@@ -103,47 +103,47 @@ export default function App() {
   }, [employees]);
 
   // Handlers
-  const handleAddEmployee = (newEmp: Employee) => {
-    setEmployees(addEmployee(newEmp, employees).data);
+  const handleAddEmployee = async (newEmp: Employee) => {
+    await saveEmployees(addEmployee(newEmp, employees).data);
   };
 
-  const handleSaveEmployee = (updatedEmployee: Employee) => {
-    setEmployees(updateEmployee(updatedEmployee, employees).data);
+  const handleSaveEmployee = async (updatedEmployee: Employee) => {
+    await saveEmployees(updateEmployee(updatedEmployee, employees).data);
   };
 
-  const handleDeleteEmployee = (employeeId: string) => {
+  const handleDeleteEmployee = async (employeeId: string) => {
     const result = removeEmployee(employeeId, employees, transactions).data;
-    setEmployees(result.employees);
-    setTransactions(result.transactions);
+    await saveEmployees(result.employees);
+    await saveTransactions(result.transactions);
     if (selectedPayEmployeeId === employeeId) setSelectedPayEmployeeId(undefined);
   };
 
-  const handleSaveRaise = (employeeId: string, raise: SalaryChange) => {
-    setEmployees(addRaise(employeeId, raise, employees).data);
+  const handleSaveRaise = async (employeeId: string, raise: SalaryChange) => {
+    await saveEmployees(addRaise(employeeId, raise, employees).data);
   };
 
-  const handleRecordWithdrawal = (newTx: Transaction) => {
-    setTransactions(addTransaction(newTx, transactions).data);
+  const handleRecordWithdrawal = async (newTx: Transaction) => {
+    await saveTransactions(addTransaction(newTx, transactions).data);
   };
 
-  const handleDeleteTransaction = (txId: string) => {
-    setTransactions(removeTransaction(txId, transactions).data);
+  const handleDeleteTransaction = async (txId: string) => {
+    await saveTransactions(removeTransaction(txId, transactions).data);
   };
 
-  const handleUpdateTransaction = (updated: Transaction) => {
-    setTransactions(updateTransaction(updated, transactions).data);
+  const handleUpdateTransaction = async (updated: Transaction) => {
+    await saveTransactions(updateTransaction(updated, transactions).data);
   };
 
-  const handleRemoveTransaction = (txId: string) => {
-    setTransactions(removeTransaction(txId, transactions).data);
+  const handleRemoveTransaction = async (txId: string) => {
+    await saveTransactions(removeTransaction(txId, transactions).data);
   };
 
-  const handleUpdateRaise = (employeeId: string, updatedRaise: SalaryChange) => {
-    setEmployees(updateRaise(employeeId, updatedRaise, employees).data);
+  const handleUpdateRaise = async (employeeId: string, updatedRaise: SalaryChange) => {
+    await saveEmployees(updateRaise(employeeId, updatedRaise, employees).data);
   };
 
-  const handleDeleteRaise = (employeeId: string, raiseId: string) => {
-    setEmployees(removeRaise(employeeId, raiseId, employees).data);
+  const handleDeleteRaise = async (employeeId: string, raiseId: string) => {
+    await saveEmployees(removeRaise(employeeId, raiseId, employees).data);
   };
 
   const stats = calculateCompanyStats(employees, transactions, asOfDate);

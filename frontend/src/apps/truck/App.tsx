@@ -43,7 +43,7 @@ export default function App() {
     message: string;
     itemName?: string;
     itemDetails?: string;
-    onConfirm: () => void;
+    onConfirm: () => void | Promise<void>;
   }>({
     isOpen: false,
     title: '',
@@ -55,7 +55,7 @@ export default function App() {
   const [error, setError] = useState('');
   const { activeTruck, activeTruckOwners, truckFinancials, sortedOwnerSummaries } = useTruckFinancials(trucks, owners, transactions, currentTruckId, calculationDate, sortBy);
 
-  const openDelete = (request: TruckDeleteRequest) => setDeleteModal({ isOpen: true, ...request, onConfirm: () => { request.onConfirm(); setDeleteModal((previous) => ({ ...previous, isOpen: false })); } });
+  const openDelete = (request: TruckDeleteRequest) => setDeleteModal({ isOpen: true, ...request, onConfirm: async () => { await request.onConfirm(); setDeleteModal((previous) => ({ ...previous, isOpen: false })); } });
   const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner } = useTruckMutations({ workspaceId: workspace?.id, isGuest, editable, trucks, owners, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
 
   const handleResetDemoData = () => setError('Demo reset is unavailable for cloud workspaces.');

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Employee, SalaryChange } from '../types';
 import { calculateEmployeeAccrual, getTodayString } from '../utils/calc';
-import { showAppToast } from '../../../lib/mobile';
 import { AppDatePicker } from '../../../components/AppDatePicker';
 import {
   TrendingUp,
@@ -39,7 +38,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const [validationMessage, setValidationMessage] = useState('');
   const [savedRaise, setSavedRaise] = useState<{ employeeName: string; amount: number; effectiveDate: string } | null>(null);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
-  const { submitting, run } = useSubmitGuard();
+  const { submitting, runAction } = useSubmitGuard();
   const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {
@@ -83,11 +82,10 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    await run(() => onSaveRaise(selectedEmp.id, raise));
+    await runAction({ operation: () => onSaveRaise(selectedEmp.id, raise), successMessage: 'Raise saved successfully.' });
     setSavedRaise({ employeeName: selectedEmp.name, amount: numNewSalary, effectiveDate });
     setNewSalary('');
     setIsSuccess(true);
-    showAppToast('Raise saved successfully');
   };
 
   const formatMoney = (val: number) =>

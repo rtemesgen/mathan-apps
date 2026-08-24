@@ -16,7 +16,7 @@ import { createBook, createTransaction, removeBook, removeTransaction, renameBoo
 import { useCashBookRepository } from './cashBookStore';
 
 export default function App() {
-  const { books: [books, setBooks], transactions: [transactions, setTransactions] } = useCashBookRepository();
+  const { books: [books, , , , saveBooks], transactions: [transactions, , , , saveTransactions] } = useCashBookRepository();
 
 
   // Active Selected Book (null = Dashboard, string = Book Detail View)
@@ -64,21 +64,21 @@ export default function App() {
   const activeBook = books.find(b => b.id === activeBookId) || null;
 
   // Add New Book Handler
-  const handleCreateBook = (bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleCreateBook = async (bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newBook = createBook(bookData).data;
 
-    setBooks(prev => [newBook, ...prev]);
+    await saveBooks(prev => [newBook, ...prev]);
     // Automatically select & enter the newly created book!
     setActiveBookId(newBook.id);
   };
 
   // Delete Book Handler
-  const handleDeleteBook = (bookId: string) => {
+  const handleDeleteBook = async (bookId: string) => {
     const book = books.find((item) => item.id === bookId);
     if (!book) return;
     const result = removeBook(bookId, books, transactions).data;
-    setBooks(result.books);
-    setTransactions(result.transactions);
+    await saveBooks(result.books);
+    await saveTransactions(result.transactions);
     if (activeBookId === bookId) {
       setActiveBookId(null);
     }
@@ -86,13 +86,13 @@ export default function App() {
     showAppToast(`${book.name} deleted`);
   };
 
-  const handleRenameBook = (bookId: string, name: string) => {
+  const handleRenameBook = async (bookId: string, name: string) => {
     const book = books.find((item) => item.id === bookId);
-    if (book) setBooks(prev => prev.map(item => item.id === bookId ? renameBook(book, name).data : item));
+    if (book) await saveBooks(prev => prev.map(item => item.id === bookId ? renameBook(book, name).data : item));
     setBookToRename(null);
   };
 
-  const handleImportBooks = (importedBooks: Array<{ book: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] }>) => {
+  const handleImportBooks = async (importedBooks: Array<{ book: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] }>) => {
     const now = new Date().toISOString();
     const newBooks = importedBooks.map(({ book }) => ({ ...book, id: `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, createdAt: now, updatedAt: now }));
     const newTransactions = importedBooks.flatMap(({ transactions }, index) => transactions.map((transaction, txIndex) => ({
@@ -101,8 +101,8 @@ export default function App() {
       bookId: newBooks[index].id,
       createdAt: now,
     })));
-    setBooks(prev => [...newBooks, ...prev]);
-    setTransactions(prev => [...newTransactions, ...prev]);
+    await saveBooks(prev => [...newBooks, ...prev]);
+    await saveTransactions(prev => [...newTransactions, ...prev]);
     setIsImportBookOpen(false);
   };
 
@@ -123,7 +123,7 @@ export default function App() {
   };
 
   // Save Transaction Handler
-  const handleSaveTransaction = (data: {
+  const handleSaveTransaction = async (data: {
     amount: number;
     remark: string;
     category: string;
@@ -136,15 +136,15 @@ export default function App() {
 
     const newTx = createTransaction(targetBookForTransaction.id, transactionModalType, data).data;
 
-    setTransactions(prev => [newTx, ...prev]);
+    await saveTransactions(prev => [newTx, ...prev]);
 
     // Update book timestamp
-    setBooks(prev => prev.map(b => b.id === targetBookForTransaction.id ? { ...b, updatedAt: new Date().toISOString() } : b));
+    await saveBooks(prev => prev.map(b => b.id === targetBookForTransaction.id ? { ...b, updatedAt: new Date().toISOString() } : b));
   };
 
   // Delete Transaction Handler
-  const handleDeleteTransaction = (txId: string) => {
-    setTransactions(removeTransaction(txId, transactions).data);
+  const handleDeleteTransaction = async (txId: string) => {
+    await saveTransactions(removeTransaction(txId, transactions).data);
   };
 
   return (

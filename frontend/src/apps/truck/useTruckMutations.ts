@@ -8,7 +8,7 @@ export type TruckDeleteRequest = {
   message: string;
   itemName?: string;
   itemDetails?: string;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 };
 
 type TruckMutationArgs = {
@@ -95,22 +95,28 @@ export function useTruckMutations({ workspaceId, isGuest, editable, trucks, owne
 
   const handleDeleteTruck = (truckId: string) => {
     const truck = trucks.find((item) => item.id === truckId);
-    openDelete({ title: 'Delete truck', message: 'This removes the truck from active fleet lists. Its historical records remain recoverable.', itemName: truck?.name ?? 'Truck', itemDetails: truck ? `Unit ${truck.unitNumber} · ${truck.makeModel || 'Fleet vehicle'}` : undefined, onConfirm: () => {
-      if (workspaceId && editable) void deleteTruck(workspaceId, truckId, isGuest).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete truck.'));
+    openDelete({ title: 'Delete truck', message: 'This removes the truck from active fleet lists. Its historical records remain recoverable.', itemName: truck?.name ?? 'Truck', itemDetails: truck ? `Unit ${truck.unitNumber} · ${truck.makeModel || 'Fleet vehicle'}` : undefined, onConfirm: async () => {
+      if (!workspaceId || !editable) return;
+      try { await deleteTruck(workspaceId, truckId, isGuest); await refresh(); setError(''); }
+      catch (reason) { const error = reason instanceof Error ? reason : new Error('Could not delete truck.'); setError(error.message); throw error; }
     } });
   };
 
   const handleDeleteTransaction = (txId: string) => {
     const tx = transactions.find((item) => item.id === txId);
-    openDelete({ title: 'Delete Transaction', message: 'Do you want to delete this transaction record?', itemName: tx ? `${tx.category || tx.type} • ${formatCurrency(tx.amount)}` : 'Transaction entry', itemDetails: tx ? `Date: ${formatDate(tx.date)} • ${tx.description}` : undefined, onConfirm: () => {
-      if (workspaceId && editable) void softDeleteTruckTransaction(workspaceId, txId, isGuest).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete transaction.'));
+    openDelete({ title: 'Delete Transaction', message: 'Do you want to delete this transaction record?', itemName: tx ? `${tx.category || tx.type} • ${formatCurrency(tx.amount)}` : 'Transaction entry', itemDetails: tx ? `Date: ${formatDate(tx.date)} • ${tx.description}` : undefined, onConfirm: async () => {
+      if (!workspaceId || !editable) return;
+      try { await softDeleteTruckTransaction(workspaceId, txId, isGuest); await refresh(); setError(''); }
+      catch (reason) { const error = reason instanceof Error ? reason : new Error('Could not delete transaction.'); setError(error.message); throw error; }
     } });
   };
 
   const handleDeleteOwner = (ownerId: string) => {
     const owner = owners.find((item) => item.id === ownerId);
-    openDelete({ title: 'Delete Partner', message: 'Do you want to remove this partner from the fleet?', itemName: owner ? `${owner.name} (${owner.equityPercentage}% Equity)` : 'Partner', itemDetails: owner ? `Monthly Draw: $${owner.monthlyDrawRate.toLocaleString()} • Truck: ${trucks.find((truck) => truck.id === owner.truckId)?.name || 'Active Unit'}` : undefined, onConfirm: () => {
-      if (workspaceId && editable) void deleteTruckOwner(workspaceId, ownerId, isGuest).then(refresh).catch((reason) => setError(reason instanceof Error ? reason.message : 'Could not delete partner.'));
+    openDelete({ title: 'Delete Partner', message: 'Do you want to remove this partner from the fleet?', itemName: owner ? `${owner.name} (${owner.equityPercentage}% Equity)` : 'Partner', itemDetails: owner ? `Monthly Draw: $${owner.monthlyDrawRate.toLocaleString()} • Truck: ${trucks.find((truck) => truck.id === owner.truckId)?.name || 'Active Unit'}` : undefined, onConfirm: async () => {
+      if (!workspaceId || !editable) return;
+      try { await deleteTruckOwner(workspaceId, ownerId, isGuest); await refresh(); setError(''); }
+      catch (reason) { const error = reason instanceof Error ? reason : new Error('Could not delete partner.'); setError(error.message); throw error; }
     } });
   };
 

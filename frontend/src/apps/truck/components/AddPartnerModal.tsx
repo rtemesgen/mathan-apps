@@ -3,6 +3,7 @@ import { Save, Truck as TruckIcon, X, Trash2, Users } from 'lucide-react';
 import { Owner, Truck } from '../types';
 import { TruckSelect } from './TruckSelect';
 import { AppDatePicker } from '../../../components/AppDatePicker';
+import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
 
 interface AddPartnerModalProps {
   isOpen: boolean;
@@ -18,7 +19,7 @@ interface AddPartnerModalProps {
     equityPercentage: number;
     monthlyDrawRate: number;
     userId?: string | null;
-  }) => void;
+  }) => void | Promise<void>;
   onDeletePartner?: (partnerId: string) => void;
   onClose: () => void;
 }
@@ -39,6 +40,7 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
   const [linkedUserId, setLinkedUserId] = useState('');
+  const { submitting, run } = useSubmitGuard();
 
   useEffect(() => {
     if (editingOwner) {
@@ -60,11 +62,11 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || submitting) return;
 
-    onSubmitPartner({
+    await run(() => onSubmitPartner({
       id: editingOwner ? editingOwner.id : undefined,
       truckId: assignedTruckId || currentTruckId,
       name: name.trim(),
@@ -72,7 +74,7 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
       userId: linkedUserId || null,
-    });
+    }));
 
     onClose();
   };
@@ -228,10 +230,11 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
 
               <button
                 type="submit"
+                disabled={submitting}
                 className="px-4 py-2 rounded-xl bg-[#3f4d34] hover:bg-[#323e29] text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>{editingOwner ? 'Update Partner' : 'Save Partner'}</span>
+                <span>{submitting ? 'Saving…' : editingOwner ? 'Update Partner' : 'Save Partner'}</span>
               </button>
             </div>
           </div>
