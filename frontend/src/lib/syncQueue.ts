@@ -1,4 +1,4 @@
-import { readOffline, writeOffline } from './localStore';
+import { offlineStore } from './localStore';
 import { mergeQueuedMutation } from './queuePolicy';
 
 export interface QueuedMutation {
@@ -28,18 +28,18 @@ function withQueueLock<T>(operation: () => Promise<T>) {
 
 export async function enqueueMutation(mutation: Partial<Pick<QueuedMutation, 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision'>> & Omit<QueuedMutation, 'id' | 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision' | 'queuedAt' | 'syncStatus' | 'retryCount'>) {
   return withQueueLock(async () => {
-    const queue = (await readOffline<QueuedMutation[]>(KEY)) ?? [];
+    const queue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
     const mutationId = mutation.mutationId ?? crypto.randomUUID();
     const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
     const entityId = mutation.entityId ?? String(mutation.payload.id ?? mutation.payload.client_id ?? mutation.payload.domain ?? '');
     const next: QueuedMutation = { ...mutation, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: new Date().toISOString(), syncStatus: 'pending', retryCount: 0 };
-    await writeOffline(KEY, mergeQueuedMutation(queue, next));
+    await offlineStore.write(KEY, mergeQueuedMutation(queue, next));
   });
 }
 
 export async function getQueuedMutations() {
   await queueTail;
-  const queue = (await readOffline<QueuedMutation[]>(KEY)) ?? [];
+  const queue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
   return queue.map((item) => ({
     ...item,
     mutationId: item.mutationId ?? item.id,
@@ -75,10 +75,10 @@ export async function getWorkspaceMutationStatus(workspaceId: string, tables?: s
 
 export async function replaceQueue(queue: QueuedMutation[], processedMutationIds: string[] = []) {
   return withQueueLock(async () => {
-    const latest = (await readOffline<QueuedMutation[]>(KEY)) ?? [];
+    const latest = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
     const processed = new Set(processedMutationIds);
     const additions = latest.filter((mutation) => !processed.has(mutation.mutationId ?? mutation.id));
     const merged = additions.reduce((current, mutation) => mergeQueuedMutation(current, mutation), queue);
-    await writeOffline(KEY, merged);
+    await offlineStore.write(KEY, merged);
   });
 }

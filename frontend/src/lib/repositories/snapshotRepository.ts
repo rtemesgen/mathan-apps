@@ -1,4 +1,4 @@
-import { readOffline, writeOffline } from '../localStore';
+import { offlineStore } from '../localStore';
 import { supabase } from '../supabase';
 import { enqueueMutation, getQueuedMutations } from '../syncQueue';
 import { syncQueue } from '../offlineSync';
@@ -24,14 +24,14 @@ function withSnapshotLock<T>(storageKey: string, operation: () => Promise<T>) {
 }
 
 export async function readSnapshot<T>(storageKey: string, initialValue: T) {
-  const value = await readOffline<T>(storageKey);
-  const revision = (await readOffline<number>(`${storageKey}:revision`)) ?? 0;
+  const value = await offlineStore.read<T>(storageKey);
+  const revision = (await offlineStore.read<number>(`${storageKey}:revision`)) ?? 0;
   return { value: value ?? initialValue, revision };
 }
 
 export async function persistSnapshot<T>(context: SnapshotRepositoryContext, value: T, revision: number): Promise<PersistenceState> {
   return withSnapshotLock(context.storageKey, async () => {
-    await writeOffline(context.storageKey, value);
+    await offlineStore.write(context.storageKey, value);
     if (context.standalone) {
       reportPersistenceNotice({ app: context.domain, state: 'offline saved' });
       return 'offline saved';
@@ -59,9 +59,9 @@ export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, rev
     if (relevant.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error')) reportPersistenceNotice({ app: context.domain, state: 'sync conflict' });
     else if (relevant.length > 0) reportPersistenceNotice({ app: context.domain, state: 'sync pending' });
     if (relevant.length > 0 || remote?.revision === undefined || remote.revision <= revision) return { value: undefined as T | undefined, revision };
-    await writeOffline(`${context.storageKey}:revision`, remote.revision);
+    await offlineStore.write(`${context.storageKey}:revision`, remote.revision);
     if (remote.payload === undefined) return { value: undefined as T | undefined, revision: remote.revision };
-    await writeOffline(context.storageKey, remote.payload);
+    await offlineStore.write(context.storageKey, remote.payload);
     return { value: remote.payload, revision: remote.revision };
   });
 }

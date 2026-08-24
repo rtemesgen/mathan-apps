@@ -264,3 +264,24 @@ export async function getOfflineStorageEstimate() {
 }
 
 export function clearOfflineMemory() { memoryCache.clear(); }
+
+/** Shared storage contract used by repositories and synchronization. The implementation selects encrypted SQLite on Android and IndexedDB/localStorage fallback on web. */
+export interface OfflineStore {
+  read<T>(key: string): Promise<T | null>;
+  write<T>(key: string, value: T): Promise<void>;
+  delete(key: string): Promise<void>;
+  listKeys(): Promise<string[]>;
+  readMetadata<T>(key: string): Promise<T | null>;
+  writeMetadata<T>(key: string, value: T): Promise<void>;
+  writeAtomic(entries: Array<{ key: string; value: unknown }>): Promise<void>;
+}
+
+export const offlineStore: OfflineStore = {
+  read: <T,>(key: string) => readOffline<T>(key),
+  write: <T,>(key: string, value: T) => writeOffline(key, value),
+  delete: (key: string) => deleteOffline(key),
+  listKeys: () => listOfflineKeys(),
+  readMetadata: <T,>(key: string) => readOfflineMetadata<T>(key),
+  writeMetadata: <T,>(key: string, value: T) => writeOfflineMetadata(key, value),
+  writeAtomic: (entries) => writeOfflineAtomic(entries),
+};

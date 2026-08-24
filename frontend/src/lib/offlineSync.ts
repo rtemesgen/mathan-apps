@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { getQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
-import { writeOffline, writeOfflineMetadata } from './localStore';
+import { offlineStore } from './localStore';
 import { reportPersistenceNotice } from './repositories/types';
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'retry' | 'conflicted' | 'error';
@@ -82,8 +82,8 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
       else { reportSnapshotMutationStatus(mutation.payload.domain, 'sync pending'); failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error?.message ?? 'Synchronization failed' }); }
     } else if (result.status === 'written' && result.payload !== undefined) {
       const storageKey = `${mutation.userId}:${workspaceId}:${String(mutation.payload.domain ?? mutation.entityId)}`;
-      await writeOffline(storageKey, result.payload);
-      await writeOffline(`${storageKey}:revision`, result.revision);
+      await offlineStore.write(storageKey, result.payload);
+      await offlineStore.write(`${storageKey}:revision`, result.revision);
     }
     } catch (error) {
       if (mutation.table !== 'app_state_snapshots') reportTruckMutationStatus('sync pending');
@@ -98,7 +98,7 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
   else if (failed || remaining.some((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')))) report('retry', remaining.length);
   else {
     const lastSyncedAt = new Date().toISOString();
-    await Promise.all([...allowed].map((companyId) => writeOfflineMetadata(`sync:${companyId}`, { lastSyncedAt, pendingCount: 0, conflictCount: 0 })));
+    await Promise.all([...allowed].map((companyId) => offlineStore.writeMetadata(`sync:${companyId}`, { lastSyncedAt, pendingCount: 0, conflictCount: 0 })));
     report('synced', 0, { lastSyncedAt, pendingCount: 0, conflictCount: 0 });
   }
 }

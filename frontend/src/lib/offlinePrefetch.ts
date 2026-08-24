@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { writeOffline } from './localStore';
+import { offlineStore } from './localStore';
 import { hasPendingMutationsForWorkspace } from './syncQueue';
 
 type SnapshotRow = { domain: string; payload: unknown; revision: number };
@@ -16,8 +16,8 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
       const key = row.domain.slice(separator + 1);
       if (domain === 'cash_book' || domain === 'payroll') {
         const storageKey = `${userId}:${workspaceId}:${domain}:${key}`;
-        await writeOffline(storageKey, row.payload);
-        await writeOffline(`${storageKey}:revision`, row.revision);
+        await offlineStore.write(storageKey, row.payload);
+        await offlineStore.write(`${storageKey}:revision`, row.revision);
       }
     }
   }
@@ -31,7 +31,7 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
   // A prefetch is allowed to warm an empty cache, but it must never replace
   // Truck data that still has local mutations waiting for synchronization.
   if (await hasPendingMutationsForWorkspace(workspaceId, ['trucks', 'truck_owners', 'truck_transactions'])) return;
-  await writeOffline(`truck:${userId}:${workspaceId}`, {
+  await offlineStore.write(`truck:${userId}:${workspaceId}`, {
     trucks: (trucks.data ?? []).map((row) => ({ id: row.id, name: row.name, unitNumber: row.unit_number, makeModel: row.make_model, vin: row.vin, cashOnHand: Number(row.cash_on_hand ?? 0), licensePlate: row.license_plate })),
     owners: (owners.data ?? []).map((row) => ({ id: row.id, truckId: row.truck_id, name: row.name, startDate: row.start_date, equityPercentage: Number(row.equity_percentage ?? 0), monthlyDrawRate: Number(row.monthly_draw_rate ?? 0), avatarColor: row.avatar_color })),
     transactions: (transactions.data ?? []).map((row) => ({ id: row.id, truckId: row.truck_id, date: row.occurred_on, type: row.transaction_type, category: row.category, amount: Number(row.amount ?? 0), ownerId: row.owner_id ?? undefined, description: row.description, referenceNo: row.reference_no ?? undefined })),

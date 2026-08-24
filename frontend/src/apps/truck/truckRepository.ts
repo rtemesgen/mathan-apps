@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase';
-import { readOffline, writeOffline } from '../../lib/localStore';
+import { offlineStore } from '../../lib/localStore';
 import { enqueueMutation, getWorkspaceMutationStatus } from '../../lib/syncQueue';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import type { Owner, Transaction, Truck } from './types';
@@ -34,12 +34,12 @@ function withCacheLock<T>(workspaceId: string, operation: () => Promise<T>) {
   return result.finally(() => { if (cacheTails.get(workspaceId) === tail) cacheTails.delete(workspaceId); });
 }
 
-async function getCache(workspaceId: string) { return (await readOffline<TruckCache>(await cacheKey(workspaceId))) ?? emptyCache(); }
+async function getCache(workspaceId: string) { return (await offlineStore.read<TruckCache>(await cacheKey(workspaceId))) ?? emptyCache(); }
 
 async function saveCache(workspaceId: string, value: TruckCache) {
   reportTruckStatus('saving');
   try {
-    await writeOffline(await cacheKey(workspaceId), value);
+    await offlineStore.write(await cacheKey(workspaceId), value);
     reportTruckStatus(navigator.onLine ? 'saved locally' : 'offline saved');
   } catch (error) {
     reportTruckStatus('storage error');
