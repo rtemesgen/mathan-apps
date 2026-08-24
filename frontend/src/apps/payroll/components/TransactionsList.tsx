@@ -22,7 +22,7 @@ interface TransactionsListProps {
   employees: Employee[];
   onClose: () => void;
   onRecordWithdrawalTrigger: () => void;
-  onDeleteTransaction: (txId: string) => void;
+  onDeleteTransaction: (txId: string) => void | Promise<void>;
 }
 
 export const TransactionsList: React.FC<TransactionsListProps> = ({
@@ -208,7 +208,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
           </button>
         </div>
       </div>
-      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message="Are you sure you want to delete this payroll transaction?" onClose={() => setTransactionToDelete(null)} onConfirm={() => { if (transactionToDelete) onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message="Are you sure you want to delete this payroll transaction?" onClose={() => setTransactionToDelete(null)} onConfirm={async () => { if (transactionToDelete) await onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
     </div>
   );
 };

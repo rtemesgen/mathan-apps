@@ -30,11 +30,11 @@ interface EmployeeDetailModalProps {
   onClose: () => void;
   onRecordWithdrawal: (emp: Employee) => void;
   onAddRaise: (emp: Employee) => void;
-  onDeleteTransaction?: (txId: string) => void;
+  onDeleteTransaction?: (txId: string) => void | Promise<void>;
   onUpdateTransaction?: (transaction: Transaction) => void;
-  onRemoveTransaction?: (txId: string) => void;
+  onRemoveTransaction?: (txId: string) => void | Promise<void>;
   onUpdateRaise?: (employeeId: string, raise: SalaryChange) => void;
-  onDeleteRaise?: (employeeId: string, raiseId: string) => void;
+  onDeleteRaise?: (employeeId: string, raiseId: string) => void | Promise<void>;
 }
 
 export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
@@ -214,7 +214,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                       <button type="button" onClick={() => { if (editingRaise.effectiveDate && editingRaise.reason.trim()) { onUpdateRaise(employee.id, { ...editingRaise, reason: editingRaise.reason.trim() }); setEditingRaise(null); } }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> Save</button>
                     </div>}
                   </div>
-                  <DeleteConfirmModal isOpen={confirmDeleteRaise === change.id} title="Delete salary raise?" message="Are you sure you want to delete this salary raise?" onClose={() => setConfirmDeleteRaise(null)} onConfirm={() => { onDeleteRaise?.(employee.id, change.id); setConfirmDeleteRaise(null); }} />
+                  <DeleteConfirmModal isOpen={confirmDeleteRaise === change.id} title="Delete salary raise?" message="Are you sure you want to delete this salary raise?" onClose={() => setConfirmDeleteRaise(null)} onConfirm={async () => { await onDeleteRaise?.(employee.id, change.id); setConfirmDeleteRaise(null); }} />
                   </React.Fragment>
                 ))}
               </div>
@@ -230,7 +230,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                 </div>
               ) : (
                 <>
-                <DeleteConfirmModal isOpen={!!confirmDeleteTransaction} title="Delete payment record?" message="Are you sure you want to delete this payment record?" onClose={() => setConfirmDeleteTransaction(null)} onConfirm={() => { if (confirmDeleteTransaction) (onRemoveTransaction ?? onDeleteTransaction)?.(confirmDeleteTransaction); setConfirmDeleteTransaction(null); }} />
+                <DeleteConfirmModal isOpen={!!confirmDeleteTransaction} title="Delete payment record?" message="Are you sure you want to delete this payment record?" onClose={() => setConfirmDeleteTransaction(null)} onConfirm={async () => { if (confirmDeleteTransaction) await (onRemoveTransaction ?? onDeleteTransaction)?.(confirmDeleteTransaction); setConfirmDeleteTransaction(null); }} />
                 <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
