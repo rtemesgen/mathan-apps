@@ -3,6 +3,20 @@ const STORE_NAME = 'records';
 const META_STORE_NAME = 'metadata';
 const DB_VERSION = 2;
 const memoryCache = new Map<string, unknown>();
+const fallbackKey = (key: string) => `mathan_erp_offline_${key}`;
+
+function readFallback<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(fallbackKey(key));
+    return raw === null ? null : JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function removeFallback(key: string) {
+  try { localStorage.removeItem(fallbackKey(key)); } catch { /* localStorage may be disabled */ }
+}
 
 function getDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -27,31 +41,44 @@ export async function readOffline<T>(key: string): Promise<T | null> {
     const store = await getStore('readonly');
     return await new Promise<T | null>((resolve, reject) => {
       const request = store.get(key);
-      request.onsuccess = () => { const value = (request.result as T | undefined) ?? null; if (value !== null) memoryCache.set(key, value); resolve(value); };
+      request.onsuccess = () => {
+        // A previous IndexedDB failure may have placed the newest value in the
+        // fallback store. Do not mistake a missing IDB record for missing data.
+        const value = (request.result as T | undefined) ?? readFallback<T>(key);
+        if (value !== null) memoryCache.set(key, value);
+        resolve(value);
+      };
       request.onerror = () => reject(request.error);
     });
   } catch {
-    const raw = localStorage.getItem(`mathan_erp_offline_${key}`);
-    return raw ? JSON.parse(raw) as T : null;
+    return readFallback<T>(key);
   }
 }
 
 export async function writeOffline<T>(key: string, value: T): Promise<void> {
   memoryCache.set(key, value);
   try {
-    const store = await getStore('readwrite');
+    const database = await getDatabase();
     await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
       const request = store.put(value, key);
-      request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error('Offline write aborted'));
     });
+    removeFallback(key);
   } catch {
-    localStorage.setItem(`mathan_erp_offline_${key}`, JSON.stringify(value));
+    localStorage.setItem(fallbackKey(key), JSON.stringify(value));
   }
 }
 
 export async function deleteOffline(key: string): Promise<void> {
   memoryCache.delete(key);
+  // Always clear the fallback too: it may contain a value from an earlier IDB
+  // outage even when IndexedDB is healthy again.
+  removeFallback(key);
   try {
     const store = await getStore('readwrite');
     await new Promise<void>((resolve, reject) => {
@@ -59,19 +86,19 @@ export async function deleteOffline(key: string): Promise<void> {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
-  } catch {
-    localStorage.removeItem(`mathan_erp_offline_${key}`);
-  }
+  } catch { /* fallback was already removed */ }
 }
 
 export async function listOfflineKeys(): Promise<string[]> {
   try {
     const store = await getStore('readonly');
-    return await new Promise<string[]>((resolve, reject) => {
+    const indexedKeys = await new Promise<string[]>((resolve, reject) => {
       const request = store.getAllKeys();
       request.onsuccess = () => resolve(request.result.map(String));
       request.onerror = () => reject(request.error);
     });
+    const fallbackKeys = Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length));
+    return [...new Set([...indexedKeys, ...fallbackKeys])];
   } catch {
     return Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length));
   }

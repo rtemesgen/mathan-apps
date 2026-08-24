@@ -44,7 +44,7 @@ test('existing Cash Book, Payroll, and Settings flows still load and save', asyn
 test('all synced companies and their app data remain accessible offline', async ({ page, context }) => {
   await signIn(page, 'member');
   await page.waitForFunction(async () => {
-    const request = indexedDB.open('mathan-erp-offline', 1);
+    const request = indexedDB.open('mathan-erp-offline');
     const database = await new Promise<IDBDatabase>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     const keys = await new Promise<IDBValidKey[]>((resolve, reject) => { const read = database.transaction('records', 'readonly').objectStore('records').getAllKeys(); read.onsuccess = () => resolve(read.result); read.onerror = () => reject(read.error); });
     const cacheKey = keys.find((key) => String(key).startsWith('workspaces:'));
