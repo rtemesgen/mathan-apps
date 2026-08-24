@@ -1,4 +1,5 @@
 import { readOffline, writeOffline } from './localStore';
+import { mergeQueuedMutation } from './queuePolicy';
 
 export interface QueuedMutation {
   id: string;
@@ -31,11 +32,8 @@ export async function enqueueMutation(mutation: Partial<Pick<QueuedMutation, 'mu
     const mutationId = mutation.mutationId ?? crypto.randomUUID();
     const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
     const entityId = mutation.entityId ?? String(mutation.payload.id ?? mutation.payload.client_id ?? mutation.payload.domain ?? '');
-    const fingerprint = mutation.mutationId ? `mutation:${mutation.mutationId}` : `${mutation.table}:${companyId}:${entityId}`;
     const next: QueuedMutation = { ...mutation, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: new Date().toISOString(), syncStatus: 'pending', retryCount: 0 };
-    const existing = queue.findIndex((item) => (item.mutationId ? `mutation:${item.mutationId}` : `${item.table}:${item.companyId ?? String(item.payload.workspace_id ?? '')}:${item.entityId ?? String(item.payload.id ?? item.payload.domain ?? '')}`) === fingerprint);
-    if (existing >= 0) queue[existing] = next; else queue.push(next);
-    await writeOffline(KEY, queue);
+    await writeOffline(KEY, mergeQueuedMutation(queue, next));
   });
 }
 
@@ -75,4 +73,12 @@ export async function getWorkspaceMutationStatus(workspaceId: string, tables?: s
   return relevant.length ? 'pending' as const : null;
 }
 
-export async function replaceQueue(queue: QueuedMutation[]) { return withQueueLock(() => writeOffline(KEY, queue)); }
+export async function replaceQueue(queue: QueuedMutation[], processedMutationIds: string[] = []) {
+  return withQueueLock(async () => {
+    const latest = (await readOffline<QueuedMutation[]>(KEY)) ?? [];
+    const processed = new Set(processedMutationIds);
+    const additions = latest.filter((mutation) => !processed.has(mutation.mutationId ?? mutation.id));
+    const merged = additions.reduce((current, mutation) => mergeQueuedMutation(current, mutation), queue);
+    await writeOffline(KEY, merged);
+  });
+}

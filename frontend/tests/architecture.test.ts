@@ -16,6 +16,8 @@ assert.match(read('lib/repositories/snapshotRepository.ts'), /relevant\.length >
 assert.match(read('hooks/useAsyncAction.ts'), /gate\.current/);
 assert.match(read('hooks/useAsyncAction.ts'), /runAction/);
 assert.match(read('lib/sqliteJson.ts'), /CryptoKey/);
+assert.match(read('lib/syncQueue.ts'), /mergeQueuedMutation/);
+assert.match(read('lib/offlineSync.ts'), /replaceQueue\(remaining, ordered\.map/);
 assert.match(read('apps/truck/App.tsx'), /from ['"]\.\.\/\.\.\/components\/DeleteConfirmModal/);
 assert.doesNotMatch(read('apps/truck/App.tsx'), /components\/ConfirmDeleteModal/);
 assert.match(read('apps/book/cashBookRepository.ts'), /export function createBook/);

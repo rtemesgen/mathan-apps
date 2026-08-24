@@ -93,7 +93,7 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
     }
   }
 
-  await replaceQueue(remaining);
+  await replaceQueue(remaining, ordered.map((mutation) => mutation.mutationId));
   if (conflict) report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length });
   else if (failed || remaining.some((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')))) report('retry', remaining.length);
   else {
