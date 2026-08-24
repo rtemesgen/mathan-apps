@@ -4,7 +4,7 @@ import { CheckCircle2, CircleAlert, CloudOff, LoaderCircle } from 'lucide-react'
 import { persistenceLabels, type PersistenceState } from '../lib/repositories/types';
 import type { ToastEvent } from '../lib/toast';
 
-type VisibleToast = { message: string; state?: PersistenceState };
+type VisibleToast = { message: string; state?: PersistenceState; tone?: 'success' | 'error' | 'info' };
 
 function appForPath(pathname: string) {
   if (pathname.startsWith('/book')) return 'cash_book';
@@ -23,7 +23,7 @@ export function AppToast() {
     const handleToast = (event: Event) => {
       const detail = (event as CustomEvent<ToastEvent>).detail;
       let next: VisibleToast | null = null;
-      if (detail?.kind === 'message') next = { message: detail.message };
+      if (detail?.kind === 'message') next = { message: detail.message, tone: detail.tone ?? 'success' };
       if (detail?.kind === 'persistence' && detail.notice.app === appForPath(location.pathname)) {
         next = { state: detail.notice.state, message: detail.notice.message ?? persistenceLabels[detail.notice.state] };
       }
@@ -43,8 +43,9 @@ export function AppToast() {
   }, [location.pathname]);
 
   if (!toast) return null;
-  const critical = toast.state === 'storage error' || toast.state === 'sync conflict';
+  const critical = toast.state === 'storage error' || toast.state === 'sync conflict' || toast.tone === 'error';
   const working = toast.state === 'saving' || toast.state === 'sync pending';
   const Icon = critical ? CircleAlert : working ? (toast.state === 'saving' ? LoaderCircle : CloudOff) : CheckCircle2;
-  return <div role={critical ? 'alert' : 'status'} className={`pointer-events-none fixed right-4 top-4 z-[220] flex max-w-[min(24rem,calc(100vw-2rem))] items-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold shadow-lg animate-in fade-in slide-in-from-top-2 ${critical ? 'border-red-200 bg-red-50 text-red-800' : working ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}><Icon className={`h-4 w-4 shrink-0 ${toast.state === 'saving' ? 'animate-spin' : ''}`} />{toast.message}</div>;
+  const info = toast.tone === 'info';
+  return <div role={critical ? 'alert' : 'status'} className={`pointer-events-none fixed right-4 top-4 z-[220] flex max-w-[min(24rem,calc(100vw-2rem))] items-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold shadow-lg animate-in fade-in slide-in-from-top-2 ${critical ? 'border-red-200 bg-red-50 text-red-800' : working ? 'border-amber-200 bg-amber-50 text-amber-900' : info ? 'border-sky-200 bg-sky-50 text-sky-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}><Icon className={`h-4 w-4 shrink-0 ${toast.state === 'saving' ? 'animate-spin' : ''}`} />{toast.message}</div>;
 }

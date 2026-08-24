@@ -3,16 +3,16 @@ import { Share } from '@capacitor/share';
 import { Toast } from '@capacitor/toast';
 import { registerPlugin } from '@capacitor/core';
 import { jsPDF } from 'jspdf';
-import { emitToast } from './toast';
+import { emitToast, type ToastTone } from './toast';
 
 export const isNativeMobile = () => Capacitor.isNativePlatform();
 
-export function showAppToast(message: string) {
+export function showAppToast(message: string, tone: ToastTone = 'success') {
   if (isNativeMobile()) {
     void Toast.show({ text: message, duration: 'short' });
     return;
   }
-  emitToast({ kind: 'message', message });
+  emitToast({ kind: 'message', message, tone });
 }
 
 const LATEST_RELEASE_APK_URL = 'https://github.com/rtemesgen/mathan-apps/releases/latest/download/app-release.apk';

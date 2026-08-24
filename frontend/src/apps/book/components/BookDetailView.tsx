@@ -127,7 +127,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
     ];
     void exportPdfFile(`${book.name.replace(/\s+/g, '_')}_transactions.pdf`, `Cash Book Transactions — ${book.name}`, lines)
       .then(() => showAppToast('Cash Book PDF saved'))
-      .catch(() => showAppToast('Could not save the Cash Book PDF'));
+      .catch(() => showAppToast('Could not save the Cash Book PDF', 'error'));
   };
 
   return (
