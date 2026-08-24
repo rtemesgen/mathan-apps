@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { X, DollarSign, Calendar, Tag, FileText, User, Truck as TruckIcon } from 'lucide-react';
 import { Owner, Transaction, TransactionType, Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
+import { useTruckTransactionForm, TruckTransactionInput } from '../useTruckTransactionForm';
 
 interface RecordTransactionModalProps {
   isOpen: boolean;
@@ -15,16 +15,7 @@ interface RecordTransactionModalProps {
   defaultOwnerId?: string;
   defaultType?: TransactionType;
   editingTransaction?: Transaction | null;
-  onSubmit: (txData: {
-    truckId: string;
-    date: string;
-    type: TransactionType;
-    category: string;
-    amount: number;
-    ownerId?: string;
-    description: string;
-    referenceNo?: string;
-}) => Promise<void>;
+  onSubmit: (txData: TruckTransactionInput) => Promise<void>;
 }
 
 export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
@@ -38,51 +29,10 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
   editingTransaction,
   onSubmit,
 }) => {
-  const [truckId, setTruckId] = useState(currentTruckId || (trucks[0]?.id ?? ''));
-  const [type, setType] = useState<TransactionType>(defaultType);
-  const [ownerId, setOwnerId] = useState(defaultOwnerId || (owners[0]?.id ?? ''));
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('Freight Load Revenue');
-  const [description, setDescription] = useState('');
-  const [referenceNo, setReferenceNo] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const { submitting, run } = useSubmitGuard();
-
-  useEffect(() => {
-    if (!isOpen) return;
-    if (editingTransaction) {
-      setTruckId(editingTransaction.truckId); setType(editingTransaction.type); setOwnerId(editingTransaction.ownerId ?? ''); setAmount(String(editingTransaction.amount)); setCategory(editingTransaction.category); setDescription(editingTransaction.description); setReferenceNo(editingTransaction.referenceNo ?? ''); setDate(editingTransaction.date);
-    } else {
-      setTruckId(currentTruckId || (trucks[0]?.id ?? '')); setType(defaultType); setOwnerId(defaultOwnerId || (owners[0]?.id ?? '')); setAmount(''); setCategory('Freight Load Revenue'); setDescription(''); setReferenceNo(''); setDate(new Date().toISOString().split('T')[0]);
-    }
-  }, [isOpen, editingTransaction, currentTruckId, defaultOwnerId, defaultType, owners, trucks]);
+  const form = useTruckTransactionForm({ owners, trucks, currentTruckId, defaultOwnerId, defaultType, editingTransaction, active: isOpen, onSubmit, onComplete: onClose });
+  const { truckId, setTruckId, type, ownerId, setOwnerId, amount, setAmount, category, setCategory, description, setDescription, referenceNo, setReferenceNo, date, setDate, submitting, handleTypeChange, handleSubmit } = form;
 
   if (!isOpen) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0 || submitting) return;
-    await run(() => onSubmit({
-      truckId,
-      date,
-      type,
-      category,
-      amount: numAmount,
-      ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
-      description: description || `${category} entry`,
-      referenceNo,
-    })).then(onClose);
-  };
-
-  const handleTypeChange = (newType: TransactionType) => {
-    setType(newType);
-    if (newType === 'INCOME') setCategory('Cross-Country Freight Load');
-    else if (newType === 'EXPENSE') setCategory('Diesel Fuel');
-    else if (newType === 'CAPITAL_INJECTION') setCategory('Owner Emergency Repair Loan');
-    else if (newType === 'CAPITAL_REPAYMENT') setCategory('Owner Debt Clearance');
-    else if (newType === 'PROFIT_DISTRIBUTION') setCategory('Quarterly Profit Share Dividend');
-  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">

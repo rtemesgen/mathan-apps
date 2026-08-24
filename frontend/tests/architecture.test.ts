@@ -56,5 +56,7 @@ assert.match(read('apps/book/components/ImportBookModal.tsx'), /useSubmitGuard/)
 assert.match(read('apps/book/components/AddMembersModal.tsx'), /useSubmitGuard/);
 assert.match(read('apps/payroll/views/PaySalaryView.tsx'), /useSubmitGuard/);
 assert.match(read('apps/truck/components/AddPartnerModal.tsx'), /useSubmitGuard/);
+assert.match(read('apps/truck/components/Pages/RecordTransactionPage.tsx'), /useTruckTransactionForm/);
+assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /useTruckTransactionForm/);
 
 console.log('Architecture boundary tests passed.');

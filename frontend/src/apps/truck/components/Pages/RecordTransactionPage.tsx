@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ArrowLeft, DollarSign, Calendar, Tag, FileText, User, Save, Truck as TruckIcon } from 'lucide-react';
 import { Owner, TransactionType, Truck } from '../../types';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
-import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
+import { useTruckTransactionForm, TruckTransactionInput } from '../useTruckTransactionForm';
 
 interface RecordTransactionPageProps {
   owners: Owner[];
@@ -11,16 +11,7 @@ interface RecordTransactionPageProps {
   currentTruckId: string;
   defaultOwnerId?: string;
   defaultType?: TransactionType;
-  onSubmit: (txData: {
-    truckId: string;
-    date: string;
-    type: TransactionType;
-    category: string;
-    amount: number;
-    ownerId?: string;
-    description: string;
-    referenceNo?: string;
-  }) => Promise<void>;
+  onSubmit: (txData: TruckTransactionInput) => Promise<void>;
   onBack: () => void;
 }
 
@@ -33,40 +24,8 @@ export const RecordTransactionPage: React.FC<RecordTransactionPageProps> = ({
   onSubmit,
   onBack,
 }) => {
-  const [truckId, setTruckId] = useState(currentTruckId || (trucks[0]?.id ?? ''));
-  const [type, setType] = useState<TransactionType>(defaultType);
-  const [ownerId, setOwnerId] = useState(defaultOwnerId || (owners[0]?.id ?? ''));
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('Freight Load Revenue');
-  const [description, setDescription] = useState('');
-  const [referenceNo, setReferenceNo] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const { submitting, run } = useSubmitGuard();
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0 || submitting) return;
-    await run(() => onSubmit({
-      truckId,
-      date,
-      type,
-      category,
-      amount: numAmount,
-      ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
-      description: description || `${category} entry`,
-      referenceNo,
-    })).then(onBack);
-  };
-
-  const handleTypeChange = (newType: TransactionType) => {
-    setType(newType);
-    if (newType === 'INCOME') setCategory('Cross-Country Freight Load');
-    else if (newType === 'EXPENSE') setCategory('Diesel Fuel');
-    else if (newType === 'CAPITAL_INJECTION') setCategory('Owner Emergency Repair Loan');
-    else if (newType === 'CAPITAL_REPAYMENT') setCategory('Owner Debt Clearance');
-    else if (newType === 'PROFIT_DISTRIBUTION') setCategory('Quarterly Profit Share Dividend');
-  };
+  const form = useTruckTransactionForm({ owners, trucks, currentTruckId, defaultOwnerId, defaultType, active: true, onSubmit, onComplete: onBack });
+  const { truckId, setTruckId, type, ownerId, setOwnerId, amount, setAmount, category, setCategory, description, setDescription, referenceNo, setReferenceNo, date, setDate, submitting, handleTypeChange, handleSubmit } = form;
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
