@@ -1,4 +1,4 @@
-import { deleteOffline, readOffline, writeOffline } from '../lib/localStore';
+import { offlineStore } from '../lib/localStore';
 
 const CACHE_KEY = 'mathan_erp_guest_workspaces_v1';
 export const GUEST_DATA_DOMAINS = [
@@ -83,13 +83,13 @@ const truckKey = (workspaceId: string) => `truck:guest:${workspaceId}`;
 export async function migrateLegacyGuestData(workspaceId: string) {
   for (const [domain, key] of GUEST_DATA_DOMAINS) {
     const destination = snapshotKey(workspaceId, domain, key);
-    if (await readOffline(destination) !== null) continue;
-    const indexedLegacy = await readOffline(`standalone:none:${domain}:${key}`);
+    if (await offlineStore.read(destination) !== null) continue;
+    const indexedLegacy = await offlineStore.read(`standalone:none:${domain}:${key}`);
     const browserKey = domain === 'cash_book' ? `mathan_erp_book_${key === 'books' ? 'books' : 'transactions'}_v1` : `mathan_erp_payroll_${key.replace('-', '_')}_v1`;
     let browserLegacy: unknown = null;
     try { browserLegacy = JSON.parse(localStorage.getItem(browserKey) ?? 'null'); } catch { /* ignore malformed legacy data */ }
     const value = indexedLegacy ?? browserLegacy;
-    if (value !== null) await writeOffline(destination, value);
+    if (value !== null) await offlineStore.write(destination, value);
   }
 }
 
@@ -107,8 +107,8 @@ async function digest(value: unknown) {
 
 export async function exportGuestWorkspace(workspace: GuestWorkspace): Promise<GuestWorkspaceExport> {
   const snapshots: Record<string, unknown[]> = {};
-  for (const [domain, key] of GUEST_DATA_DOMAINS) snapshots[`${domain}:${key}`] = (await readOffline<unknown[]>(snapshotKey(workspace.id, domain, key))) ?? [];
-  const truck = (await readOffline<GuestWorkspaceExport['truck']>(truckKey(workspace.id))) ?? { trucks: [], owners: [], transactions: [] };
+  for (const [domain, key] of GUEST_DATA_DOMAINS) snapshots[`${domain}:${key}`] = (await offlineStore.read<unknown[]>(snapshotKey(workspace.id, domain, key))) ?? [];
+  const truck = (await offlineStore.read<GuestWorkspaceExport['truck']>(truckKey(workspace.id))) ?? { trucks: [], owners: [], transactions: [] };
   const payload = { snapshots, truck };
   const fingerprint = await digest(payload);
   const importId = `${fingerprint.slice(0, 8)}-${fingerprint.slice(8, 12)}-4${fingerprint.slice(13, 16)}-a${fingerprint.slice(17, 20)}-${fingerprint.slice(20, 32)}`;
@@ -129,10 +129,10 @@ export function markGuestWorkspaceImported(id: string, fingerprint: string, impo
 
 export async function clearGuestWorkspaceData(id: string) {
   for (const [domain, key] of GUEST_DATA_DOMAINS) {
-    await deleteOffline(snapshotKey(id, domain, key));
-    await deleteOffline(`${snapshotKey(id, domain, key)}:revision`);
+    await offlineStore.delete(snapshotKey(id, domain, key));
+    await offlineStore.delete(`${snapshotKey(id, domain, key)}:revision`);
   }
-  await deleteOffline(truckKey(id));
+  await offlineStore.delete(truckKey(id));
   localStorage.removeItem(`mathan_truck_preferences_${id}`);
   localStorage.removeItem(`mathan_settings_section_guest_${id}`);
 }
