@@ -13,10 +13,15 @@ import { ImportBookModal } from './components/ImportBookModal';
 import { RenameBookModal } from './components/RenameBookModal';
 import { DeleteBookModal } from './components/DeleteBookModal';
 import { AddMembersModal } from './components/AddMembersModal';
+import { createBook, createTransaction, removeBook, removeTransaction, renameBook } from './cashBookRepository';
+import { usePersistenceStatus } from '../../hooks/usePersistenceStatus';
+import { PersistenceToast } from '../../components/PersistenceToast';
 
 export default function App() {
   const [books, setBooks] = useCloudSnapshot<Book[]>('cash_book', 'books', []);
   const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('cash_book', 'transactions', []);
+  const sharedPersistenceNotice = usePersistenceStatus('cash_book');
+
 
   // Active Selected Book (null = Dashboard, string = Book Detail View)
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
@@ -64,12 +69,7 @@ export default function App() {
 
   // Add New Book Handler
   const handleCreateBook = (bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newBook: Book = {
-      ...bookData,
-      id: `book-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const newBook = createBook(bookData).data;
 
     setBooks(prev => [newBook, ...prev]);
     // Automatically select & enter the newly created book!
@@ -80,8 +80,9 @@ export default function App() {
   const handleDeleteBook = (bookId: string) => {
     const book = books.find((item) => item.id === bookId);
     if (!book) return;
-    setBooks(prev => prev.filter(b => b.id !== bookId));
-    setTransactions(prev => prev.filter(t => t.bookId !== bookId));
+    const result = removeBook(bookId, books, transactions).data;
+    setBooks(result.books);
+    setTransactions(result.transactions);
     if (activeBookId === bookId) {
       setActiveBookId(null);
     }
@@ -90,7 +91,8 @@ export default function App() {
   };
 
   const handleRenameBook = (bookId: string, name: string) => {
-    setBooks(prev => prev.map(book => book.id === bookId ? { ...book, name, updatedAt: new Date().toISOString() } : book));
+    const book = books.find((item) => item.id === bookId);
+    if (book) setBooks(prev => prev.map(item => item.id === bookId ? renameBook(book, name).data : item));
     setBookToRename(null);
   };
 
@@ -136,19 +138,7 @@ export default function App() {
   }) => {
     if (!targetBookForTransaction || !transactionModalType) return;
 
-    const newTx: Transaction = {
-      id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      bookId: targetBookForTransaction.id,
-      type: transactionModalType,
-      amount: data.amount,
-      remark: data.remark,
-      category: data.category,
-      paymentMode: data.paymentMode,
-      dateTime: data.dateTime,
-      attachmentUrl: data.attachmentUrl,
-      attachmentName: data.attachmentName,
-      createdAt: new Date().toISOString(),
-    };
+    const newTx = createTransaction(targetBookForTransaction.id, transactionModalType, data).data;
 
     setTransactions(prev => [newTx, ...prev]);
 
@@ -158,7 +148,7 @@ export default function App() {
 
   // Delete Transaction Handler
   const handleDeleteTransaction = (txId: string) => {
-    setTransactions(prev => prev.filter(t => t.id !== txId));
+    setTransactions(removeTransaction(txId, transactions).data);
   };
 
   return (
@@ -172,6 +162,7 @@ export default function App() {
       />
 
       <div className="flex flex-1 min-h-0">
+        {sharedPersistenceNotice && <PersistenceToast state={sharedPersistenceNotice.state} label={sharedPersistenceNotice.label} />}
         {isSidebarOpen && <div className="hidden lg:block shrink-0"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div>}
         {isSidebarOpen && <div className="lg:hidden fixed inset-0 z-[100] flex"><button aria-label="Close Cash Book menu" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-0 bg-black/40" /><div className="mobile-sidebar-drawer relative z-10 h-[100dvh] max-h-[100dvh] w-72 overflow-y-auto overscroll-contain shadow-2xl"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div></div>}
         <main className="mobile-content-safe flex-1 min-w-0 pb-16 sm:pb-6">

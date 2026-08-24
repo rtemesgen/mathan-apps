@@ -16,6 +16,7 @@ import {
   ArrowRight,
   ChevronDown
 } from 'lucide-react';
+import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
 
 interface AddRaiseViewProps {
   employees: Employee[];
@@ -38,6 +39,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const [validationMessage, setValidationMessage] = useState('');
   const [savedRaise, setSavedRaise] = useState<{ employeeName: string; amount: number; effectiveDate: string } | null>(null);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const { submitting, run } = useSubmitGuard();
   const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const salaryDiff = numNewSalary - currentRate;
   const percentDiff = currentRate > 0 ? (salaryDiff / currentRate) * 100 : 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmp || !Number.isFinite(numNewSalary) || numNewSalary <= 0 || !effectiveDate) return;
     if (numNewSalary <= currentRate) {
@@ -81,7 +83,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    onSaveRaise(selectedEmp.id, raise);
+    await run(() => onSaveRaise(selectedEmp.id, raise));
     setSavedRaise({ employeeName: selectedEmp.name, amount: numNewSalary, effectiveDate });
     setNewSalary('');
     setIsSuccess(true);
@@ -200,10 +202,10 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={!selectedEmp || !Number.isFinite(numNewSalary) || numNewSalary <= 0}
+                disabled={!selectedEmp || !Number.isFinite(numNewSalary) || numNewSalary <= 0 || submitting}
                 className="px-3.5 py-1.5 bg-[#54623e] hover:bg-[#435031] disabled:bg-zinc-300 text-white font-bold uppercase tracking-wider rounded-lg text-xs transition shadow-2xs cursor-pointer flex items-center gap-1"
               >
-                <TrendingUp className="w-3.5 h-3.5" /> Save Raise
+                <TrendingUp className="w-3.5 h-3.5" /> {submitting ? 'Saving…' : 'Save Raise'}
               </button>
             </div>
           </form>

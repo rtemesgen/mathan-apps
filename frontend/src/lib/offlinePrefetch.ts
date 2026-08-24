@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { writeOffline } from './localStore';
+import { hasPendingMutationsForWorkspace } from './syncQueue';
 
 type SnapshotRow = { domain: string; payload: unknown; revision: number };
 
@@ -27,6 +28,9 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
     supabase.from('truck_transactions').select('id,truck_id,owner_id,occurred_on,transaction_type,category,amount,description,reference_no').eq('workspace_id', workspaceId).is('deleted_at', null).order('occurred_on', { ascending: false }),
   ]);
   if (trucks.error || owners.error || transactions.error) return;
+  // A prefetch is allowed to warm an empty cache, but it must never replace
+  // Truck data that still has local mutations waiting for synchronization.
+  if (await hasPendingMutationsForWorkspace(workspaceId, ['trucks', 'truck_owners', 'truck_transactions'])) return;
   await writeOffline(`truck:${userId}:${workspaceId}`, {
     trucks: (trucks.data ?? []).map((row) => ({ id: row.id, name: row.name, unitNumber: row.unit_number, makeModel: row.make_model, vin: row.vin, cashOnHand: Number(row.cash_on_hand ?? 0), licensePlate: row.license_plate })),
     owners: (owners.data ?? []).map((row) => ({ id: row.id, truckId: row.truck_id, name: row.name, startDate: row.start_date, equityPercentage: Number(row.equity_percentage ?? 0), monthlyDrawRate: Number(row.monthly_draw_rate ?? 0), avatarColor: row.avatar_color })),

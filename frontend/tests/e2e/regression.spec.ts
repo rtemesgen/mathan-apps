@@ -41,6 +41,26 @@ test('existing Cash Book, Payroll, and Settings flows still load and save', asyn
   await expect(page.getByText('Password', { exact: true }).first()).toBeVisible();
 });
 
+test('Cash Book records survive switching apps and an offline reload', async ({ page, context }) => {
+  await signIn(page, 'member');
+  await page.getByLabel('Cash Book').click();
+  await expect(page.getByText('Cash Book Overview')).toBeVisible();
+  await page.getByRole('button', { name: /Create Book/ }).first().click();
+  await page.getByPlaceholder(/Retail Shop Cashbook/).fill('Persistence Regression Book');
+  await page.getByRole('button', { name: 'Save Book' }).click();
+  await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
+
+  await page.goto('/payroll');
+  await expect(page.getByText('Payroll Tracker').first()).toBeVisible();
+  await page.goto('/book');
+  await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
+
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
+  await context.setOffline(false);
+});
+
 test('all synced companies and their app data remain accessible offline', async ({ page, context }) => {
   await signIn(page, 'member');
   await page.waitForFunction(async () => {

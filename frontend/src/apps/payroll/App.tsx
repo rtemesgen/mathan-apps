@@ -16,6 +16,9 @@ import { ManageEmployeesView } from './views/ManageEmployeesView';
 import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { useAuth } from '../../auth/AuthProvider';
+import { addEmployee, addRaise, addTransaction, removeEmployee, removeRaise, removeTransaction, updateEmployee, updateRaise, updateTransaction } from './payrollRepository';
+import { usePersistenceStatus } from '../../hooks/usePersistenceStatus';
+import { PersistenceToast } from '../../components/PersistenceToast';
 
 const PAYROLL_TABS: ActiveTab[] = ['dashboard', 'add-employee', 'manage-employees', 'pay-salary', 'add-raise', 'reports', 'transactions'];
 
@@ -70,6 +73,7 @@ export default function App() {
 
   const [employees, setEmployees] = useCloudSnapshot<Employee[]>('payroll', 'employees', []);
   const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('payroll', 'transactions', []);
+  const persistenceNotice = usePersistenceStatus('payroll');
 
   // Global evaluation as-of date (defaults to today)
   const [asOfDate, setAsOfDate] = useState<string>(getTodayString());
@@ -104,62 +108,46 @@ export default function App() {
 
   // Handlers
   const handleAddEmployee = (newEmp: Employee) => {
-    setEmployees((prev) => [newEmp, ...prev]);
+    setEmployees(addEmployee(newEmp, employees).data);
   };
 
   const handleSaveEmployee = (updatedEmployee: Employee) => {
-    setEmployees((current) => current.map((employee) => employee.id === updatedEmployee.id ? updatedEmployee : employee));
+    setEmployees(updateEmployee(updatedEmployee, employees).data);
   };
 
   const handleDeleteEmployee = (employeeId: string) => {
-    setEmployees((current) => current.filter((employee) => employee.id !== employeeId));
-    setTransactions((current) => current.filter((transaction) => transaction.employeeId !== employeeId));
+    const result = removeEmployee(employeeId, employees, transactions).data;
+    setEmployees(result.employees);
+    setTransactions(result.transactions);
     if (selectedPayEmployeeId === employeeId) setSelectedPayEmployeeId(undefined);
   };
 
   const handleSaveRaise = (employeeId: string, raise: SalaryChange) => {
-    setEmployees((prev) =>
-      prev.map((emp) => {
-        if (emp.id === employeeId) {
-          const updatedHistory = [...(emp.salaryHistory || []), raise].sort((a, b) =>
-            a.effectiveDate.localeCompare(b.effectiveDate)
-          );
-          return {
-            ...emp,
-            salaryHistory: updatedHistory,
-          };
-        }
-        return emp;
-      })
-    );
+    setEmployees(addRaise(employeeId, raise, employees).data);
   };
 
   const handleRecordWithdrawal = (newTx: Transaction) => {
-    setTransactions((prev) => [newTx, ...prev]);
+    setTransactions(addTransaction(newTx, transactions).data);
   };
 
   const handleDeleteTransaction = (txId: string) => {
-    setTransactions((prev) => prev.filter((t) => t.id !== txId));
+    setTransactions(removeTransaction(txId, transactions).data);
   };
 
   const handleUpdateTransaction = (updated: Transaction) => {
-    setTransactions((current) => current.map((transaction) => transaction.id === updated.id ? updated : transaction));
+    setTransactions(updateTransaction(updated, transactions).data);
   };
 
   const handleRemoveTransaction = (txId: string) => {
-    setTransactions((current) => current.filter((transaction) => transaction.id !== txId));
+    setTransactions(removeTransaction(txId, transactions).data);
   };
 
   const handleUpdateRaise = (employeeId: string, updatedRaise: SalaryChange) => {
-    setEmployees((current) => current.map((employee) => employee.id === employeeId
-      ? { ...employee, salaryHistory: employee.salaryHistory.map((raise) => raise.id === updatedRaise.id ? updatedRaise : raise) }
-      : employee));
+    setEmployees(updateRaise(employeeId, updatedRaise, employees).data);
   };
 
   const handleDeleteRaise = (employeeId: string, raiseId: string) => {
-    setEmployees((current) => current.map((employee) => employee.id === employeeId
-      ? { ...employee, salaryHistory: employee.salaryHistory.filter((raise) => raise.id !== raiseId) }
-      : employee));
+    setEmployees(removeRaise(employeeId, raiseId, employees).data);
   };
 
   const stats = calculateCompanyStats(employees, transactions, asOfDate);
@@ -211,6 +199,7 @@ export default function App() {
 
       {/* Main Content Workspace */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {persistenceNotice && <PersistenceToast state={persistenceNotice.state} label={persistenceNotice.label} />}
         <TopNavbar
           activeTab={activeTab}
           asOfDate={asOfDate}

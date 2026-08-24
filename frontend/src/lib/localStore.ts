@@ -1,9 +1,14 @@
+import { Capacitor } from '@capacitor/core';
+import { deleteNativeRecord, isJsonSerializable, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
+
 const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
 const META_STORE_NAME = 'metadata';
 const DB_VERSION = 2;
 const memoryCache = new Map<string, unknown>();
 const fallbackKey = (key: string) => `mathan_erp_offline_${key}`;
+let nativeStoreReady: Promise<boolean> | null = null;
+let writeTail: Promise<void> = Promise.resolve();
 
 function readFallback<T>(key: string): T | null {
   try {
@@ -16,6 +21,12 @@ function readFallback<T>(key: string): T | null {
 
 function removeFallback(key: string) {
   try { localStorage.removeItem(fallbackKey(key)); } catch { /* localStorage may be disabled */ }
+}
+
+function queueWrite<T>(operation: () => Promise<T>) {
+  const result = writeTail.then(operation, operation);
+  writeTail = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 function getDatabase() {
@@ -35,16 +46,103 @@ function getStore(mode: IDBTransactionMode, storeName = STORE_NAME) {
   return getDatabase().then((database) => database.transaction(storeName, mode).objectStore(storeName));
 }
 
+async function readLegacyStore(storeName: string) {
+  try {
+    const store = await getStore('readonly', storeName);
+    const keys = await new Promise<string[]>((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onsuccess = () => resolve(request.result.map(String));
+      request.onerror = () => reject(request.error);
+    });
+    const entries: Array<{ key: string; value: unknown }> = [];
+    for (const key of keys) {
+      const currentStore = await getStore('readonly', storeName);
+      const value = await new Promise<unknown>((resolve, reject) => {
+        const request = currentStore.get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      entries.push({ key, value });
+    }
+    return entries;
+  } catch {
+    return null;
+  }
+}
+
+async function readLegacyLocalStorage() {
+  const entries: Array<{ key: string; value: unknown }> = [];
+  try {
+    for (const key of Object.keys(localStorage).filter((item) => item.startsWith('mathan_erp_offline_'))) {
+      const value = readFallback(key.slice('mathan_erp_offline_'.length));
+      if (value !== null) entries.push({ key: key.slice('mathan_erp_offline_'.length), value });
+    }
+  } catch { /* localStorage may be unavailable */ }
+  return entries;
+}
+
+async function getNativeStoreReady() {
+  if (!Capacitor.isNativePlatform()) return false;
+  nativeStoreReady ??= (async () => {
+    const [records, metadata, localStorageRecords] = await Promise.all([
+      readLegacyStore(STORE_NAME),
+      readLegacyStore(META_STORE_NAME),
+      readLegacyLocalStorage(),
+    ]);
+    if (records === null || metadata === null) return false;
+    try {
+      const mergedRecords = new Map(records.map((entry) => [entry.key, entry]));
+      // A fallback entry exists because an IndexedDB write failed; it is the
+      // newest value and must win if both stores contain the same key.
+      localStorageRecords.forEach((entry) => mergedRecords.set(entry.key, entry));
+      await migrateLegacyRecords([...mergedRecords.values()], metadata);
+      return true;
+    } catch {
+      // Keep IndexedDB active until a complete verified migration succeeds.
+      return false;
+    }
+  })().catch(() => false);
+  return nativeStoreReady;
+}
+
+async function writeIndexedDb<T>(key: string, value: T): Promise<void> {
+  const database = await getDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put(value, key);
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error('Offline write aborted'));
+  });
+}
+
+async function deleteIndexedDb(key: string): Promise<void> {
+  const store = await getStore('readwrite');
+  await new Promise<void>((resolve, reject) => {
+    const request = store.delete(key);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function readOffline<T>(key: string): Promise<T | null> {
   if (memoryCache.has(key)) return memoryCache.get(key) as T;
   try {
+    if (await getNativeStoreReady()) {
+      const nativeValue = await readNativeRecord<T>(key);
+      if (nativeValue !== null) { memoryCache.set(key, nativeValue); return nativeValue; }
+    }
     const store = await getStore('readonly');
     return await new Promise<T | null>((resolve, reject) => {
       const request = store.get(key);
       request.onsuccess = () => {
         // A previous IndexedDB failure may have placed the newest value in the
-        // fallback store. Do not mistake a missing IDB record for missing data.
-        const value = (request.result as T | undefined) ?? readFallback<T>(key);
+        // fallback store. Prefer it whenever present: IndexedDB may still have
+        // the older value because the failed write left that record untouched.
+        const fallback = readFallback<T>(key);
+        const value = fallback ?? (request.result as T | undefined) ?? null;
         if (value !== null) memoryCache.set(key, value);
         resolve(value);
       };
@@ -57,39 +155,33 @@ export async function readOffline<T>(key: string): Promise<T | null> {
 
 export async function writeOffline<T>(key: string, value: T): Promise<void> {
   memoryCache.set(key, value);
-  try {
-    const database = await getDatabase();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(value, key);
-      request.onerror = () => reject(request.error);
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error ?? new Error('Offline write aborted'));
-    });
-    removeFallback(key);
-  } catch {
-    localStorage.setItem(fallbackKey(key), JSON.stringify(value));
-  }
+  return queueWrite(async () => {
+    try {
+      if (isJsonSerializable(value) && await getNativeStoreReady()) {
+        await writeNativeRecord(key, value);
+        removeFallback(key);
+        return;
+      }
+      await writeIndexedDb(key, value);
+      removeFallback(key);
+    } catch {
+      try { await writeIndexedDb(key, value); removeFallback(key); }
+      catch { localStorage.setItem(fallbackKey(key), JSON.stringify(value)); }
+    }
+  });
 }
 
 export async function deleteOffline(key: string): Promise<void> {
   memoryCache.delete(key);
-  // Always clear the fallback too: it may contain a value from an earlier IDB
-  // outage even when IndexedDB is healthy again.
-  removeFallback(key);
-  try {
-    const store = await getStore('readwrite');
-    await new Promise<void>((resolve, reject) => {
-      const request = store.delete(key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  } catch { /* fallback was already removed */ }
+  return queueWrite(async () => {
+    removeFallback(key);
+    try { if (await getNativeStoreReady()) await deleteNativeRecord(key); } catch { /* continue with legacy stores */ }
+    try { await deleteIndexedDb(key); } catch { /* fallback was already removed */ }
+  });
 }
 
 export async function listOfflineKeys(): Promise<string[]> {
+  const nativeKeys = await (async () => { try { return await (await getNativeStoreReady()) ? listNativeRecords() : []; } catch { return []; } })();
   try {
     const store = await getStore('readonly');
     const indexedKeys = await new Promise<string[]>((resolve, reject) => {
@@ -98,28 +190,36 @@ export async function listOfflineKeys(): Promise<string[]> {
       request.onerror = () => reject(request.error);
     });
     const fallbackKeys = Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length));
-    return [...new Set([...indexedKeys, ...fallbackKeys])];
+    return [...new Set([...nativeKeys, ...indexedKeys, ...fallbackKeys])];
   } catch {
-    return Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length));
+    return [...new Set([...nativeKeys, ...Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length))])];
   }
 }
 
 /** Atomically persist related cache records (for example an entity and its queue entry). */
 export async function writeOfflineAtomic(entries: Array<{ key: string; value: unknown }>): Promise<void> {
   entries.forEach(({ key, value }) => memoryCache.set(key, value));
-  try {
-    const database = await getDatabase();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      entries.forEach(({ key, value }) => store.put(value, key));
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error ?? new Error('Offline cache transaction aborted'));
-    });
-  } catch {
-    try { entries.forEach(({ key, value }) => localStorage.setItem(`mathan_erp_offline_${key}`, JSON.stringify(value))); } catch { /* storage is unavailable */ }
-  }
+  return queueWrite(async () => {
+    try {
+      if (entries.every(({ value }) => isJsonSerializable(value)) && await getNativeStoreReady()) {
+        await writeNativeRecordsAtomic(entries);
+        entries.forEach(({ key }) => removeFallback(key));
+        return;
+      }
+      const database = await getDatabase();
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        entries.forEach(({ key, value }) => store.put(value, key));
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error ?? new Error('Offline cache transaction aborted'));
+      });
+      entries.forEach(({ key }) => removeFallback(key));
+    } catch {
+      try { entries.forEach(({ key, value }) => localStorage.setItem(fallbackKey(key), JSON.stringify(value))); } catch { /* storage is unavailable */ }
+    }
+  });
 }
 
 export async function clearOfflinePrefix(prefix: string): Promise<number> {
@@ -136,6 +236,7 @@ export async function resetUserOfflineCache(userId: string): Promise<number> {
 }
 
 export async function readOfflineMetadata<T>(key: string): Promise<T | null> {
+  try { if (await getNativeStoreReady()) { const value = await readNativeMetadata<T>(key); if (value !== null) return value; } } catch { /* continue with IndexedDB */ }
   try {
     const store = await getStore('readonly', META_STORE_NAME);
     return await new Promise<T | null>((resolve, reject) => {
@@ -147,6 +248,7 @@ export async function readOfflineMetadata<T>(key: string): Promise<T | null> {
 }
 
 export async function writeOfflineMetadata<T>(key: string, value: T): Promise<void> {
+  try { if (isJsonSerializable(value) && await getNativeStoreReady()) { await writeNativeMetadata(key, value); return; } } catch { /* continue with IndexedDB */ }
   try {
     const store = await getStore('readwrite', META_STORE_NAME);
     await new Promise<void>((resolve, reject) => {

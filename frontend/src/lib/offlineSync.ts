@@ -1,8 +1,19 @@
 import { supabase } from './supabase';
 import { getQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
-import { writeOfflineMetadata } from './localStore';
+import { writeOffline, writeOfflineMetadata } from './localStore';
+import { reportPersistenceNotice } from './repositories/types';
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'retry' | 'conflicted' | 'error';
+
+function reportTruckMutationStatus(status: 'sync pending' | 'sync conflict') {
+  reportPersistenceNotice({ app: 'truck', state: status });
+  window.dispatchEvent(new CustomEvent('mathan:truck-storage-status', { detail: { status } }));
+}
+
+function reportSnapshotMutationStatus(domain: unknown, status: 'sync pending' | 'sync conflict') {
+  const app = String(domain ?? '').startsWith('cash_book:') ? 'cash_book' : String(domain ?? '').startsWith('payroll:') ? 'payroll' : null;
+  if (app) reportPersistenceNotice({ app, state: status });
+}
 
 function report(status: SyncStatus, queued?: number, detail: Record<string, unknown> = {}) {
   window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status, queued, ...detail } }));
@@ -46,8 +57,8 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
         ? await supabase.from(mutation.table).update(row).eq('workspace_id', workspaceId).eq('id', id)
         : await supabase.from(mutation.table).upsert({ id, workspace_id: workspaceId, ...row }, { onConflict: 'id' });
       if (result.error) {
-        if (permanentError(result.error)) remaining.push({ ...mutation, syncStatus: 'error', lastError: result.error.message });
-        else { failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: result.error.message }); }
+        if (permanentError(result.error)) { reportTruckMutationStatus('sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: result.error.message }); }
+        else { reportTruckMutationStatus('sync pending'); failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: result.error.message }); }
       }
       continue;
     }
@@ -64,12 +75,19 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
     if (result?.status === 'conflict') {
       conflict = true;
       remaining.push({ ...mutation, syncStatus: 'conflicted', lastError: 'Remote revision changed' });
+      reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict');
       window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: mutation.payload.domain, remote: result.payload, revision: result.revision, mutationId: mutation.mutationId } }));
     } else if (error || !result) {
-      if (permanentError(error)) remaining.push({ ...mutation, syncStatus: 'error', lastError: error?.message ?? 'Synchronization failed' });
-      else { failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error?.message ?? 'Synchronization failed' }); }
+      if (permanentError(error)) { reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: error?.message ?? 'Synchronization failed' }); }
+      else { reportSnapshotMutationStatus(mutation.payload.domain, 'sync pending'); failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error?.message ?? 'Synchronization failed' }); }
+    } else if (result.status === 'written' && result.payload !== undefined) {
+      const storageKey = `${mutation.userId}:${workspaceId}:${String(mutation.payload.domain ?? mutation.entityId)}`;
+      await writeOffline(storageKey, result.payload);
+      await writeOffline(`${storageKey}:revision`, result.revision);
     }
     } catch (error) {
+      if (mutation.table !== 'app_state_snapshots') reportTruckMutationStatus('sync pending');
+      else reportSnapshotMutationStatus(mutation.payload.domain, 'sync pending');
       failed = true;
       remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error instanceof Error ? error.message : 'Synchronization failed' });
     }

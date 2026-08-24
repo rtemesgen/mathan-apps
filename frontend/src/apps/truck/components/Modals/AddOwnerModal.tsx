@@ -13,7 +13,7 @@ interface AddOwnerModalProps {
     startDate: string;
     equityPercentage: number;
     monthlyDrawRate: number;
-  }) => void;
+  }) => Promise<void>;
 }
 
 export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
@@ -26,6 +26,7 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (editingOwner) {
@@ -43,19 +44,18 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || submitting) return;
+    setSubmitting(true);
 
-    onSubmitOwner({
+    try { await onSubmitOwner({
       id: editingOwner ? editingOwner.id : undefined,
       name,
       startDate,
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
-    });
-
-    onClose();
+    }); onClose(); } finally { setSubmitting(false); }
   };
 
   return (
@@ -164,9 +164,10 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
             </button>
             <button
               type="submit"
+              disabled={submitting}
               className="px-6 py-2.5 rounded-xl bg-[#3f4d34] hover:bg-[#323e29] text-white font-bold shadow-xs transition-transform active:scale-95"
             >
-              {editingOwner ? 'Update Owner' : 'Add Owner'}
+              {submitting ? 'Saving…' : editingOwner ? 'Update Owner' : 'Add Owner'}
             </button>
           </div>
         </form>

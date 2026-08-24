@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Book } from '../types';
 import { X, BookPlus } from 'lucide-react';
 import { AppSelect } from '../../../components/AppSelect';
+import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -19,22 +20,23 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const [currency, setCurrency] = useState('$');
   const [category, setCategory] = useState('Business');
   const [error, setError] = useState('');
+  const { submitting, run } = useSubmitGuard();
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError('Please enter a book name');
       return;
     }
 
-    onSave({
+    await run(() => onSave({
       name: name.trim(),
       description: description.trim(),
       currency: currency.trim() || '$',
       category: category.trim(),
-    });
+    }));
 
     // Reset form
     setName('');
@@ -127,9 +129,10 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
             </button>
             <button
               type="submit"
+              disabled={submitting}
               className="px-4 py-1.5 text-xs font-bold text-white bg-[#121212] hover:bg-[#27272A] rounded-lg shadow-2xs transition-colors flex items-center gap-1"
             >
-              Save Book
+              {submitting ? 'Saving…' : 'Save Book'}
             </button>
           </div>
         </form>

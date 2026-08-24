@@ -15,7 +15,7 @@ interface AddOwnerPageProps {
     startDate: string;
     equityPercentage: number;
     monthlyDrawRate: number;
-  }) => void;
+  }) => Promise<void>;
   onBack: () => void;
 }
 
@@ -31,6 +31,7 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (editingOwner) {
@@ -48,20 +49,22 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
     }
   }, [editingOwner, currentTruckId]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || submitting) return;
+    setSubmitting(true);
 
-    onSubmitOwner({
+    try {
+      await onSubmitOwner({
       id: editingOwner ? editingOwner.id : undefined,
       truckId: assignedTruckId || currentTruckId,
       name,
       startDate,
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
-    });
-
-    onBack();
+      });
+      onBack();
+    } finally { setSubmitting(false); }
   };
 
   return (
@@ -164,12 +167,13 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
               Cancel
             </button>
 
-            <button
-              type="submit"
+              <button
+                type="submit"
+                disabled={submitting}
               className="px-4 py-1.5 rounded-lg bg-[#3f4d34] hover:bg-[#323e29] text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{editingOwner ? 'Update Partner' : 'Save Partner'}</span>
+              <span>{submitting ? 'Saving…' : editingOwner ? 'Update Partner' : 'Save Partner'}</span>
             </button>
           </div>
         </form>

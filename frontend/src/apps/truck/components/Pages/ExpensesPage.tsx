@@ -28,9 +28,9 @@ interface ExpensesPageProps {
     ownerId?: string;
     description: string;
     referenceNo?: string;
-  }) => void;
-  onSubmitPayOwner: (ownerId: string, amount: number, memo: string) => void;
-  onExecuteProfitDistribution: (allocations: { ownerId: string; amount: number }[]) => void;
+  }) => Promise<void>;
+  onSubmitPayOwner: (ownerId: string, amount: number, memo: string) => Promise<void>;
+  onExecuteProfitDistribution: (allocations: { ownerId: string; amount: number }[]) => Promise<void>;
   onBack: () => void;
 }
 
@@ -70,6 +70,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [dividendPool, setDividendPool] = useState<string>(
     availableCash > 0 ? (availableCash * 0.5).toFixed(0) : '0'
   );
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (defaultTab) {
@@ -91,17 +92,18 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     }
   };
 
-  const handleExpenseSubmit = (e: React.FormEvent) => {
+  const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const num = parseFloat(expenseAmount);
-    if (isNaN(num) || num <= 0) return;
+    if (isNaN(num) || num <= 0 || submitting) return;
 
     if (!expenseCategory.trim()) {
       setCategoryError(true);
       return;
     }
 
-    onSubmitExpense({
+    setSubmitting(true);
+    try { await onSubmitExpense({
       truckId,
       date: expenseDate,
       type: 'EXPENSE',
@@ -109,32 +111,33 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       amount: num,
       description: expenseDesc || (expenseVendor ? `${expenseVendor} - ${expenseCategory.trim()}` : expenseCategory.trim()),
       referenceNo: expenseRef || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
-    });
-
-    // Keep the user on the current page after saving; navigation is explicit.
+    }); setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); }
+    finally { setSubmitting(false); }
   };
 
-  const handlePayOwnerSubmit = (e: React.FormEvent) => {
+  const handlePayOwnerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const num = parseFloat(payAmount);
-    if (isNaN(num) || num <= 0 || !currentPaySummary) return;
+    if (isNaN(num) || num <= 0 || !currentPaySummary || submitting) return;
 
-    onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo);
-    // Keep the user on the current page after saving; navigation is explicit.
+    setSubmitting(true);
+    try { await onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo); setPayAmount(''); }
+    finally { setSubmitting(false); }
   };
 
-  const handleProfitDividendSubmit = (e: React.FormEvent) => {
+  const handleProfitDividendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const pool = parseFloat(dividendPool) || 0;
-    if (pool <= 0) return;
+    if (pool <= 0 || submitting) return;
 
     const allocations = owners.map((o) => ({
       ownerId: o.id,
       amount: Number(((pool * o.equityPercentage) / 100).toFixed(2)),
     }));
 
-    onExecuteProfitDistribution(allocations);
-    // Keep the user on the current page after saving; navigation is explicit.
+    setSubmitting(true);
+    try { await onExecuteProfitDistribution(allocations); setDividendPool('0'); }
+    finally { setSubmitting(false); }
   };
 
   const poolAmount = parseFloat(dividendPool) || 0;
@@ -309,10 +312,11 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
 
               <button
                 type="submit"
+                disabled={submitting}
                 className="px-4 py-1.5 rounded-lg bg-[#c62828] hover:bg-[#b71c1c] text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>Save Expense</span>
+                <span>{submitting ? 'Saving…' : 'Save Expense'}</span>
               </button>
             </div>
           </form>
@@ -396,10 +400,11 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
 
               <button
                 type="submit"
+                disabled={submitting}
                 className="px-4 py-1.5 rounded-lg bg-[#3f4d34] hover:bg-[#323e29] text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
               >
                 <DollarSign className="w-3.5 h-3.5" />
-                <span>Pay Owner</span>
+                <span>{submitting ? 'Saving…' : 'Pay Owner'}</span>
               </button>
             </div>
           </form>
@@ -497,11 +502,11 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
 
               <button
                 type="submit"
-                disabled={poolAmount <= 0}
+                disabled={poolAmount <= 0 || submitting}
                 className="px-4 py-1.5 rounded-lg bg-[#5b21b6] hover:bg-[#4c1d95] disabled:opacity-50 text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
               >
                 <TrendingUp className="w-3.5 h-3.5 text-[#d8b4fe]" />
-                <span>Split Profit</span>
+                <span>{submitting ? 'Saving…' : 'Split Profit'}</span>
               </button>
             </div>
           </form>

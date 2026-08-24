@@ -20,7 +20,7 @@ interface IncomePageProps {
     ownerId?: string;
     description: string;
     referenceNo?: string;
-  }) => void;
+  }) => Promise<void>;
   onBack: () => void;
 }
 
@@ -42,14 +42,18 @@ export const IncomePage: React.FC<IncomePageProps> = ({
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const resetForm = () => { setAmount(''); setCustomerOrCompany(''); setDescription(''); setReferenceNo(''); setDate(new Date().toISOString().split('T')[0]); };
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) return;
+    if (isNaN(numAmount) || numAmount <= 0 || submitting) return;
+    setSubmitting(true);
 
-    if (incomeType === 'TRIP') {
-      onSubmit({
+    try {
+      if (incomeType === 'TRIP') {
+        await onSubmit({
         truckId,
         date,
         type: 'INCOME',
@@ -57,10 +61,10 @@ export const IncomePage: React.FC<IncomePageProps> = ({
         amount: numAmount,
         description: description || (customerOrCompany ? `${customerOrCompany} - ${category}` : category),
         referenceNo: referenceNo || `INV-${Math.floor(1000 + Math.random() * 9000)}`,
-      });
-    } else {
-      const selectedOwner = owners.find((o) => o.id === ownerId);
-      onSubmit({
+        });
+      } else {
+        const selectedOwner = owners.find((o) => o.id === ownerId);
+        await onSubmit({
         truckId,
         date,
         type: 'CAPITAL_INJECTION',
@@ -69,10 +73,12 @@ export const IncomePage: React.FC<IncomePageProps> = ({
         ownerId,
         description: description || `Loan from ${selectedOwner?.name || 'Owner'}`,
         referenceNo: referenceNo || `LOAN-${Math.floor(1000 + Math.random() * 9000)}`,
-      });
+        });
+      }
+      resetForm();
+    } finally {
+      setSubmitting(false);
     }
-
-    // Keep the user on the current page after saving; navigation is explicit.
   };
 
   return (
@@ -259,10 +265,11 @@ export const IncomePage: React.FC<IncomePageProps> = ({
 
             <button
               type="submit"
+              disabled={submitting}
               className="px-4 py-1.5 rounded-lg bg-[#2e7d32] hover:bg-[#256628] text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Save Income</span>
+              <span>{submitting ? 'Saving…' : 'Save Income'}</span>
             </button>
           </div>
         </form>

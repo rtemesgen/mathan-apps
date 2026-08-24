@@ -3,6 +3,7 @@ import { TransactionType } from '../types';
 import { X, Check, Calendar, Plus, Paperclip, FileText, Image as ImageIcon } from 'lucide-react';
 import { getCurrentLocalDateTimeString } from '../utils/formatters';
 import { AppSelect } from '../../../components/AppSelect';
+import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -42,8 +43,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [attachmentUrl, setAttachmentUrl] = useState<string>('');
   const [attachmentName, setAttachmentName] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const [toastMessage, setToastMessage] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { submitting, run } = useSubmitGuard();
 
   const isCashIn = type === 'in';
 
@@ -56,7 +57,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setAttachmentUrl('');
       setAttachmentName('');
       setError('');
-      setToastMessage('');
     }
   }, [isOpen, type, isCashIn]);
 
@@ -101,12 +101,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     return parsed;
   };
 
-  const handleSaveAndClose = (e: React.FormEvent) => {
+  const handleSaveAndClose = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = validate();
     if (numAmount === null) return;
 
-    onSave({
+    await run(() => onSave({
       amount: numAmount,
       remark: remark.trim(),
       category: category || (isCashIn ? 'General Income' : 'General Expense'),
@@ -114,17 +114,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       dateTime: dateTime || getCurrentLocalDateTimeString(),
       attachmentUrl: attachmentUrl || undefined,
       attachmentName: attachmentName || undefined,
-    });
+    }));
 
     onClose();
   };
 
-  const handleSaveAndAddNew = (e: React.MouseEvent) => {
+  const handleSaveAndAddNew = async (e: React.MouseEvent) => {
     e.preventDefault();
     const numAmount = validate();
     if (numAmount === null) return;
 
-    onSave({
+    await run(() => onSave({
       amount: numAmount,
       remark: remark.trim(),
       category: category || (isCashIn ? 'General Income' : 'General Expense'),
@@ -132,11 +132,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       dateTime: dateTime || getCurrentLocalDateTimeString(),
       attachmentUrl: attachmentUrl || undefined,
       attachmentName: attachmentName || undefined,
-    });
+    }));
 
-    // Show temporary feedback toast
-    setToastMessage(`Saved ${isCashIn ? 'Cash In' : 'Cash Out'} of ${currencySymbol}${numAmount.toFixed(2)}! Ready for next entry.`);
-    
     // Clear form inputs but keep current Date/Time
     setAmount('');
     setRemark('');
@@ -145,10 +142,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
     setError('');
 
-    // Auto fade toast after 3 seconds
-    setTimeout(() => {
-      setToastMessage('');
-    }, 3000);
   };
 
   return (
@@ -186,14 +179,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        {/* Feedback Toast Banner */}
-        {toastMessage && (
-          <div className="px-4 py-2 bg-[#ECFDF5] border-b border-[#A7F3D0] text-[#065F46] text-[11px] font-semibold flex items-center gap-1.5 shrink-0">
-            <Check className="w-3.5 h-3.5 text-[#059669] shrink-0" />
-            <span>{toastMessage}</span>
-          </div>
-        )}
 
         {/* Form Body - Scrollable on small screens */}
         <form onSubmit={handleSaveAndClose} className="p-3.5 sm:p-4 space-y-3 overflow-y-auto flex-1">
@@ -347,6 +332,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
+                disabled={submitting}
                 onClick={handleSaveAndAddNew}
                 className="px-2.5 py-1.5 text-[11px] font-bold border border-[#D8D3C5] bg-[#F7F5EE] hover:bg-[#EFECE3] text-[#121212] rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
               >
@@ -356,6 +342,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
               <button
                 type="submit"
+                disabled={submitting}
                 className={`px-3.5 py-1.5 text-[11px] font-bold text-white rounded-lg shadow-xs transition-all flex items-center gap-1 ${
                   isCashIn 
                     ? 'bg-[#15803D] hover:bg-[#166534]' 
@@ -363,7 +350,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 }`}
               >
                 <Check className="w-3.5 h-3.5" />
-                Save Entry
+                {submitting ? 'Saving…' : 'Save Entry'}
               </button>
             </div>
           </div>

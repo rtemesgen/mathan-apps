@@ -16,7 +16,7 @@ interface AddTruckModalProps {
     vin: string;
     cashOnHand: number;
     licensePlate: string;
-  }) => void;
+  }) => Promise<void>;
 }
 
 export const AddTruckModal: React.FC<AddTruckModalProps> = ({
@@ -34,29 +34,24 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
   const [vin, setVin] = useState('');
   const [cashOnHand, setCashOnHand] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmitNew = (e: React.FormEvent) => {
+  const handleSubmitNew = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !unitNumber.trim()) return;
+    if (!name.trim() || !unitNumber.trim() || submitting) return;
+    setSubmitting(true);
 
-    onAddTruck({
+    try { await onAddTruck({
       name,
       unitNumber,
       makeModel,
       vin,
       cashOnHand: parseFloat(cashOnHand) || 0,
       licensePlate: licensePlate || 'TRK-NEW',
-    });
-
-    setShowAddForm(false);
-    setName('');
-    setUnitNumber('');
-    setMakeModel('');
-    setVin('');
-    setCashOnHand('');
-    setLicensePlate('');
+    }); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setCashOnHand(''); setLicensePlate(''); }
+    finally { setSubmitting(false); }
   };
 
   return (
@@ -235,9 +230,10 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
 
                 <button
                   type="submit"
+                  disabled={submitting}
                   className="px-5 py-2 rounded-xl bg-[#3f4d34] hover:bg-[#323e29] text-white font-bold"
                 >
-                  Save Truck
+                  {submitting ? 'Saving…' : 'Save Truck'}
                 </button>
               </div>
             </form>

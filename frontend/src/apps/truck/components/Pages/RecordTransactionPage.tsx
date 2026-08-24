@@ -19,7 +19,7 @@ interface RecordTransactionPageProps {
     ownerId?: string;
     description: string;
     referenceNo?: string;
-  }) => void;
+  }) => Promise<void>;
   onBack: () => void;
 }
 
@@ -40,13 +40,15 @@ export const RecordTransactionPage: React.FC<RecordTransactionPageProps> = ({
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) return;
+    if (isNaN(numAmount) || numAmount <= 0 || submitting) return;
+    setSubmitting(true);
 
-    onSubmit({
+    try { await onSubmit({
       truckId,
       date,
       type,
@@ -55,9 +57,7 @@ export const RecordTransactionPage: React.FC<RecordTransactionPageProps> = ({
       ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
       description: description || `${category} entry`,
       referenceNo,
-    });
-
-    onBack();
+    }); onBack(); } finally { setSubmitting(false); }
   };
 
   const handleTypeChange = (newType: TransactionType) => {
@@ -270,10 +270,11 @@ export const RecordTransactionPage: React.FC<RecordTransactionPageProps> = ({
 
             <button
               type="submit"
+              disabled={submitting}
               className="px-6 py-2.5 rounded-xl bg-[#1c1d1f] hover:bg-[#2e2f33] text-white transition-colors font-bold text-xs flex items-center gap-2 shadow-xs"
             >
               <Save className="w-4 h-4" />
-              <span>Submit Ledger Entry</span>
+              <span>{submitting ? 'Saving…' : 'Submit Ledger Entry'}</span>
             </button>
           </div>
         </form>

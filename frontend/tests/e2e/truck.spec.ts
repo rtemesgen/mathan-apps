@@ -1,7 +1,7 @@
 import { expect, test } from 'playwright/test';
 import { signIn } from './helpers';
 
-test('Truck app is available through the workspace launcher and has native navigation', async ({ page }) => {
+test('Truck app is available through the workspace launcher and preserves data across app switches and offline reloads', async ({ page, context }) => {
   await signIn(page, 'admin');
   const launcher = page.getByLabel('Truck Equity');
   if (await launcher.count() === 0) test.skip(true, 'Truck access is not granted to this fixture workspace.');
@@ -17,6 +17,14 @@ test('Truck app is available through the workspace launcher and has native navig
   await page.getByPlaceholder('e.g. 2024 Kenworth T680').fill('Test vehicle');
   await page.getByRole('button', { name: 'Save Truck' }).click();
   await expect(page.getByRole('heading', { name: 'E2E Truck', exact: true })).toBeVisible();
+  await page.goto('/book');
+  await expect(page).toHaveURL(/\/book$/);
+  await page.goto('/truck');
+  await expect(page.getByRole('heading', { name: 'E2E Truck', exact: true })).toBeVisible();
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'E2E Truck', exact: true })).toBeVisible();
+  await context.setOffline(false);
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Income (Trips)' }).click();
   await page.locator('input[type=number]').first().fill('1000');

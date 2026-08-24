@@ -17,6 +17,7 @@ import {
   History,
   ChevronDown
 } from 'lucide-react';
+import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
 
 interface PaySalaryViewProps {
   employees: Employee[];
@@ -43,6 +44,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [lastTx, setLastTx] = useState<Transaction | null>(null);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const { submitting, run } = useSubmitGuard();
   const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {
@@ -67,7 +69,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
   const numAmount = parseFloat(amount) || 0;
   const newRemaining = currentOwed - numAmount;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmp || numAmount <= 0) return;
 
@@ -83,7 +85,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    onRecordWithdrawal(newTx);
+    await run(() => onRecordWithdrawal(newTx));
     setLastTx(newTx);
     setIsSuccess(true);
     setAmount('');
@@ -194,10 +196,10 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={numAmount <= 0}
+                disabled={numAmount <= 0 || submitting}
                 className="px-3.5 py-1.5 bg-[#54623e] hover:bg-[#435031] disabled:bg-zinc-300 text-white font-bold uppercase tracking-wider rounded-lg text-xs transition shadow-2xs cursor-pointer flex items-center gap-1"
               >
-                <Banknote className="w-3.5 h-3.5" /> Save Payout
+                <Banknote className="w-3.5 h-3.5" /> {submitting ? 'Saving…' : 'Save Payout'}
               </button>
             </div>
           </form>

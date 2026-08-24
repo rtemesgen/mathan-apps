@@ -5,6 +5,9 @@ const config: CapacitorConfig = {
   appName: 'Mathan ERP',
   webDir: '../frontend/dist',
   plugins: {
+    CapacitorSQLite: {
+      androidIsEncryption: true,
+    },
     SplashScreen: {
       launchShowDuration: 0,
     },

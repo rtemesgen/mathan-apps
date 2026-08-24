@@ -23,7 +23,7 @@ interface RecordTransactionModalProps {
     ownerId?: string;
     description: string;
     referenceNo?: string;
-}) => void;
+}) => Promise<void>;
 }
 
 export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
@@ -45,6 +45,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -57,12 +58,13 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) return;
+    if (isNaN(numAmount) || numAmount <= 0 || submitting) return;
+    setSubmitting(true);
 
-    onSubmit({
+    try { await onSubmit({
       truckId,
       date,
       type,
@@ -71,9 +73,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
       ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
       description: description || `${category} entry`,
       referenceNo,
-    });
-
-    onClose();
+    }); onClose(); } finally { setSubmitting(false); }
   };
 
   const handleTypeChange = (newType: TransactionType) => {
@@ -270,9 +270,10 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
             </button>
             <button
               type="submit"
+              disabled={submitting}
               className="px-6 py-2.5 rounded-xl bg-[#3f4d34] hover:bg-[#323e29] text-white font-bold shadow-xs transition-transform active:scale-95"
             >
-              Record Entry
+              {submitting ? 'Saving…' : 'Record Entry'}
             </button>
           </div>
         </form>

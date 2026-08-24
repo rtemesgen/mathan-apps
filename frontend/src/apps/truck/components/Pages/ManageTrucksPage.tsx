@@ -14,8 +14,8 @@ interface ManageTrucksPageProps {
     vin: string;
     cashOnHand: number;
     licensePlate: string;
-  }) => void;
-  onUpdateTruck: (truckData: Truck) => void;
+  }) => Promise<void>;
+  onUpdateTruck: (truckData: Truck) => Promise<void>;
   onDeleteTruck: (truckId: string) => void;
   onBack: () => void;
 }
@@ -37,6 +37,7 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
   const [licensePlate, setLicensePlate] = useState('');
   const [cashOnHand, setCashOnHand] = useState('');
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const resetForm = () => {
     setEditingTruck(null); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setLicensePlate(''); setCashOnHand('');
@@ -46,9 +47,10 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
     setEditingTruck(truck); setShowAddForm(true); setName(truck.name); setUnitNumber(truck.unitNumber); setMakeModel(truck.makeModel); setVin(truck.vin); setLicensePlate(truck.licensePlate); setCashOnHand(String(truck.cashOnHand));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !unitNumber.trim()) return;
+    if (!name.trim() || !unitNumber.trim() || submitting) return;
+    setSubmitting(true);
 
     const payload = {
       name,
@@ -58,10 +60,11 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
       licensePlate,
       cashOnHand: parseFloat(cashOnHand) || 0,
     };
-    if (editingTruck) onUpdateTruck({ ...editingTruck, ...payload });
-    else onAddTruck(payload);
-
-    resetForm();
+    try {
+      if (editingTruck) await onUpdateTruck({ ...editingTruck, ...payload });
+      else await onAddTruck(payload);
+      resetForm();
+    } finally { setSubmitting(false); }
   };
 
   return (
@@ -156,9 +159,10 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
               </button>
               <button
                 type="submit"
+                disabled={submitting}
                 className="px-4 py-1.5 rounded-lg bg-[#1c1d1f] hover:bg-[#2e2f33] text-white transition-colors font-bold text-xs shadow-2xs"
               >
-                {editingTruck ? 'Save Changes' : 'Save Truck'}
+                {submitting ? 'Saving…' : editingTruck ? 'Save Changes' : 'Save Truck'}
               </button>
             </div>
           </form>
