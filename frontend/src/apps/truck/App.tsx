@@ -1,12 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Truck, Owner, Transaction, TransactionType } from './types';
-import { calculateTruckFinancials, formatCurrency, formatDate } from './utils/formatters';
-import { createTruck, createTruckOwner, createTruckTransaction, createTruckTransactionBatch, deleteTruck, deleteTruckOwner, loadTruckData, loadTruckWorkspaceMembers, refreshTruckDataFromCloud, softDeleteTruckTransaction, updateTruck, updateTruckOwner, updateTruckTransaction } from './truckRepository';
+import React, { useState } from 'react';
+import { Truck, Owner, Transaction } from './types';
 import { useAuth } from '../../auth/AuthProvider';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
-import { usePersistenceStatus } from '../../hooks/usePersistenceStatus';
-import { PersistenceToast } from '../../components/PersistenceToast';
-import { syncQueue } from '../../lib/offlineSync';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { OwnerCard } from './components/OwnerCard';
@@ -20,29 +15,20 @@ import { CashReportView } from './components/Pages/CashReportView';
 import { DashboardView } from './components/Pages/DashboardView';
 import { AddPartnerModal } from './components/AddPartnerModal';
 import { RecordTransactionModal } from './components/Modals/RecordTransactionModal';
-import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
+import { DeleteConfirmModal } from '../../components/DeleteConfirmModal';
 import { TruckSelect } from './components/TruckSelect';
+import { useTruckData } from './useTruckData';
+import { useTruckMutations, type TruckDeleteRequest } from './useTruckMutations';
+import { useTruckFinancials } from './useTruckFinancials';
+import { useTruckPreferences } from './useTruckPreferences';
 import { UserPlus, Plus, Users, ArrowUpDown } from 'lucide-react';
 import './index.css';
 
 export default function App() {
   const { workspace, canEditApp, isGuest } = useAuth();
-  const [trucks, setTrucks] = useState<Truck[]>([]);
+  const { trucks, setTrucks, owners, setOwners, transactions, setTransactions, currentTruckId, setCurrentTruckId, members, loading, dataError, refresh } = useTruckData(workspace?.id, isGuest);
 
-  const [currentTruckId, setCurrentTruckId] = useState<string>(() => {
-    return '';
-  });
-
-  const [owners, setOwners] = useState<Owner[]>([]);
-
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-
-  const [currentView, setCurrentView] = useState<string>('dashboard');
-  const [sortBy, setSortBy] = useState<string>('balance');
-  const [calculationDate, setCalculationDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
-  });
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const { currentView, setCurrentView, sortBy, setSortBy, calculationDate, setCalculationDate, isSidebarOpen, setIsSidebarOpen } = useTruckPreferences(workspace?.id, currentTruckId, setCurrentTruckId);
 
   const [isAddPartnerModalOpen, setIsAddPartnerModalOpen] = useState<boolean>(false);
   const [editingOwner, setEditingOwner] = useState<Owner | null>(null);
@@ -66,210 +52,11 @@ export default function App() {
   });
 
   const editable = canEditApp('truck');
-  const [loading, setLoading] = useState(false);
-  const [members, setMembers] = useState<Array<{ user_id: string; email: string; display_name: string }>>([]);
   const [error, setError] = useState('');
-  const sharedPersistenceNotice = usePersistenceStatus('truck');
-  const preferencesReady = useRef(false);
-  const preferencesReadyKey = useRef('');
-  const preferenceKey = workspace ? `mathan_truck_preferences_${workspace.id}` : '';
-  useEffect(() => {
-    if (!preferencesReady.current || preferencesReadyKey.current !== preferenceKey || !preferenceKey) return;
-    localStorage.setItem(preferenceKey, JSON.stringify({ view: currentView, truckId: currentTruckId, date: calculationDate, sortBy }));
-  }, [preferenceKey, currentView, currentTruckId, calculationDate, sortBy]);
-  useEffect(() => {
-    preferencesReady.current = false;
-    preferencesReadyKey.current = '';
-    if (!preferenceKey) return;
-    try {
-      const saved = JSON.parse(localStorage.getItem(preferenceKey) ?? '{}') as { view?: string; truckId?: string; date?: string; sortBy?: string };
-      if (saved.view) setCurrentView(saved.view);
-      if (saved.truckId) setCurrentTruckId(saved.truckId);
-      if (saved.date) setCalculationDate(saved.date);
-      if (saved.sortBy) setSortBy(saved.sortBy);
-    } catch { /* preferences are optional */ }
-    preferencesReadyKey.current = preferenceKey;
-    preferencesReady.current = true;
-  }, [preferenceKey]);
-  const refresh = async () => { if (!workspace) return; setLoading(true); try { const data = await loadTruckData(workspace.id, true); setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); setCurrentTruckId((current) => data.trucks.some((truck) => truck.id === current) ? current : (data.trucks[0]?.id ?? '')); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load Truck data.'); } finally { setLoading(false); }
-    if (!isGuest && navigator.onLine) void syncQueue(workspace.id).then(() => refreshTruckDataFromCloud(workspace.id)).then((data) => { setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); }).catch(() => undefined);
-  };
-  useEffect(() => { void refresh(); if (workspace && !isGuest) void loadTruckWorkspaceMembers(workspace.id).then(setMembers).catch(() => undefined); else setMembers([]); }, [workspace?.id, isGuest]);
-  useEffect(() => { const handler = () => { if (workspace) void refresh(); }; window.addEventListener('online', handler); return () => window.removeEventListener('online', handler); }, [workspace?.id]);
+  const { activeTruck, activeTruckOwners, truckFinancials, sortedOwnerSummaries } = useTruckFinancials(trucks, owners, transactions, currentTruckId, calculationDate, sortBy);
 
-  const activeTruck = trucks.find((t) => t.id === currentTruckId) || trucks[0] || { id: '', name: 'No trucks yet', unitNumber: '', makeModel: '', vin: '', cashOnHand: 0, licensePlate: '' };
-
-  // Filter owners strictly for the active truck
-  const activeTruckOwners = owners.filter(
-    (o) => o.truckId === activeTruck.id || (!o.truckId && activeTruck.id === 'truck-1')
-  );
-
-  // Calculate current financials for active truck and its specific partners
-  const truckFinancials = calculateTruckFinancials(
-    activeTruck,
-    activeTruckOwners,
-    transactions.filter((t) => t.truckId === activeTruck.id),
-    calculationDate
-  );
-
-  // Sorting owner summaries according to active filter
-  const sortedOwnerSummaries = [...truckFinancials.ownerSummaries].sort((a, b) => {
-    if (sortBy === 'balance') {
-      return b.totalUnpaidMoneyOwed - a.totalUnpaidMoneyOwed;
-    } else if (sortBy === 'rate') {
-      return b.owner.monthlyDrawRate - a.owner.monthlyDrawRate;
-    } else if (sortBy === 'equity') {
-      return b.owner.equityPercentage - a.owner.equityPercentage;
-    } else if (sortBy === 'name') {
-      return a.owner.name.localeCompare(b.owner.name);
-    }
-    return 0;
-  });
-
-  // Handlers for cash & equity actions
-  const handleAddTransaction = async (txData: {
-    truckId: string;
-    date: string;
-    type: TransactionType;
-    category: string;
-    amount: number;
-    ownerId?: string;
-    description: string;
-    referenceNo?: string;
-  }) => {
-    if (!workspace || !editable) throw new Error('You do not have permission to edit Truck data.');
-    try { await createTruckTransaction(workspace.id, txData, isGuest); await refresh(); setError(''); }
-    catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not save Truck transaction.'; setError(message); throw reason; }
-  };
-
-  const handleUpdateTransaction = async (txData: Omit<Transaction, 'id'>) => {
-    if (!workspace || !editable || !editingTransaction) return;
-    try { await updateTruckTransaction(workspace.id, { ...editingTransaction, ...txData }, isGuest); await refresh(); setEditingTransaction(null); setError(''); }
-    catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not update Truck transaction.'; setError(message); throw reason; }
-  };
-
-  const handlePayOwnerSubmit = async (ownerId: string, amount: number, memo: string) => {
-    const targetOwner = owners.find((o) => o.id === ownerId);
-    await handleAddTransaction({
-      truckId: activeTruck.id,
-      date: calculationDate || new Date().toISOString().split('T')[0],
-      type: 'CAPITAL_REPAYMENT',
-      category: 'Owner Debt Clearance',
-      amount,
-      ownerId,
-      description: memo || `Debt repayment to ${targetOwner?.name || 'Owner'}`,
-      referenceNo: `PAY-${Math.floor(1000 + Math.random() * 9000)}`,
-    });
-  };
-
-  const handleExecuteProfitDistribution = async (allocations: { ownerId: string; amount: number }[]) => {
-    const today = calculationDate || new Date().toISOString().split('T')[0];
-    const batch: Omit<Transaction, 'id'>[] = allocations.flatMap(({ ownerId, amount }) => {
-      if (amount <= 0) return [];
-      const owner = owners.find((o) => o.id === ownerId);
-      return [{
-        truckId: activeTruck.id,
-        date: today,
-        type: 'PROFIT_DISTRIBUTION',
-        category: 'Profit Equity Dividend',
-        amount,
-        ownerId,
-        description: `${owner?.name || 'Owner'} ${owner?.equityPercentage}% Net Profit Distribution`,
-        referenceNo: `DIV-${Math.floor(1000 + Math.random() * 9000)}`,
-      }];
-    });
-    if (!workspace || !editable) throw new Error('You do not have permission to edit Truck data.');
-    try {
-      await createTruckTransactionBatch(workspace.id, batch, isGuest);
-      await refresh();
-      setError('');
-    } catch (reason) {
-      const message = reason instanceof Error ? reason.message : 'Could not save profit distribution.';
-      setError(message); throw reason;
-    }
-  };
-
-  const handleAddOrUpdateOwner = async (ownerData: {
-    id?: string;
-    truckId: string;
-    name: string;
-    startDate: string;
-    equityPercentage: number;
-    monthlyDrawRate: number;
-  }) => {
-    if (ownerData.id) {
-      const existing = owners.find((owner) => owner.id === ownerData.id);
-      if (workspace && editable && existing) { try { await updateTruckOwner(workspace.id, { ...existing, ...ownerData, id: ownerData.id }, isGuest); await refresh(); setError(''); } catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not update partner.'; setError(message); throw reason; } }
-    } else {
-      if (workspace && editable) { try { await createTruckOwner(workspace.id, { ...ownerData, truckId: ownerData.truckId || activeTruck.id, avatarColor: 'bg-slate-800 text-white' }, isGuest); await refresh(); setError(''); } catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not add partner.'; setError(message); throw reason; } }
-    }
-  };
-
-  const handleAddTruckSubmit = async (truckData: {
-    name: string;
-    unitNumber: string;
-    makeModel: string;
-    vin: string;
-    cashOnHand: number;
-    licensePlate: string;
-  }) => {
-    if (!workspace || !editable) throw new Error('You do not have permission to edit Truck data.');
-    try { const newTruck = await createTruck(workspace.id, truckData, isGuest); setCurrentTruckId(newTruck.id); await refresh(); setError(''); }
-    catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not add truck.'; setError(message); throw reason; }
-  };
-
-  const handleUpdateTruck = async (truckData: Truck) => {
-    if (!workspace || !editable) return;
-    try { await updateTruck(workspace.id, truckData, isGuest); await refresh(); setError(''); }
-    catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not update truck.'; setError(message); throw reason; }
-  };
-
-  const handleDeleteTruck = (truckId: string) => {
-    const truck = trucks.find((item) => item.id === truckId);
-    setDeleteModal({
-      isOpen: true,
-      title: 'Delete truck',
-      message: 'This removes the truck from active fleet lists. Its historical records remain recoverable.',
-      itemName: truck?.name ?? 'Truck',
-      itemDetails: truck ? `Unit ${truck.unitNumber} · ${truck.makeModel || 'Fleet vehicle'}` : undefined,
-      onConfirm: () => {
-        if (workspace && editable) void deleteTruck(workspace.id, truckId, isGuest).then(refresh).catch((reason) => { const message = reason instanceof Error ? reason.message : 'Could not delete truck.'; setError(message); });
-        setDeleteModal((previous) => ({ ...previous, isOpen: false }));
-      },
-    });
-  };
-
-  const handleDeleteTransaction = (txId: string) => {
-    const tx = transactions.find((t) => t.id === txId);
-    setDeleteModal({
-      isOpen: true,
-      title: 'Delete Transaction',
-      message: 'Do you want to delete this transaction record?',
-      itemName: tx ? `${tx.category || tx.type} • ${formatCurrency(tx.amount)}` : 'Transaction entry',
-      itemDetails: tx ? `Date: ${formatDate(tx.date)} • ${tx.description}` : undefined,
-      onConfirm: () => {
-        if (workspace && editable) void softDeleteTruckTransaction(workspace.id, txId, isGuest).then(refresh).catch((reason) => { const message = reason instanceof Error ? reason.message : 'Could not delete transaction.'; setError(message); });
-        setDeleteModal((prev) => ({ ...prev, isOpen: false }));
-      },
-    });
-  };
-
-  const handleDeleteOwner = (ownerId: string) => {
-    const owner = owners.find((o) => o.id === ownerId);
-    setDeleteModal({
-      isOpen: true,
-      title: 'Delete Partner',
-      message: 'Do you want to remove this partner from the fleet?',
-      itemName: owner ? `${owner.name} (${owner.equityPercentage}% Equity)` : 'Partner',
-      itemDetails: owner
-        ? `Monthly Draw: $${owner.monthlyDrawRate.toLocaleString()} • Truck: ${trucks.find((t) => t.id === owner.truckId)?.name || 'Active Unit'}`
-        : undefined,
-      onConfirm: () => {
-        if (workspace && editable) void deleteTruckOwner(workspace.id, ownerId, isGuest).then(refresh).catch((reason) => { const message = reason instanceof Error ? reason.message : 'Could not delete partner.'; setError(message); });
-        setDeleteModal((prev) => ({ ...prev, isOpen: false }));
-      },
-    });
-  };
+  const openDelete = (request: TruckDeleteRequest) => setDeleteModal({ isOpen: true, ...request, onConfirm: () => { request.onConfirm(); setDeleteModal((previous) => ({ ...previous, isOpen: false })); } });
+  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner } = useTruckMutations({ workspaceId: workspace?.id, isGuest, editable, trucks, owners, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
 
   const handleResetDemoData = () => setError('Demo reset is unavailable for cloud workspaces.');
 
@@ -323,7 +110,7 @@ export default function App() {
         />
 
         {/* Dynamic Main View Content (All views render as full pages) */}
-        <main className="mobile-content-safe flex-1 overflow-y-auto pb-16 sm:pb-8">{error && <div role="alert" className="mx-auto mt-3 max-w-3xl rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-800">{error}</div>}{sharedPersistenceNotice && <PersistenceToast state={sharedPersistenceNotice.state} label={sharedPersistenceNotice.label} />}{loading && <div className="mx-auto mt-3 max-w-3xl rounded-xl bg-white p-3 text-xs text-zinc-500">Loading Truck data…</div>}
+        <main className="mobile-content-safe flex-1 overflow-y-auto pb-16 sm:pb-8">{(error || dataError) && <div role="alert" className="mx-auto mt-3 max-w-3xl rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-800">{error || dataError}</div>}{loading && <div className="mx-auto mt-3 max-w-3xl rounded-xl bg-white p-3 text-xs text-zinc-500">Loading Truck data…</div>}
           {currentView === 'dashboard' && (
             <DashboardView
               trucks={trucks}
@@ -548,14 +335,14 @@ export default function App() {
       />
 
       {/* Global Confirmation Popup for Deleting */}
-      <ConfirmDeleteModal
+      <DeleteConfirmModal
         isOpen={deleteModal.isOpen}
         title={deleteModal.title}
         message={deleteModal.message}
         itemName={deleteModal.itemName}
         itemDetails={deleteModal.itemDetails}
         onConfirm={deleteModal.onConfirm}
-        onCancel={() => setDeleteModal((prev) => ({ ...prev, isOpen: false }))}
+        onClose={() => setDeleteModal((prev) => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

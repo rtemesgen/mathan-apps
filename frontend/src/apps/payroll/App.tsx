@@ -13,12 +13,10 @@ import { AddRaiseView } from './views/AddRaiseView';
 import { ReportsView } from './views/ReportsView';
 import { TransactionsView } from './views/TransactionsView';
 import { ManageEmployeesView } from './views/ManageEmployeesView';
-import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { useAuth } from '../../auth/AuthProvider';
 import { addEmployee, addRaise, addTransaction, removeEmployee, removeRaise, removeTransaction, updateEmployee, updateRaise, updateTransaction } from './payrollRepository';
-import { usePersistenceStatus } from '../../hooks/usePersistenceStatus';
-import { PersistenceToast } from '../../components/PersistenceToast';
+import { usePayrollRepository } from './payrollStore';
 
 const PAYROLL_TABS: ActiveTab[] = ['dashboard', 'add-employee', 'manage-employees', 'pay-salary', 'add-raise', 'reports', 'transactions'];
 
@@ -71,9 +69,7 @@ export default function App() {
     };
   }, [isSidebarOpen]);
 
-  const [employees, setEmployees] = useCloudSnapshot<Employee[]>('payroll', 'employees', []);
-  const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('payroll', 'transactions', []);
-  const persistenceNotice = usePersistenceStatus('payroll');
+  const { employees: [employees, setEmployees], transactions: [transactions, setTransactions] } = usePayrollRepository();
 
   // Global evaluation as-of date (defaults to today)
   const [asOfDate, setAsOfDate] = useState<string>(getTodayString());
@@ -199,7 +195,6 @@ export default function App() {
 
       {/* Main Content Workspace */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        {persistenceNotice && <PersistenceToast state={persistenceNotice.state} label={persistenceNotice.label} />}
         <TopNavbar
           activeTab={activeTab}
           asOfDate={asOfDate}

@@ -3,6 +3,7 @@ import { ArrowLeft, DollarSign, Calendar, Tag, FileText, User, Save, Truck as Tr
 import { Owner, TransactionType, Truck } from '../../types';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
 
 interface RecordTransactionPageProps {
   owners: Owner[];
@@ -40,15 +41,13 @@ export const RecordTransactionPage: React.FC<RecordTransactionPageProps> = ({
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, run } = useSubmitGuard();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0 || submitting) return;
-    setSubmitting(true);
-
-    try { await onSubmit({
+    await run(() => onSubmit({
       truckId,
       date,
       type,
@@ -57,7 +56,7 @@ export const RecordTransactionPage: React.FC<RecordTransactionPageProps> = ({
       ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
       description: description || `${category} entry`,
       referenceNo,
-    }); onBack(); } finally { setSubmitting(false); }
+    })).then(onBack);
   };
 
   const handleTypeChange = (newType: TransactionType) => {

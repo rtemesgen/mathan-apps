@@ -11,6 +11,7 @@ import { formatCurrency } from '../../utils/formatters';
 import { CategoryAutocomplete } from '../CategoryAutocomplete';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
 
 interface ExpensesPageProps {
   summary: TruckFinancialSummary;
@@ -70,7 +71,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [dividendPool, setDividendPool] = useState<string>(
     availableCash > 0 ? (availableCash * 0.5).toFixed(0) : '0'
   );
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, run } = useSubmitGuard();
 
   useEffect(() => {
     if (defaultTab) {
@@ -102,8 +103,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       return;
     }
 
-    setSubmitting(true);
-    try { await onSubmitExpense({
+    await run(() => onSubmitExpense({
       truckId,
       date: expenseDate,
       type: 'EXPENSE',
@@ -111,8 +111,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       amount: num,
       description: expenseDesc || (expenseVendor ? `${expenseVendor} - ${expenseCategory.trim()}` : expenseCategory.trim()),
       referenceNo: expenseRef || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
-    }); setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); }
-    finally { setSubmitting(false); }
+    })).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); });
   };
 
   const handlePayOwnerSubmit = async (e: React.FormEvent) => {
@@ -120,9 +119,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     const num = parseFloat(payAmount);
     if (isNaN(num) || num <= 0 || !currentPaySummary || submitting) return;
 
-    setSubmitting(true);
-    try { await onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo); setPayAmount(''); }
-    finally { setSubmitting(false); }
+    await run(() => onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo)).then(() => setPayAmount(''));
   };
 
   const handleProfitDividendSubmit = async (e: React.FormEvent) => {
@@ -135,9 +132,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       amount: Number(((pool * o.equityPercentage) / 100).toFixed(2)),
     }));
 
-    setSubmitting(true);
-    try { await onExecuteProfitDistribution(allocations); setDividendPool('0'); }
-    finally { setSubmitting(false); }
+    await run(() => onExecuteProfitDistribution(allocations)).then(() => setDividendPool('0'));
   };
 
   const poolAmount = parseFloat(dividendPool) || 0;

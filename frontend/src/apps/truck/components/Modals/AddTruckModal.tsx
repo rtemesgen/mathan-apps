@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Truck as TruckIcon, Plus, Check } from 'lucide-react';
 import { Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
+import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
 
 interface AddTruckModalProps {
   isOpen: boolean;
@@ -34,24 +35,21 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
   const [vin, setVin] = useState('');
   const [cashOnHand, setCashOnHand] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, run } = useSubmitGuard();
 
   if (!isOpen) return null;
 
   const handleSubmitNew = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !unitNumber.trim() || submitting) return;
-    setSubmitting(true);
-
-    try { await onAddTruck({
+    await run(() => onAddTruck({
       name,
       unitNumber,
       makeModel,
       vin,
       cashOnHand: parseFloat(cashOnHand) || 0,
       licensePlate: licensePlate || 'TRK-NEW',
-    }); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setCashOnHand(''); setLicensePlate(''); }
-    finally { setSubmitting(false); }
+    })).then(() => { setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setCashOnHand(''); setLicensePlate(''); });
   };
 
   return (

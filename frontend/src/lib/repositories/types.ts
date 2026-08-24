@@ -1,3 +1,5 @@
+import { emitToast } from '../toast';
+
 export type PersistenceState =
   | 'saving'
   | 'saved locally'
@@ -17,12 +19,19 @@ export type PersistenceNotice = {
   message?: string;
 };
 
+export const persistenceLabels: Record<PersistenceState, string> = {
+  saving: 'Saving locally…',
+  'saved locally': 'Saved on this device · Syncing…',
+  'offline saved': 'Saved offline · Will sync when online',
+  'sync pending': 'Saved on this device · Sync pending',
+  'storage error': 'Could not save locally · Your entries were kept',
+  'sync conflict': 'Sync conflict · Local data retained',
+};
+
 export function persistenceStateForEnvironment(): Extract<PersistenceState, 'saved locally' | 'offline saved'> {
   return typeof navigator !== 'undefined' && navigator.onLine ? 'saved locally' : 'offline saved';
 }
 
 export function reportPersistenceNotice(notice: PersistenceNotice) {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('mathan:persistence-status', { detail: notice }));
-  }
+  emitToast({ kind: 'persistence', notice });
 }

@@ -1,14 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useAsyncAction } from './useAsyncAction';
 
+/** @deprecated Use useAsyncAction for new forms. Kept while existing forms migrate. */
 export function useSubmitGuard() {
-  const active = useRef(false);
-  const [submitting, setSubmitting] = useState(false);
-  const run = useCallback(async (operation: () => void | Promise<void>) => {
-    if (active.current) return false;
-    active.current = true;
-    setSubmitting(true);
-    try { await operation(); return true; }
-    finally { active.current = false; setSubmitting(false); }
-  }, []);
-  return { submitting, run };
+  const { busy, run } = useAsyncAction();
+  return { submitting: busy, run };
 }

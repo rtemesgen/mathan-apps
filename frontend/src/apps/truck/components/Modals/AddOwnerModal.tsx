@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, UserPlus, PieChart, DollarSign, Calendar } from 'lucide-react';
 import { Owner } from '../../types';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
 
 interface AddOwnerModalProps {
   isOpen: boolean;
@@ -26,7 +27,7 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, run } = useSubmitGuard();
 
   useEffect(() => {
     if (editingOwner) {
@@ -47,15 +48,13 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || submitting) return;
-    setSubmitting(true);
-
-    try { await onSubmitOwner({
+    await run(() => onSubmitOwner({
       id: editingOwner ? editingOwner.id : undefined,
       name,
       startDate,
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
-    }); onClose(); } finally { setSubmitting(false); }
+    })).then(onClose);
   };
 
   return (

@@ -1,9 +1,7 @@
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
 import { useAuth, type AppId } from '../auth/AuthProvider';
-import { readOffline, writeOffline } from '../lib/localStore';
-import { supabase } from '../lib/supabase';
-import { enqueueMutation, getQueuedMutations } from '../lib/syncQueue';
 import { syncQueue } from '../lib/offlineSync';
+import { hydrateSnapshot, persistSnapshot, readSnapshot, type SnapshotRepositoryContext } from '../lib/repositories/snapshotRepository';
 import { reportPersistenceNotice, type PersistenceState } from '../lib/repositories/types';
 
 export { syncQueue } from '../lib/offlineSync';
@@ -25,31 +23,17 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
   useEffect(() => {
     let active = true; hydrated.current = false; setReady(false);
     void (async () => {
-      const local = await readOffline<T>(storageKey);
-      const localValue = local !== null ? local : initialValueRef.current;
+      const local = await readSnapshot(storageKey, initialValueRef.current);
+      const localValue = local.value;
       lastHydratedValue.current = JSON.stringify(localValue);
       if (active) setValue(localValue);
-      revision.current = (await readOffline<number>(`${storageKey}:revision`)) ?? 0;
+      revision.current = local.revision;
       if (active) { hydrated.current = true; setReady(true); }
       if (workspace && !standalone && navigator.onLine) {
         void (async () => {
-          await syncQueue(workspace.id);
-          const { data } = await supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', workspace.id).eq('domain', `${domain}:${key}`).maybeSingle();
-          const remote = data as unknown as { payload?: T; revision?: number } | null;
-          const queued = await getQueuedMutations();
-          const relevantMutations = queued.filter((mutation) => mutation.companyId === workspace.id && mutation.table === 'app_state_snapshots' && mutation.entityId === `${domain}:${key}`);
-          const hasPendingLocalEdit = relevantMutations.length > 0;
-          if (relevantMutations.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error')) reportPersistenceNotice({ app: domain, state: 'sync conflict' });
-          else if (hasPendingLocalEdit) reportPersistenceNotice({ app: domain, state: 'sync pending' });
-          if (!hasPendingLocalEdit && remote?.revision !== undefined && remote.revision > revision.current) {
-            revision.current = remote.revision;
-            await writeOffline(`${storageKey}:revision`, remote.revision);
-            if (active && remote.payload !== undefined) {
-              lastHydratedValue.current = JSON.stringify(remote.payload);
-              setValue(remote.payload);
-              await writeOffline(storageKey, remote.payload);
-            }
-          }
+          const context: SnapshotRepositoryContext = { storageKey, workspaceId: workspace.id, userId: user?.id, standalone, domain, key };
+          const hydrated = await hydrateSnapshot<T>(context, revision.current);
+          if (hydrated.value !== undefined && active) { revision.current = hydrated.revision; lastHydratedValue.current = JSON.stringify(hydrated.value); setValue(hydrated.value); }
         })().catch(() => undefined);
       }
     })();
@@ -64,20 +48,9 @@ export function useCloudSnapshot<T>(domain: 'cash_book' | 'payroll', key: string
       setPersistenceStatus('saving');
       reportPersistenceNotice({ app: domain, state: 'saving' });
       try {
-        await writeOffline(storageKey, value);
-        if (standalone) {
-          setPersistenceStatus('offline saved');
-          reportPersistenceNotice({ app: domain, state: 'offline saved' });
-          return;
-        }
-        const payload = { workspace_id: workspace.id, domain: `${domain}:${key}`, payload: value, expected_revision: revision.current };
-        const mutationId = crypto.randomUUID();
-        await enqueueMutation({ mutationId, userId: user?.id ?? 'unknown', companyId: workspace.id, entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: revision.current, table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId } });
-        const persistence = navigator.onLine ? 'saved locally' : 'offline saved';
+        const context: SnapshotRepositoryContext = { storageKey, workspaceId: workspace?.id, userId: user?.id, standalone, domain, key };
+        const persistence = await persistSnapshot(context, value, revision.current);
         setPersistenceStatus(persistence);
-        reportPersistenceNotice({ app: domain, state: persistence });
-        window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: navigator.onLine ? 'syncing' : 'offline' } }));
-        if (navigator.onLine) void syncQueue(workspace.id).catch(() => undefined);
       } catch {
         setPersistenceStatus('storage error');
         reportPersistenceNotice({ app: domain, state: 'storage error' });

@@ -7,6 +7,7 @@ export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | '
 const now = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+
 export function createBook(input: NewBook, timestamp = now()): RepositoryResult<Book> {
   return { data: { ...input, id: id('book'), createdAt: timestamp, updatedAt: timestamp }, persistence: 'saving' };
 }

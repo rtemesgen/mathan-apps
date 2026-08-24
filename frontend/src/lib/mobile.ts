@@ -3,6 +3,7 @@ import { Share } from '@capacitor/share';
 import { Toast } from '@capacitor/toast';
 import { registerPlugin } from '@capacitor/core';
 import { jsPDF } from 'jspdf';
+import { emitToast } from './toast';
 
 export const isNativeMobile = () => Capacitor.isNativePlatform();
 
@@ -11,7 +12,7 @@ export function showAppToast(message: string) {
     void Toast.show({ text: message, duration: 'short' });
     return;
   }
-  window.dispatchEvent(new CustomEvent('mathan:toast', { detail: message }));
+  emitToast({ kind: 'message', message });
 }
 
 const LATEST_RELEASE_APK_URL = 'https://github.com/rtemesgen/mathan-apps/releases/latest/download/app-release.apk';

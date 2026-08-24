@@ -3,6 +3,7 @@ import { Save, Truck as TruckIcon } from 'lucide-react';
 import { Owner, Truck } from '../../types';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
 
 interface AddOwnerPageProps {
   editingOwner?: Owner | null;
@@ -31,7 +32,7 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, run } = useSubmitGuard();
 
   useEffect(() => {
     if (editingOwner) {
@@ -52,19 +53,14 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || submitting) return;
-    setSubmitting(true);
-
-    try {
-      await onSubmitOwner({
+    await run(() => onSubmitOwner({
       id: editingOwner ? editingOwner.id : undefined,
       truckId: assignedTruckId || currentTruckId,
       name,
       startDate,
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
-      });
-      onBack();
-    } finally { setSubmitting(false); }
+      })).then(onBack);
   };
 
   return (

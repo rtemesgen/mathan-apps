@@ -6,7 +6,6 @@ import { BookDetailView } from './components/BookDetailView';
 import { AddBookModal } from './components/AddBookModal';
 import { TransactionModal } from './components/TransactionModal';
 import { CashBookSidebar } from './components/Sidebar';
-import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { showAppToast } from '../../lib/mobile';
 import { ImportBookModal } from './components/ImportBookModal';
@@ -14,13 +13,10 @@ import { RenameBookModal } from './components/RenameBookModal';
 import { DeleteBookModal } from './components/DeleteBookModal';
 import { AddMembersModal } from './components/AddMembersModal';
 import { createBook, createTransaction, removeBook, removeTransaction, renameBook } from './cashBookRepository';
-import { usePersistenceStatus } from '../../hooks/usePersistenceStatus';
-import { PersistenceToast } from '../../components/PersistenceToast';
+import { useCashBookRepository } from './cashBookStore';
 
 export default function App() {
-  const [books, setBooks] = useCloudSnapshot<Book[]>('cash_book', 'books', []);
-  const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('cash_book', 'transactions', []);
-  const sharedPersistenceNotice = usePersistenceStatus('cash_book');
+  const { books: [books, setBooks], transactions: [transactions, setTransactions] } = useCashBookRepository();
 
 
   // Active Selected Book (null = Dashboard, string = Book Detail View)
@@ -162,7 +158,6 @@ export default function App() {
       />
 
       <div className="flex flex-1 min-h-0">
-        {sharedPersistenceNotice && <PersistenceToast state={sharedPersistenceNotice.state} label={sharedPersistenceNotice.label} />}
         {isSidebarOpen && <div className="hidden lg:block shrink-0"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div>}
         {isSidebarOpen && <div className="lg:hidden fixed inset-0 z-[100] flex"><button aria-label="Close Cash Book menu" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-0 bg-black/40" /><div className="mobile-sidebar-drawer relative z-10 h-[100dvh] max-h-[100dvh] w-72 overflow-y-auto overscroll-contain shadow-2xl"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div></div>}
         <main className="mobile-content-safe flex-1 min-w-0 pb-16 sm:pb-6">

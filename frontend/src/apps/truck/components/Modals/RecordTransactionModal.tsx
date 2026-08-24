@@ -4,6 +4,7 @@ import { Owner, Transaction, TransactionType, Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
 
 interface RecordTransactionModalProps {
   isOpen: boolean;
@@ -45,7 +46,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, run } = useSubmitGuard();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -62,9 +63,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
     e.preventDefault();
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0 || submitting) return;
-    setSubmitting(true);
-
-    try { await onSubmit({
+    await run(() => onSubmit({
       truckId,
       date,
       type,
@@ -73,7 +72,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
       ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
       description: description || `${category} entry`,
       referenceNo,
-    }); onClose(); } finally { setSubmitting(false); }
+    })).then(onClose);
   };
 
   const handleTypeChange = (newType: TransactionType) => {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Truck as TruckIcon, Plus, Check, Edit2, Trash2 } from 'lucide-react';
 import { Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
+import { useSubmitGuard } from '../../../../hooks/useSubmitGuard';
 
 interface ManageTrucksPageProps {
   trucks: Truck[];
@@ -37,7 +38,7 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
   const [licensePlate, setLicensePlate] = useState('');
   const [cashOnHand, setCashOnHand] = useState('');
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, run } = useSubmitGuard();
 
   const resetForm = () => {
     setEditingTruck(null); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setLicensePlate(''); setCashOnHand('');
@@ -50,8 +51,6 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !unitNumber.trim() || submitting) return;
-    setSubmitting(true);
-
     const payload = {
       name,
       unitNumber,
@@ -60,11 +59,11 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
       licensePlate,
       cashOnHand: parseFloat(cashOnHand) || 0,
     };
-    try {
+    await run(async () => {
       if (editingTruck) await onUpdateTruck({ ...editingTruck, ...payload });
       else await onAddTruck(payload);
       resetForm();
-    } finally { setSubmitting(false); }
+    });
   };
 
   return (
