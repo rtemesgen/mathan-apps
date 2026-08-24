@@ -52,6 +52,8 @@ assert.ok(snapshotSource.indexOf('relevant.length > 0') < snapshotSource.indexOf
 const snapshotHookSource = read('hooks/useCloudSnapshot.ts');
 assert.ok(snapshotHookSource.indexOf('await persistSnapshot(context, nextValue') < snapshotHookSource.indexOf('setValue(nextValue)'), 'snapshot state must update after durable persistence');
 assert.match(read('apps/book/components/AddBookModal.tsx'), /useSubmitGuard/);
+assert.match(read('apps/book/components/ImportBookModal.tsx'), /useSubmitGuard/);
+assert.match(read('apps/book/components/AddMembersModal.tsx'), /useSubmitGuard/);
 assert.match(read('apps/payroll/views/PaySalaryView.tsx'), /useSubmitGuard/);
 assert.match(read('apps/truck/components/AddPartnerModal.tsx'), /useSubmitGuard/);
 
