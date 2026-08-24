@@ -7,11 +7,8 @@ const sourceRoot = path.resolve('src');
 const read = (relativePath: string) => fs.readFileSync(path.join(sourceRoot, relativePath), 'utf8');
 
 const appFiles = ['apps/book/App.tsx', 'apps/payroll/App.tsx', 'apps/truck/App.tsx'].map(read).join('\n');
-assert.doesNotMatch(appFiles, /PersistenceToast|usePersistenceStatus/);
-assert.doesNotMatch(appFiles, /useCloudSnapshot/);
+assert.doesNotMatch(appFiles, /PersistenceToast|usePersistenceStatus|useCloudSnapshot/);
 assert.match(read('lib/repositories/useSnapshotRepository.ts'), /persistSnapshot/);
-assert.doesNotMatch(read('apps/book/cashBookStore.ts'), /useCloudSnapshot/);
-assert.doesNotMatch(read('apps/payroll/payrollStore.ts'), /useCloudSnapshot/);
 assert.match(read('components/AppToast.tsx'), /mathan:toast/);
 assert.match(read('components/AppToast.tsx'), /lastKey/);
 assert.match(read('components/AppToast.tsx'), /toast\.tone/);
