@@ -16,6 +16,7 @@ assert.match(read('apps/truck/components/Modals/ExportModal.tsx'), /downloadCsvF
 assert.match(read('apps/payroll/views/ReportsView.tsx'), /downloadCsvFile/);
 assert.match(read('apps/truck/components/Pages/ExportPage.tsx'), /exportPdfFile/);
 assert.match(read('apps/truck/components/Pages/ExportPage.tsx'), /downloadCsvFile/);
+assert.match(read('components/CompanySelector.tsx'), /useSubmitGuard/);
 assert.match(read('lib/repositories/snapshotRepository.ts'), /snapshotTails/);
 assert.match(read('lib/repositories/snapshotRepository.ts'), /relevant\.length > 0/);
 assert.match(read('hooks/useAsyncAction.ts'), /gate\.current/);
