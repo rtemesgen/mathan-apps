@@ -13,9 +13,10 @@
     "test:admin-backup": "node --import tsx tests/admin-backup.test.ts",
     "test:truck": "node --import tsx tests/truck-financials.test.ts",
     "test:repositories": "node --import tsx tests/repositories.test.ts",
+    "test:sqlite-json": "node --import tsx tests/sqlite-json.test.ts",
     "test:architecture": "node --import tsx tests/architecture.test.ts",
     "test:e2e": "playwright test",
-    "test": "npm run lint && npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:architecture"
+    "test": "npm run lint && npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:architecture"
   },
   "dependencies": {
     "@capacitor-community/contacts": "^7.2.0",

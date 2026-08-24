@@ -1,4 +1,5 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
+import { isJsonSerializable, jsonHash, jsonValue } from './sqliteJson';
 
 const DATABASE_NAME = 'mathan-erp-offline';
 const DATABASE_VERSION = 1;
@@ -8,22 +9,6 @@ export type LegacyEntry = { key: string; value: unknown };
 
 let connection: SQLiteConnection | null = null;
 let databasePromise: Promise<SQLiteDBConnection> | null = null;
-
-function jsonValue(value: unknown): string | null {
-  try {
-    const serialized = JSON.stringify(value);
-    return serialized === undefined ? null : serialized;
-  } catch {
-    return null;
-  }
-}
-
-async function jsonHash(value: unknown) {
-  const serialized = jsonValue(value);
-  if (serialized === null) return null;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(serialized));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
 
 function nativeDatabaseConnection() {
   connection ??= new SQLiteConnection(CapacitorSQLite);
@@ -135,4 +120,4 @@ export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: Leg
   await writeNativeMetadata(MIGRATION_KEY, true);
 }
 
-export function isJsonSerializable(value: unknown) { return jsonValue(value) !== null; }
+export { isJsonSerializable } from './sqliteJson';
