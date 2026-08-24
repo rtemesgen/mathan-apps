@@ -196,7 +196,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           </table>
         </div>
       </div>
-      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message="Are you sure you want to delete this payroll transaction?" onClose={() => setTransactionToDelete(null)} onConfirm={async () => { if (transactionToDelete) await onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message="Are you sure you want to delete this payroll transaction?" onClose={() => setTransactionToDelete(null)} onConfirm={async () => { if (transactionToDelete) await onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} successMessage="Payroll transaction deleted successfully." />
     </div>
   );
 };

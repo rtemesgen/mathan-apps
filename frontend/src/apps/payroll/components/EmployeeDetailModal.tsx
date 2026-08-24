@@ -216,7 +216,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                       <button type="button" disabled={submitting} onClick={() => { if (editingRaise.effectiveDate && editingRaise.reason.trim() && !submitting) void run(() => onUpdateRaise?.(employee.id, { ...editingRaise, reason: editingRaise.reason.trim() })).then(() => setEditingRaise(null)); }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> {submitting ? 'Saving…' : 'Save'}</button>
                     </div>}
                   </div>
-                  <DeleteConfirmModal isOpen={confirmDeleteRaise === change.id} title="Delete salary raise?" message="Are you sure you want to delete this salary raise?" onClose={() => setConfirmDeleteRaise(null)} onConfirm={async () => { await onDeleteRaise?.(employee.id, change.id); setConfirmDeleteRaise(null); }} />
+                  <DeleteConfirmModal isOpen={confirmDeleteRaise === change.id} title="Delete salary raise?" message="Are you sure you want to delete this salary raise?" onClose={() => setConfirmDeleteRaise(null)} onConfirm={async () => { await onDeleteRaise?.(employee.id, change.id); setConfirmDeleteRaise(null); }} successMessage="Salary raise deleted successfully." />
                   </React.Fragment>
                 ))}
               </div>
@@ -232,7 +232,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                 </div>
               ) : (
                 <>
-                <DeleteConfirmModal isOpen={!!confirmDeleteTransaction} title="Delete payment record?" message="Are you sure you want to delete this payment record?" onClose={() => setConfirmDeleteTransaction(null)} onConfirm={async () => { if (confirmDeleteTransaction) await (onRemoveTransaction ?? onDeleteTransaction)?.(confirmDeleteTransaction); setConfirmDeleteTransaction(null); }} />
+                  <DeleteConfirmModal isOpen={!!confirmDeleteTransaction} title="Delete payment record?" message="Are you sure you want to delete this payment record?" onClose={() => setConfirmDeleteTransaction(null)} onConfirm={async () => { if (confirmDeleteTransaction) await (onRemoveTransaction ?? onDeleteTransaction)?.(confirmDeleteTransaction); setConfirmDeleteTransaction(null); }} successMessage="Payroll payment deleted successfully." />
                 <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>

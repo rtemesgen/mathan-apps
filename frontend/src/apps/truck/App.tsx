@@ -343,6 +343,7 @@ export default function App() {
         itemDetails={deleteModal.itemDetails}
         onConfirm={deleteModal.onConfirm}
         onClose={() => setDeleteModal((prev) => ({ ...prev, isOpen: false }))}
+        successMessage="Truck record deleted successfully."
       />
     </div>
   );
