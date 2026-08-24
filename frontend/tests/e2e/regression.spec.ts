@@ -61,6 +61,29 @@ test('Cash Book records survive switching apps and an offline reload', async ({ 
   await context.setOffline(false);
 });
 
+test('Payroll employees survive switching apps and an offline reload', async ({ page, context }) => {
+  await signIn(page, 'member');
+  await page.getByLabel('Payroll').click();
+  await expect(page.getByText('Payroll Tracker').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Add Employee', exact: true }).first().click();
+  await page.getByPlaceholder('e.g. Sarah Jenkins').fill('Payroll Persistence Employee');
+  await page.getByPlaceholder('Enter amount').fill('5000');
+  await page.getByRole('button', { name: 'Save Employee' }).click();
+  await expect(page.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
+
+  await page.goto('/book');
+  await expect(page.getByText('Cash Book Overview')).toBeVisible();
+  await page.goto('/payroll');
+  await page.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
+  await expect(page.getByText('Payroll Persistence Employee', { exact: true })).toBeVisible();
+
+  await context.setOffline(true);
+  await page.reload();
+  await page.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
+  await expect(page.getByText('Payroll Persistence Employee', { exact: true })).toBeVisible();
+  await context.setOffline(false);
+});
+
 test('all synced companies and their app data remain accessible offline', async ({ page, context }) => {
   await signIn(page, 'member');
   await page.waitForFunction(async () => {
