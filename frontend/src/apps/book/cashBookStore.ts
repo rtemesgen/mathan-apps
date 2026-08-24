@@ -1,11 +1,11 @@
-import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
+import { useSnapshotRepository } from '../../lib/repositories/useSnapshotRepository';
 import type { Book, Transaction } from './types';
 import { saveImportedBooks, saveNewBook, saveNewTransactionAndTouchBook, saveRemovedBook, saveRemovedTransaction, saveRenamedBook, type CashBookImport } from './cashBookRepository';
 
 /** React adapter for Cash Book persistence; storage and sync remain in shared infrastructure. */
 export function useCashBookRepository() {
-  const books = useCloudSnapshot<Book[]>('cash_book', 'books', []);
-  const transactions = useCloudSnapshot<Transaction[]>('cash_book', 'transactions', []);
+  const books = useSnapshotRepository<Book[]>('cash_book', 'books', []);
+  const transactions = useSnapshotRepository<Transaction[]>('cash_book', 'transactions', []);
   const saveBooks = books[4];
   const saveTransactions = transactions[4];
   return {

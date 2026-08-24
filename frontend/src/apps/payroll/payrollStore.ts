@@ -1,11 +1,11 @@
-import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
+import { useSnapshotRepository } from '../../lib/repositories/useSnapshotRepository';
 import type { Employee, Transaction } from './types';
 import { saveEmployee, saveEmployeeRaise, savePayrollTransaction, saveRemovedEmployee, saveRemovedPayrollTransaction, saveRemovedRaise, saveUpdatedRaise } from './payrollRepository';
 
 /** React adapter for Payroll persistence; storage and sync remain in shared infrastructure. */
 export function usePayrollRepository() {
-  const employees = useCloudSnapshot<Employee[]>('payroll', 'employees', []);
-  const transactions = useCloudSnapshot<Transaction[]>('payroll', 'transactions', []);
+  const employees = useSnapshotRepository<Employee[]>('payroll', 'employees', []);
+  const transactions = useSnapshotRepository<Transaction[]>('payroll', 'transactions', []);
   const persistEmployees = employees[4];
   const persistTransactions = transactions[4];
   return {

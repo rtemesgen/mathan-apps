@@ -9,6 +9,9 @@ const read = (relativePath: string) => fs.readFileSync(path.join(sourceRoot, rel
 const appFiles = ['apps/book/App.tsx', 'apps/payroll/App.tsx', 'apps/truck/App.tsx'].map(read).join('\n');
 assert.doesNotMatch(appFiles, /PersistenceToast|usePersistenceStatus/);
 assert.doesNotMatch(appFiles, /useCloudSnapshot/);
+assert.match(read('lib/repositories/useSnapshotRepository.ts'), /persistSnapshot/);
+assert.doesNotMatch(read('apps/book/cashBookStore.ts'), /useCloudSnapshot/);
+assert.doesNotMatch(read('apps/payroll/payrollStore.ts'), /useCloudSnapshot/);
 assert.match(read('components/AppToast.tsx'), /mathan:toast/);
 assert.match(read('components/AppToast.tsx'), /lastKey/);
 assert.match(read('components/AppToast.tsx'), /toast\.tone/);
@@ -71,7 +74,7 @@ assert.equal(gate.isActive(), false, 'action gate must release after completion'
 const snapshotSource = read('lib/repositories/snapshotRepository.ts');
 assert.ok(snapshotSource.indexOf('await offlineStore.write(context.storageKey, value)') < snapshotSource.indexOf('await enqueueMutation('), 'snapshot data must be durable before queueing');
 assert.ok(snapshotSource.indexOf('relevant.length > 0') < snapshotSource.indexOf('await offlineStore.write(context.storageKey, remote.payload)'), 'pending local snapshots must be protected from cloud hydration');
-const snapshotHookSource = read('hooks/useCloudSnapshot.ts');
+const snapshotHookSource = read('lib/repositories/useSnapshotRepository.ts');
 assert.ok(snapshotHookSource.indexOf('await persistSnapshot(context, nextValue') < snapshotHookSource.indexOf('setValue(nextValue)'), 'snapshot state must update after durable persistence');
 assert.match(read('apps/book/components/AddBookModal.tsx'), /useSubmitGuard/);
 assert.match(read('apps/book/components/ImportBookModal.tsx'), /useSubmitGuard/);
