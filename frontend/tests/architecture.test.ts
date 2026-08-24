@@ -84,5 +84,14 @@ assert.match(read('apps/payroll/views/PaySalaryView.tsx'), /useSubmitGuard/);
 assert.match(read('apps/truck/components/AddPartnerModal.tsx'), /useSubmitGuard/);
 assert.match(read('apps/truck/components/Pages/RecordTransactionPage.tsx'), /useTruckTransactionForm/);
 assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /useTruckTransactionForm/);
+for (const obsolete of [
+  'apps/payroll/components/AddEmployeeModal.tsx',
+  'apps/payroll/components/AddRaiseModal.tsx',
+  'apps/payroll/components/RecordWithdrawalModal.tsx',
+  'apps/truck/components/Modals/DistributeProfitModal.tsx',
+  'apps/truck/components/Modals/PayOwnerModal.tsx',
+  'apps/truck/components/Pages/PayOwnerPage.tsx',
+  'apps/truck/components/Pages/DistributeProfitPage.tsx',
+]) assert.equal(fs.existsSync(path.join(sourceRoot, obsolete)), false, `${obsolete} must not return as an unguarded duplicate form`);
 
 console.log('Architecture boundary tests passed.');
