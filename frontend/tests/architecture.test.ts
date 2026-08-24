@@ -21,11 +21,15 @@ assert.match(read('lib/offlineSync.ts'), /replaceQueue\(remaining, ordered\.map/
 assert.match(read('apps/truck/App.tsx'), /from ['"]\.\.\/\.\.\/components\/DeleteConfirmModal/);
 assert.doesNotMatch(read('apps/truck/App.tsx'), /components\/ConfirmDeleteModal/);
 assert.match(read('apps/book/cashBookRepository.ts'), /export function createBook/);
+assert.match(read('apps/book/cashBookRepository.ts'), /export async function saveNewBook/);
 assert.match(read('apps/payroll/payrollRepository.ts'), /export function addEmployee/);
+assert.match(read('apps/payroll/payrollRepository.ts'), /export async function saveEmployee/);
 assert.match(read('apps/truck/truckRepository.ts'), /withCacheLock/);
 assert.match(read('apps/truck/useTruckData.ts'), /refreshTruckDataFromCloud/);
 assert.doesNotMatch(read('apps/truck/App.tsx'), /from ['"]\.\/truckRepository/);
 assert.match(read('apps/truck/useTruckMutations.ts'), /createTruckTransactionBatch/);
+assert.doesNotMatch(read('apps/book/App.tsx'), /setBooks/);
+assert.doesNotMatch(read('apps/payroll/App.tsx'), /setEmployees/);
 assert.match(read('apps/truck/useTruckFinancials.ts'), /calculateTruckFinancials/);
 assert.match(read('apps/truck/useTruckPreferences.ts'), /mathan_truck_preferences_/);
 

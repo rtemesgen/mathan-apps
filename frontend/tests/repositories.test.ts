@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createBook, createTransaction, removeBook } from '../src/apps/book/cashBookRepository';
-import { addEmployee, addRaise, removeEmployee } from '../src/apps/payroll/payrollRepository';
+import { createBook, createTransaction, removeBook, saveNewBook, saveNewTransaction, saveRemovedBook } from '../src/apps/book/cashBookRepository';
+import { addEmployee, addRaise, removeEmployee, saveEmployee, savePayrollTransaction, saveRemovedEmployee } from '../src/apps/payroll/payrollRepository';
 import type { Book, Transaction as BookTransaction } from '../src/apps/book/types';
 import type { Employee, SalaryChange, Transaction as PayrollTransaction } from '../src/apps/payroll/types';
 
@@ -17,4 +17,30 @@ assert.deepEqual(removeBook('b1', [book], [bookTx]).data, { books: [], transacti
 assert.equal(addEmployee(employee, []).data[0].id, 'e1');
 assert.equal(addRaise('e1', raise, [employee]).data[0].salaryHistory[0].newMonthlySalary, 1100);
 assert.deepEqual(removeEmployee('e1', [employee], [payrollTx]).data, { employees: [], transactions: [] });
+
+const persistedBooks: Book[][] = [];
+const persistBooks = async (next: Book[]) => { persistedBooks.push(next); return 'saved locally' as const; };
+const persistedBookTransactions: BookTransaction[][] = [];
+const persistBookTransactions = async (next: BookTransaction[]) => { persistedBookTransactions.push(next); return 'offline saved' as const; };
+const created = await saveNewBook({ name: 'Persisted', currency: 'USD' }, [book], persistBooks);
+assert.equal(created.data.name, 'Persisted');
+assert.equal(created.persistence, 'saved locally');
+assert.equal(persistedBooks[0][0].id, created.data.id);
+await saveNewTransaction('b1', 'in', { amount: 25, remark: 'invoice', dateTime: '2026-01-02T00:00' }, [bookTx], persistBookTransactions);
+assert.equal(persistedBookTransactions[0][0].remark, 'invoice');
+await saveRemovedBook('b1', [book], [bookTx], persistBooks, persistBookTransactions);
+assert.deepEqual(persistedBooks.at(-1), []);
+assert.deepEqual(persistedBookTransactions.at(-1), []);
+
+const persistedEmployees: Employee[][] = [];
+const persistEmployees = async (next: Employee[]) => { persistedEmployees.push(next); return 'saved locally' as const; };
+const persistedPayrollTransactions: PayrollTransaction[][] = [];
+const persistPayrollTransactions = async (next: PayrollTransaction[]) => { persistedPayrollTransactions.push(next); return 'offline saved' as const; };
+await saveEmployee(employee, [], persistEmployees);
+assert.equal(persistedEmployees[0][0].id, employee.id);
+await savePayrollTransaction(payrollTx, [], persistPayrollTransactions);
+assert.equal(persistedPayrollTransactions[0][0].id, payrollTx.id);
+await saveRemovedEmployee('e1', [employee], [payrollTx], persistEmployees, persistPayrollTransactions);
+assert.deepEqual(persistedEmployees.at(-1), []);
+assert.deepEqual(persistedPayrollTransactions.at(-1), []);
 console.log('Repository transformation tests passed.');

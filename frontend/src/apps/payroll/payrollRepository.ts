@@ -1,5 +1,7 @@
 import type { Employee, SalaryChange, Transaction } from './types';
-import type { RepositoryResult } from '../../lib/repositories/types';
+import type { PersistenceState, RepositoryResult } from '../../lib/repositories/types';
+
+type Persist<T> = (next: T) => Promise<PersistenceState>;
 
 export function addEmployee(employee: Employee, employees: Employee[]): RepositoryResult<Employee[]> {
   return { data: [employee, ...employees], persistence: 'saving' };
@@ -41,4 +43,42 @@ export function removeRaise(employeeId: string, raiseId: string, employees: Empl
   return { data: employees.map((employee) => employee.id === employeeId
     ? { ...employee, salaryHistory: employee.salaryHistory.filter((item) => item.id !== raiseId) }
     : employee), persistence: 'saving' };
+}
+
+/** Payroll mutations own their next-state calculation; shared storage owns durability and synchronization. */
+export async function saveEmployee(employee: Employee, employees: Employee[], persistEmployees: Persist<Employee[]>) {
+  const result = employees.some((item) => item.id === employee.id) ? updateEmployee(employee, employees) : addEmployee(employee, employees);
+  return { ...result, persistence: await persistEmployees(result.data) };
+}
+
+export async function saveRemovedEmployee(employeeId: string, employees: Employee[], transactions: Transaction[], persistEmployees: Persist<Employee[]>, persistTransactions: Persist<Transaction[]>) {
+  const result = removeEmployee(employeeId, employees, transactions);
+  await persistEmployees(result.data.employees);
+  const persistence = await persistTransactions(result.data.transactions);
+  return { ...result, persistence };
+}
+
+export async function saveEmployeeRaise(employeeId: string, raise: SalaryChange, employees: Employee[], persistEmployees: Persist<Employee[]>) {
+  const result = addRaise(employeeId, raise, employees);
+  return { ...result, persistence: await persistEmployees(result.data) };
+}
+
+export async function savePayrollTransaction(transaction: Transaction, transactions: Transaction[], persistTransactions: Persist<Transaction[]>) {
+  const result = transactions.some((item) => item.id === transaction.id) ? updateTransaction(transaction, transactions) : addTransaction(transaction, transactions);
+  return { ...result, persistence: await persistTransactions(result.data) };
+}
+
+export async function saveRemovedPayrollTransaction(transactionId: string, transactions: Transaction[], persistTransactions: Persist<Transaction[]>) {
+  const result = removeTransaction(transactionId, transactions);
+  return { ...result, persistence: await persistTransactions(result.data) };
+}
+
+export async function saveUpdatedRaise(employeeId: string, raise: SalaryChange, employees: Employee[], persistEmployees: Persist<Employee[]>) {
+  const result = updateRaise(employeeId, raise, employees);
+  return { ...result, persistence: await persistEmployees(result.data) };
+}
+
+export async function saveRemovedRaise(employeeId: string, raiseId: string, employees: Employee[], persistEmployees: Persist<Employee[]>) {
+  const result = removeRaise(employeeId, raiseId, employees);
+  return { ...result, persistence: await persistEmployees(result.data) };
 }

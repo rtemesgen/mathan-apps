@@ -12,7 +12,7 @@ import { ImportBookModal } from './components/ImportBookModal';
 import { RenameBookModal } from './components/RenameBookModal';
 import { DeleteBookModal } from './components/DeleteBookModal';
 import { AddMembersModal } from './components/AddMembersModal';
-import { createBook, createTransaction, removeBook, removeTransaction, renameBook } from './cashBookRepository';
+import { saveNewBook, saveNewTransaction, saveRemovedBook, saveRemovedTransaction, saveRenamedBook } from './cashBookRepository';
 import { useCashBookRepository } from './cashBookStore';
 
 export default function App() {
@@ -65,9 +65,7 @@ export default function App() {
 
   // Add New Book Handler
   const handleCreateBook = async (bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newBook = createBook(bookData).data;
-
-    await saveBooks(prev => [newBook, ...prev]);
+    const { data: newBook } = await saveNewBook(bookData, books, saveBooks);
     // Automatically select & enter the newly created book!
     setActiveBookId(newBook.id);
   };
@@ -76,9 +74,7 @@ export default function App() {
   const handleDeleteBook = async (bookId: string) => {
     const book = books.find((item) => item.id === bookId);
     if (!book) return;
-    const result = removeBook(bookId, books, transactions).data;
-    await saveBooks(result.books);
-    await saveTransactions(result.transactions);
+    await saveRemovedBook(bookId, books, transactions, saveBooks, saveTransactions);
     if (activeBookId === bookId) {
       setActiveBookId(null);
     }
@@ -88,7 +84,7 @@ export default function App() {
 
   const handleRenameBook = async (bookId: string, name: string) => {
     const book = books.find((item) => item.id === bookId);
-    if (book) await saveBooks(prev => prev.map(item => item.id === bookId ? renameBook(book, name).data : item));
+    if (book) await saveRenamedBook(book, name, books, saveBooks);
     setBookToRename(null);
   };
 
@@ -134,17 +130,15 @@ export default function App() {
   }) => {
     if (!targetBookForTransaction || !transactionModalType) return;
 
-    const newTx = createTransaction(targetBookForTransaction.id, transactionModalType, data).data;
-
-    await saveTransactions(prev => [newTx, ...prev]);
+    await saveNewTransaction(targetBookForTransaction.id, transactionModalType, data, transactions, saveTransactions);
 
     // Update book timestamp
-    await saveBooks(prev => prev.map(b => b.id === targetBookForTransaction.id ? { ...b, updatedAt: new Date().toISOString() } : b));
+    await saveBooks(books.map(b => b.id === targetBookForTransaction.id ? { ...b, updatedAt: new Date().toISOString() } : b));
   };
 
   // Delete Transaction Handler
   const handleDeleteTransaction = async (txId: string) => {
-    await saveTransactions(removeTransaction(txId, transactions).data);
+    await saveRemovedTransaction(txId, transactions, saveTransactions);
   };
 
   return (
