@@ -8,6 +8,7 @@ const read = (relativePath: string) => fs.readFileSync(path.join(sourceRoot, rel
 
 const appFiles = ['apps/book/App.tsx', 'apps/payroll/App.tsx', 'apps/truck/App.tsx'].map(read).join('\n');
 assert.doesNotMatch(appFiles, /PersistenceToast|usePersistenceStatus|useCloudSnapshot/);
+assert.doesNotMatch(appFiles, /supabase|localStore|offlineStore|app_state_snapshots|syncQueue/);
 assert.match(read('lib/repositories/useSnapshotRepository.ts'), /persistSnapshot/);
 assert.match(read('components/AppToast.tsx'), /mathan:toast/);
 assert.match(read('components/AppToast.tsx'), /lastKey/);
@@ -46,6 +47,7 @@ assert.match(read('apps/truck/truckRepository.ts'), /withCacheLock/);
 assert.match(read('apps/truck/useTruckData.ts'), /refreshTruckDataFromCloud/);
 assert.doesNotMatch(read('apps/truck/App.tsx'), /from ['"]\.\/truckRepository/);
 assert.match(read('apps/truck/useTruckMutations.ts'), /createTruckTransactionBatch/);
+assert.doesNotMatch(read('apps/truck/useTruckMutations.ts'), /supabase|localStore|offlineStore/);
 assert.doesNotMatch(read('apps/book/App.tsx'), /setBooks/);
 assert.doesNotMatch(read('apps/payroll/App.tsx'), /setEmployees/);
 assert.doesNotMatch(read('apps/book/App.tsx'), /cashBookRepository/);
