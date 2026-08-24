@@ -11,6 +11,8 @@ assert.doesNotMatch(appFiles, /PersistenceToast|usePersistenceStatus/);
 assert.doesNotMatch(appFiles, /useCloudSnapshot/);
 assert.match(read('components/AppToast.tsx'), /mathan:toast/);
 assert.match(read('components/AppToast.tsx'), /lastKey/);
+assert.match(read('components/AppConnectivityBanner.tsx'), /useOnlineStatus/);
+assert.match(read('components/AppConnectivityBanner.tsx'), /Offline/);
 assert.match(read('lib/fileExport.ts'), /createCsv/);
 assert.match(read('apps/truck/components/Modals/ExportModal.tsx'), /downloadCsvFile/);
 assert.match(read('apps/payroll/views/ReportsView.tsx'), /downloadCsvFile/);
