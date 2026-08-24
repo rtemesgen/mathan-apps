@@ -28,6 +28,8 @@ assert.match(read('lib/repositories/snapshotRepository.ts'), /snapshotTails/);
 assert.match(read('lib/repositories/snapshotRepository.ts'), /relevant\.length > 0/);
 assert.match(read('hooks/useAsyncAction.ts'), /gate\.current/);
 assert.match(read('hooks/useAsyncAction.ts'), /runAction/);
+assert.match(read('hooks/useAsyncAction.ts'), /tone: 'success'/);
+assert.match(read('hooks/useAsyncAction.ts'), /tone: 'error'/);
 assert.match(read('lib/sqliteJson.ts'), /CryptoKey/);
 assert.match(read('lib/sqliteStore.ts'), /verifyMigratedEntries/);
 assert.match(read('lib/localStore.ts'), /export interface OfflineStore/);

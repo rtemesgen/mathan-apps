@@ -54,12 +54,12 @@ export function useAsyncAction() {
     return run(config.operation, {
       onSuccess: async (value) => {
         const message = successMessage(value);
-        if (message) emitToast({ kind: 'message', message });
+        if (message) emitToast({ kind: 'message', message, tone: 'success' });
         await config.onSuccess?.(value);
       },
       onError: async (error) => {
         const message = errorMessage(error);
-        if (message) emitToast({ kind: 'message', message });
+        if (message) emitToast({ kind: 'message', message, tone: 'error' });
         await config.onError?.(error);
       },
     });
