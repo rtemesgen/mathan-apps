@@ -96,6 +96,28 @@ export async function listNativeRecords() { return listTable('records'); }
 export async function readNativeMetadata<T>(key: string) { return readTable<T>('metadata', key); }
 export async function writeNativeMetadata(key: string, value: unknown) { return writeTable('metadata', key, value); }
 
+export async function verifyMigratedEntries(
+  records: LegacyEntry[],
+  metadata: LegacyEntry[],
+  readers: {
+    listRecords: () => Promise<string[]>;
+    readRecord: (key: string) => Promise<unknown>;
+    listMetadata: () => Promise<string[]>;
+    readMetadata: (key: string) => Promise<unknown>;
+  } = { listRecords: listNativeRecords, readRecord: readNativeRecord, listMetadata: () => listTable('metadata'), readMetadata: readNativeMetadata },
+) {
+  const recordKeys = new Set(await readers.listRecords());
+  for (const entry of records) {
+    if (!recordKeys.has(entry.key)) throw new Error(`Offline record migration verification failed for ${entry.key}`);
+    if (await jsonHash(await readers.readRecord(entry.key)) !== await jsonHash(entry.value)) throw new Error(`Offline record migration verification failed for ${entry.key}`);
+  }
+  const metadataKeys = new Set(await readers.listMetadata());
+  for (const entry of metadata) {
+    if (!metadataKeys.has(entry.key)) throw new Error(`Offline metadata migration verification failed for ${entry.key}`);
+    if (await jsonHash(await readers.readMetadata(entry.key)) !== await jsonHash(entry.value)) throw new Error(`Offline metadata migration verification failed for ${entry.key}`);
+  }
+}
+
 export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: LegacyEntry[]) {
   if (await readNativeMetadata<boolean>(MIGRATION_KEY)) return;
   const database = await openDatabase();
@@ -105,18 +127,7 @@ export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: Leg
   const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: `INSERT INTO metadata (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`, values: [key, jsonValue(value), Date.now()] }));
   if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
 
-  const migratedKeys = await listNativeRecords();
-  if (migratedKeys.length !== new Set(records.map(({ key }) => key)).size) throw new Error('Offline record migration count verification failed');
-  for (const entry of records) {
-    const migrated = await readNativeRecord(entry.key);
-    if (await jsonHash(migrated) !== await jsonHash(entry.value)) throw new Error(`Offline record migration verification failed for ${entry.key}`);
-  }
-  const migratedMetadataKeys = await listTable('metadata');
-  if (migratedMetadataKeys.length < new Set(metadataEntries.map(({ key }) => key)).size) throw new Error('Offline metadata migration count verification failed');
-  for (const entry of metadataEntries) {
-    const migrated = await readNativeMetadata(entry.key);
-    if (await jsonHash(migrated) !== await jsonHash(entry.value)) throw new Error(`Offline metadata migration verification failed for ${entry.key}`);
-  }
+  await verifyMigratedEntries(records, metadataEntries);
   await writeNativeMetadata(MIGRATION_KEY, true);
 }
 
