@@ -22,6 +22,7 @@ import {
 import { exportPdfFile } from '../../../lib/mobile';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppDatePicker } from '../../../components/AppDatePicker';
+import { useSubmitGuard } from '../../../hooks/useSubmitGuard';
 
 interface EmployeeDetailModalProps {
   employee: Employee | null;
@@ -31,9 +32,9 @@ interface EmployeeDetailModalProps {
   onRecordWithdrawal: (emp: Employee) => void;
   onAddRaise: (emp: Employee) => void;
   onDeleteTransaction?: (txId: string) => void | Promise<void>;
-  onUpdateTransaction?: (transaction: Transaction) => void;
+  onUpdateTransaction?: (transaction: Transaction) => void | Promise<void>;
   onRemoveTransaction?: (txId: string) => void | Promise<void>;
-  onUpdateRaise?: (employeeId: string, raise: SalaryChange) => void;
+  onUpdateRaise?: (employeeId: string, raise: SalaryChange) => void | Promise<void>;
   onDeleteRaise?: (employeeId: string, raiseId: string) => void | Promise<void>;
 }
 
@@ -50,14 +51,15 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   onUpdateRaise,
   onDeleteRaise,
 }) => {
-  if (!employee) return null;
-
   const [evaluationDate, setEvaluationDate] = useState<string>(asOfDate);
   const [activeTab, setActiveTab] = useState<'history' | 'withdrawals'>('withdrawals');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingRaise, setEditingRaise] = useState<SalaryChange | null>(null);
   const [confirmDeleteTransaction, setConfirmDeleteTransaction] = useState<string | null>(null);
   const [confirmDeleteRaise, setConfirmDeleteRaise] = useState<string | null>(null);
+  const { submitting, run } = useSubmitGuard();
+
+  if (!employee) return null;
 
   const summary = calculateEmployeeAccrual(employee, transactions, evaluationDate);
   const empTransactions = transactions
@@ -211,7 +213,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                       <AppDatePicker value={editingRaise.effectiveDate} onChange={(value) => setEditingRaise({ ...editingRaise, effectiveDate: value })} className="w-36" />
                       <input type="number" min="0" step="1" value={editingRaise.newMonthlySalary} onChange={(event) => setEditingRaise({ ...editingRaise, newMonthlySalary: Number(event.target.value) || 0 })} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" placeholder="Monthly salary" />
                       <input value={editingRaise.reason} onChange={(event) => setEditingRaise({ ...editingRaise, reason: event.target.value })} className="rounded-md border border-slate-300 px-2 py-1.5 text-xs" placeholder="Reason" />
-                      <button type="button" onClick={() => { if (editingRaise.effectiveDate && editingRaise.reason.trim()) { onUpdateRaise(employee.id, { ...editingRaise, reason: editingRaise.reason.trim() }); setEditingRaise(null); } }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> Save</button>
+                      <button type="button" disabled={submitting} onClick={() => { if (editingRaise.effectiveDate && editingRaise.reason.trim() && !submitting) void run(() => onUpdateRaise?.(employee.id, { ...editingRaise, reason: editingRaise.reason.trim() })).then(() => setEditingRaise(null)); }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> {submitting ? 'Saving…' : 'Save'}</button>
                     </div>}
                   </div>
                   <DeleteConfirmModal isOpen={confirmDeleteRaise === change.id} title="Delete salary raise?" message="Are you sure you want to delete this salary raise?" onClose={() => setConfirmDeleteRaise(null)} onConfirm={async () => { await onDeleteRaise?.(employee.id, change.id); setConfirmDeleteRaise(null); }} />
@@ -263,7 +265,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                             </td>
                           )}
                         </tr>
-                        {editingTransaction?.id === tx.id && onUpdateTransaction && <tr className="bg-indigo-50/50"><td colSpan={4} className="p-3"><div className="grid gap-2 sm:grid-cols-[140px_120px_1fr_auto]"><AppDatePicker value={editingTransaction.date} onChange={(value) => setEditingTransaction({ ...editingTransaction, date: value })} className="w-36" /><input type="number" min="0" step="0.01" value={editingTransaction.amount} onChange={(event) => setEditingTransaction({ ...editingTransaction, amount: Number(event.target.value) || 0 })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Amount" /><input value={editingTransaction.notes ?? ''} onChange={(event) => setEditingTransaction({ ...editingTransaction, notes: event.target.value })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Notes" /><button type="button" onClick={() => { if (editingTransaction.date && editingTransaction.amount >= 0) { onUpdateTransaction(editingTransaction); setEditingTransaction(null); } }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> Save</button></div></td></tr>}
+                        {editingTransaction?.id === tx.id && onUpdateTransaction && <tr className="bg-indigo-50/50"><td colSpan={4} className="p-3"><div className="grid gap-2 sm:grid-cols-[140px_120px_1fr_auto]"><AppDatePicker value={editingTransaction.date} onChange={(value) => setEditingTransaction({ ...editingTransaction, date: value })} className="w-36" /><input type="number" min="0" step="0.01" value={editingTransaction.amount} onChange={(event) => setEditingTransaction({ ...editingTransaction, amount: Number(event.target.value) || 0 })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Amount" /><input value={editingTransaction.notes ?? ''} onChange={(event) => setEditingTransaction({ ...editingTransaction, notes: event.target.value })} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs" placeholder="Notes" /><button type="button" disabled={submitting} onClick={() => { if (editingTransaction.date && editingTransaction.amount >= 0 && !submitting) void run(() => onUpdateTransaction(editingTransaction)).then(() => setEditingTransaction(null)); }} className="inline-flex items-center justify-center gap-1 rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-bold text-white"><Save className="h-3.5 w-3.5" /> {submitting ? 'Saving…' : 'Save'}</button></div></td></tr>}
                         </React.Fragment>
                       ))}
                     </tbody>

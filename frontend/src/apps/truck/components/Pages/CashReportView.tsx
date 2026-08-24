@@ -16,6 +16,7 @@ import {
 import { Truck, Transaction, Owner } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { DeleteConfirmModal } from '../../../../components/DeleteConfirmModal';
 
 interface CashReportViewProps {
   truck: Truck;
@@ -25,7 +26,7 @@ interface CashReportViewProps {
   onOpenExpense: () => void;
   onExport: () => void;
   onEditTransaction: (transaction: Transaction) => void;
-  onDeleteTransaction: (transactionId: string) => void;
+  onDeleteTransaction: (transactionId: string) => void | Promise<void>;
 }
 
 type PeriodFilterType = 'daily' | 'weekly' | 'monthly' | 'custom' | 'all';
@@ -63,6 +64,7 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
   });
   const [txTypeFilter, setTxTypeFilter] = useState<'ALL' | 'INFLOW' | 'OUTFLOW'>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
 
   // Determine active date range based on period filter
   const { effectiveStart, effectiveEnd, periodLabel } = useMemo(() => {
@@ -557,7 +559,7 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
                       </td>
                       <td className="py-2 px-3 text-center whitespace-nowrap">
                         <button type="button" onClick={() => onEditTransaction(tx)} className="mr-1 rounded px-1 py-0.5 text-[10px] font-bold text-[#54623e] hover:bg-[#edf2e7]">Edit</button>
-                        <button type="button" onClick={() => onDeleteTransaction(tx.id)} className="rounded px-1 py-0.5 text-[10px] font-bold text-[#b42318] hover:bg-[#fef2f2]">Delete</button>
+                        <button type="button" onClick={() => setTransactionToDelete(tx)} className="rounded px-1 py-0.5 text-[10px] font-bold text-[#b42318] hover:bg-[#fef2f2]">Delete</button>
                       </td>
                     </tr>
                   );
@@ -585,6 +587,7 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
           </table>
         </div>
       </div>
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message={transactionToDelete ? <>Are you sure you want to delete <strong>{transactionToDelete.description || transactionToDelete.category}</strong>?</> : ''} onClose={() => setTransactionToDelete(null)} onConfirm={async () => { if (transactionToDelete) await onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
     </div>
   );
 };

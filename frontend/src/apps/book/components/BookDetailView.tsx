@@ -26,7 +26,7 @@ interface BookDetailViewProps {
   onBackToDashboard: () => void;
   onOpenCashInModal: () => void;
   onOpenCashOutModal: () => void;
-  onDeleteTransaction: (id: string) => void;
+  onDeleteTransaction: (id: string) => void | Promise<void>;
 }
 
 export const BookDetailView: React.FC<BookDetailViewProps> = ({
@@ -408,7 +408,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           </div>
         </div>
       )}
-      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message={transactionToDelete ? <>Are you sure you want to delete <strong className="text-[#121212]">{transactionToDelete.remark}</strong>?</> : ''} onClose={() => setTransactionToDelete(null)} onConfirm={() => { if (transactionToDelete) onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message={transactionToDelete ? <>Are you sure you want to delete <strong className="text-[#121212]">{transactionToDelete.remark}</strong>?</> : ''} onClose={() => setTransactionToDelete(null)} onConfirm={async () => { if (transactionToDelete) await onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
 
       {/* STICKY BOTTOM BUTTONS OPTIMIZED FOR MOBILE */}
       <div className="native-safe-bottom fixed bottom-0 left-0 right-0 z-40 bg-[#FFFFFF]/95 backdrop-blur-md border-t border-[#E6E2D6] p-1.5 sm:p-2 shadow-lg">

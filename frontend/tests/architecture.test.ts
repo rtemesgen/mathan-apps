@@ -30,6 +30,10 @@ assert.doesNotMatch(read('apps/truck/App.tsx'), /from ['"]\.\/truckRepository/);
 assert.match(read('apps/truck/useTruckMutations.ts'), /createTruckTransactionBatch/);
 assert.doesNotMatch(read('apps/book/App.tsx'), /setBooks/);
 assert.doesNotMatch(read('apps/payroll/App.tsx'), /setEmployees/);
+assert.match(read('apps/truck/components/Pages/CashReportView.tsx'), /DeleteConfirmModal/);
+assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /useSubmitGuard/);
+assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /submitting/);
+assert.match(read('apps/book/components/BookDetailView.tsx'), /await onDeleteTransaction/);
 assert.match(read('apps/truck/useTruckFinancials.ts'), /calculateTruckFinancials/);
 assert.match(read('apps/truck/useTruckPreferences.ts'), /mathan_truck_preferences_/);
 

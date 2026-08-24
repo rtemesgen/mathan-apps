@@ -33,12 +33,12 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   onRecordWithdrawalTrigger,
   onDeleteTransaction,
 }) => {
-  if (!isOpen) return null;
-
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedMethod, setSelectedMethod] = useState<string>('all');
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+
+  if (!isOpen) return null;
 
   const employeesMap = employees.reduce((acc, emp) => {
     acc[emp.id] = emp;
