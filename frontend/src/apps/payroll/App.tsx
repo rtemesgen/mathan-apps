@@ -15,7 +15,6 @@ import { TransactionsView } from './views/TransactionsView';
 import { ManageEmployeesView } from './views/ManageEmployeesView';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { useAuth } from '../../auth/AuthProvider';
-import { saveEmployee, saveEmployeeRaise, savePayrollTransaction, saveRemovedEmployee, saveRemovedPayrollTransaction, saveRemovedRaise, saveUpdatedRaise } from './payrollRepository';
 import { usePayrollRepository } from './payrollStore';
 
 const PAYROLL_TABS: ActiveTab[] = ['dashboard', 'add-employee', 'manage-employees', 'pay-salary', 'add-raise', 'reports', 'transactions'];
@@ -69,7 +68,7 @@ export default function App() {
     };
   }, [isSidebarOpen]);
 
-  const { employees: [employees, , , , saveEmployees], transactions: [transactions, , , , saveTransactions] } = usePayrollRepository();
+  const { employees: [employees], transactions: [transactions], actions } = usePayrollRepository();
 
   // Global evaluation as-of date (defaults to today)
   const [asOfDate, setAsOfDate] = useState<string>(getTodayString());
@@ -104,44 +103,44 @@ export default function App() {
 
   // Handlers
   const handleAddEmployee = async (newEmp: Employee) => {
-    await saveEmployee(newEmp, employees, saveEmployees);
+    await actions.saveEmployee(newEmp);
   };
 
   const handleSaveEmployee = async (updatedEmployee: Employee) => {
-    await saveEmployee(updatedEmployee, employees, saveEmployees);
+    await actions.saveEmployee(updatedEmployee);
   };
 
   const handleDeleteEmployee = async (employeeId: string) => {
-    await saveRemovedEmployee(employeeId, employees, transactions, saveEmployees, saveTransactions);
+    await actions.deleteEmployee(employeeId);
     if (selectedPayEmployeeId === employeeId) setSelectedPayEmployeeId(undefined);
   };
 
   const handleSaveRaise = async (employeeId: string, raise: SalaryChange) => {
-    await saveEmployeeRaise(employeeId, raise, employees, saveEmployees);
+    await actions.saveRaise(employeeId, raise);
   };
 
   const handleRecordWithdrawal = async (newTx: Transaction) => {
-    await savePayrollTransaction(newTx, transactions, saveTransactions);
+    await actions.saveTransaction(newTx);
   };
 
   const handleDeleteTransaction = async (txId: string) => {
-    await saveRemovedPayrollTransaction(txId, transactions, saveTransactions);
+    await actions.deleteTransaction(txId);
   };
 
   const handleUpdateTransaction = async (updated: Transaction) => {
-    await savePayrollTransaction(updated, transactions, saveTransactions);
+    await actions.saveTransaction(updated);
   };
 
   const handleRemoveTransaction = async (txId: string) => {
-    await saveRemovedPayrollTransaction(txId, transactions, saveTransactions);
+    await actions.deleteTransaction(txId);
   };
 
   const handleUpdateRaise = async (employeeId: string, updatedRaise: SalaryChange) => {
-    await saveUpdatedRaise(employeeId, updatedRaise, employees, saveEmployees);
+    await actions.updateRaise(employeeId, updatedRaise);
   };
 
   const handleDeleteRaise = async (employeeId: string, raiseId: string) => {
-    await saveRemovedRaise(employeeId, raiseId, employees, saveEmployees);
+    await actions.deleteRaise(employeeId, raiseId);
   };
 
   const stats = calculateCompanyStats(employees, transactions, asOfDate);

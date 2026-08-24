@@ -12,11 +12,10 @@ import { ImportBookModal } from './components/ImportBookModal';
 import { RenameBookModal } from './components/RenameBookModal';
 import { DeleteBookModal } from './components/DeleteBookModal';
 import { AddMembersModal } from './components/AddMembersModal';
-import { saveNewBook, saveNewTransaction, saveRemovedBook, saveRemovedTransaction, saveRenamedBook } from './cashBookRepository';
 import { useCashBookRepository } from './cashBookStore';
 
 export default function App() {
-  const { books: [books, , , , saveBooks], transactions: [transactions, , , , saveTransactions] } = useCashBookRepository();
+  const { books: [books], transactions: [transactions], actions } = useCashBookRepository();
 
 
   // Active Selected Book (null = Dashboard, string = Book Detail View)
@@ -65,7 +64,7 @@ export default function App() {
 
   // Add New Book Handler
   const handleCreateBook = async (bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const { data: newBook } = await saveNewBook(bookData, books, saveBooks);
+    const { data: newBook } = await actions.createBook(bookData);
     // Automatically select & enter the newly created book!
     setActiveBookId(newBook.id);
   };
@@ -74,7 +73,7 @@ export default function App() {
   const handleDeleteBook = async (bookId: string) => {
     const book = books.find((item) => item.id === bookId);
     if (!book) return;
-    await saveRemovedBook(bookId, books, transactions, saveBooks, saveTransactions);
+    await actions.deleteBook(bookId);
     if (activeBookId === bookId) {
       setActiveBookId(null);
     }
@@ -84,21 +83,12 @@ export default function App() {
 
   const handleRenameBook = async (bookId: string, name: string) => {
     const book = books.find((item) => item.id === bookId);
-    if (book) await saveRenamedBook(book, name, books, saveBooks);
+    if (book) await actions.renameBook(bookId, name);
     setBookToRename(null);
   };
 
   const handleImportBooks = async (importedBooks: Array<{ book: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] }>) => {
-    const now = new Date().toISOString();
-    const newBooks = importedBooks.map(({ book }) => ({ ...book, id: `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, createdAt: now, updatedAt: now }));
-    const newTransactions = importedBooks.flatMap(({ transactions }, index) => transactions.map((transaction, txIndex) => ({
-      ...transaction,
-      id: `tx-import-${Date.now()}-${index}-${txIndex}`,
-      bookId: newBooks[index].id,
-      createdAt: now,
-    })));
-    await saveBooks(prev => [...newBooks, ...prev]);
-    await saveTransactions(prev => [...newTransactions, ...prev]);
+    await actions.importBooks(importedBooks);
     setIsImportBookOpen(false);
   };
 
@@ -130,15 +120,12 @@ export default function App() {
   }) => {
     if (!targetBookForTransaction || !transactionModalType) return;
 
-    await saveNewTransaction(targetBookForTransaction.id, transactionModalType, data, transactions, saveTransactions);
-
-    // Update book timestamp
-    await saveBooks(books.map(b => b.id === targetBookForTransaction.id ? { ...b, updatedAt: new Date().toISOString() } : b));
+    await actions.createTransaction(targetBookForTransaction.id, transactionModalType, data);
   };
 
   // Delete Transaction Handler
   const handleDeleteTransaction = async (txId: string) => {
-    await saveRemovedTransaction(txId, transactions, saveTransactions);
+    await actions.deleteTransaction(txId);
   };
 
   return (

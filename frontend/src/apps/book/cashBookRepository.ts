@@ -4,6 +4,7 @@ import type { PersistenceState, RepositoryResult } from '../../lib/repositories/
 export type NewBook = Omit<Book, 'id' | 'createdAt' | 'updatedAt'>;
 export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | 'type'>;
 type Persist<T> = (next: T) => Promise<PersistenceState>;
+export type CashBookImport = { book: NewBook; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] };
 
 const now = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -45,6 +46,13 @@ export async function saveNewTransaction(bookId: string, type: Transaction['type
   return { ...result, persistence: await persistTransactions([result.data, ...transactions]) };
 }
 
+export async function saveNewTransactionAndTouchBook(bookId: string, type: Transaction['type'], input: NewTransaction, transactions: Transaction[], books: Book[], persistTransactions: Persist<Transaction[]>, persistBooks: Persist<Book[]>) {
+  const transactionResult = createTransaction(bookId, type, input);
+  const persistence = await persistTransactions([transactionResult.data, ...transactions]);
+  await persistBooks(books.map((book) => book.id === bookId ? { ...book, updatedAt: now() } : book));
+  return { ...transactionResult, persistence };
+}
+
 export async function saveRemovedBook(bookId: string, books: Book[], transactions: Transaction[], persistBooks: Persist<Book[]>, persistTransactions: Persist<Transaction[]>) {
   const result = removeBook(bookId, books, transactions);
   await persistBooks(result.data.books);
@@ -55,4 +63,18 @@ export async function saveRemovedBook(bookId: string, books: Book[], transaction
 export async function saveRemovedTransaction(transactionId: string, transactions: Transaction[], persistTransactions: Persist<Transaction[]>) {
   const result = removeTransaction(transactionId, transactions);
   return { ...result, persistence: await persistTransactions(result.data) };
+}
+
+export async function saveImportedBooks(importedBooks: CashBookImport[], books: Book[], transactions: Transaction[], persistBooks: Persist<Book[]>, persistTransactions: Persist<Transaction[]>) {
+  const timestamp = now();
+  const newBooks = importedBooks.map(({ book }, index) => ({ ...book, id: `book-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`, createdAt: timestamp, updatedAt: timestamp }));
+  const newTransactions = importedBooks.flatMap(({ transactions: importedTransactions }, index) => importedTransactions.map((transaction, transactionIndex) => ({
+    ...transaction,
+    id: `tx-import-${Date.now()}-${index}-${transactionIndex}-${Math.random().toString(36).slice(2, 7)}`,
+    bookId: newBooks[index].id,
+    createdAt: timestamp,
+  })));
+  await persistBooks([...newBooks, ...books]);
+  const persistence = await persistTransactions([...newTransactions, ...transactions]);
+  return { data: { books: [...newBooks, ...books], transactions: [...newTransactions, ...transactions] }, persistence };
 }
