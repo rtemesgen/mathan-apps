@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Book, Transaction, TransactionType } from './types';
 import { Header } from './components/Header';
-import { DashboardView } from './components/DashboardView';
-import { BookDetailView } from './components/BookDetailView';
+import { CashBookViewContent } from './components/CashBookViewContent';
 import { AddBookModal } from './components/AddBookModal';
 import { TransactionModal } from './components/TransactionModal';
 import { CashBookSidebar } from './components/Sidebar';
@@ -139,31 +138,21 @@ export default function App() {
       <div className="flex flex-1 min-h-0">
         {isSidebarOpen && <div className="hidden lg:block shrink-0"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div>}
         {isSidebarOpen && <div className="lg:hidden fixed inset-0 z-[100] flex"><button aria-label="Close Cash Book menu" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-0 bg-black/40" /><div className="mobile-sidebar-drawer relative z-10 h-[100dvh] max-h-[100dvh] w-72 overflow-y-auto overscroll-contain shadow-2xl"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div></div>}
-        <main className="mobile-content-safe flex-1 min-w-0 pb-16 sm:pb-6">
-          {activeBookId && activeBook ? (
-            <BookDetailView
-              book={activeBook}
-              transactions={transactions}
-              onBackToDashboard={() => setActiveBookId(null)}
-              onOpenCashInModal={() => handleOpenCashInModal(activeBook)}
-              onOpenCashOutModal={() => handleOpenCashOutModal(activeBook)}
-              onDeleteTransaction={handleDeleteTransaction}
-            />
-          ) : (
-            <DashboardView
-              books={books}
-              transactions={transactions}
-              onSelectBook={(bookId) => setActiveBookId(bookId)}
-              onOpenAddBookModal={() => setIsAddBookOpen(true)}
-              onQuickCashIn={(b) => handleOpenCashInModal(b)}
-              onQuickCashOut={(b) => handleOpenCashOutModal(b)}
-              onRenameBook={setBookToRename}
-              onRequestDeleteBook={setBookToDelete}
-              onAddMembers={setBookForMembers}
-              onOpenImportBookModal={() => setIsImportBookOpen(true)}
-            />
-          )}
-        </main>
+        <CashBookViewContent
+          books={books}
+          transactions={transactions}
+          activeBook={activeBook}
+          onSelectBook={setActiveBookId}
+          onBackToDashboard={() => setActiveBookId(null)}
+          onOpenAddBook={() => setIsAddBookOpen(true)}
+          onOpenCashIn={handleOpenCashInModal}
+          onOpenCashOut={handleOpenCashOutModal}
+          onRenameBook={setBookToRename}
+          onRequestDeleteBook={setBookToDelete}
+          onAddMembers={setBookForMembers}
+          onOpenImport={() => setIsImportBookOpen(true)}
+          onDeleteTransaction={handleDeleteTransaction}
+        />
       </div>
 
       {/* Add New Book Modal */}
