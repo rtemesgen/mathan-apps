@@ -11,8 +11,12 @@ import { RenameBookModal } from './components/RenameBookModal';
 import { DeleteBookModal } from './components/DeleteBookModal';
 import { AddMembersModal } from './components/AddMembersModal';
 import { useCashBookRepository } from './cashBookRepository';
+import { ExportDialog } from '../../components/ExportDialog';
+import { buildCashBookExportReports } from './cashBookExport';
+import { useAuth } from '../../auth/AuthProvider';
 
 export default function App() {
+  const { workspace } = useAuth();
   const { books: [books], transactions: [transactions], actions } = useCashBookRepository();
 
 
@@ -28,6 +32,7 @@ export default function App() {
   const [transactionModalType, setTransactionModalType] = useState<TransactionType | null>(null);
   const [targetBookForTransaction, setTargetBookForTransaction] = useState<Book | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useAndroidBackHandler(() => {
     if (transactionModalType) {
@@ -133,6 +138,7 @@ export default function App() {
         totalBooksCount={books.length}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(value => !value)}
+        onOpenExport={() => setExportOpen(true)}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -184,6 +190,7 @@ export default function App() {
         onClose={() => setIsImportBookOpen(false)}
         onImport={handleImportBooks}
       />
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Cash Book', reportName: activeBook ? `Current Book Report — ${activeBook.name}` : 'Cash Book Summary', report: buildCashBookExportReports({ books, transactions })[activeBook ? 1 : 0], selectedEntity: activeBook ? { value: activeBook.id, label: activeBook.name } : undefined, activeFilters: activeBook ? { entityId: activeBook.id } : undefined, availableEntities: activeBook ? undefined : books.map(book => ({ value: book.id, label: book.name })) }} />
 
       {/* Cash In / Cash Out Transaction Modal */}
       {transactionModalType && targetBookForTransaction && (

@@ -10,6 +10,8 @@ import { PayrollViewContent } from './components/PayrollViewContent';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { useAuth } from '../../auth/AuthProvider';
 import { usePayrollRepository } from './payrollRepository';
+import { ExportDialog } from '../../components/ExportDialog';
+import { buildPayrollExportReports } from './payrollExport';
 
 const PAYROLL_TABS: ActiveTab[] = ['dashboard', 'add-employee', 'manage-employees', 'pay-salary', 'add-raise', 'reports', 'transactions'];
 
@@ -70,6 +72,7 @@ export default function App() {
   // Detail inspection drawer state
   const [selectedDetailEmp, setSelectedDetailEmp] = useState<Employee | null>(null);
   const [selectedPayEmployeeId, setSelectedPayEmployeeId] = useState<string | undefined>();
+  const [exportOpen, setExportOpen] = useState(false);
 
   useAndroidBackHandler(() => {
     if (selectedDetailEmp) {
@@ -193,6 +196,7 @@ export default function App() {
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           toggleButtonRef={toggleBtnRef}
+          onOpenExport={() => setExportOpen(true)}
         />
 
         <PayrollViewContent
@@ -237,6 +241,7 @@ export default function App() {
           onDeleteRaise={handleDeleteRaise}
         />
       )}
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Payroll', reportName: activeTab === 'transactions' ? 'Payment History' : 'Payroll History', report: buildPayrollExportReports({ employees, transactions, asOfDate })[activeTab === 'transactions' ? 3 : 1], activeFilters: { endDate: asOfDate }, availableEntities: employees.map(employee => ({ value: employee.id, label: employee.name })) }} />
     </div>
   );
 }

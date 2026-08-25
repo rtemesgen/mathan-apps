@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
 import { Employee, Transaction } from '../types';
 import { calculateCompanyStats, calculateEmployeeAccrual } from '../utils/calc';
-import { exportPdfFile } from '../../../lib/mobile';
-import { downloadCsvFile } from '../../../lib/fileExport';
 import {
-  FileSpreadsheet,
-  Download,
-  Printer,
   Search,
   Filter,
   Building,
@@ -47,43 +42,6 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       currency: 'USD',
       minimumFractionDigits: 2,
     }).format(val);
-
-  // Export CSV
-  const handleExportCSV = () => {
-    const headers = [
-      'Employee ID',
-      'Name',
-      'Start Date',
-      'Monthly Base Rate ($)',
-      'Gross Earned ($)',
-      'Total Withdrawn ($)',
-      'Net Owed Balance ($)',
-    ];
-
-    const rows = filteredEmployees.map((emp) => {
-      const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-      return [
-        emp.id,
-        emp.name,
-        emp.startDate,
-        info.currentMonthlySalary.toFixed(2),
-        info.totalAccruedWages.toFixed(2),
-        info.totalWithdrawn.toFixed(2),
-        info.remainingBalance.toFixed(2),
-      ];
-    });
-
-    void downloadCsvFile(`Payroll_Report_AsOf_${asOfDate}.csv`, headers, rows);
-  };
-
-  const handlePrint = () => {
-    const lines = filteredEmployees.map((emp) => {
-      const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-      const dailyRate = (info.currentMonthlySalary * 12) / 365.25;
-      return `${emp.name} | ${emp.startDate} | ${formatMoney(info.currentMonthlySalary)} | ${formatMoney(dailyRate)} | ${formatMoney(info.totalAccruedWages)} | ${formatMoney(info.totalWithdrawn)} | ${formatMoney(info.remainingBalance)}`;
-    });
-    void exportPdfFile(`Payroll_Report_AsOf_${asOfDate}.pdf`, 'Mathan ERP Payroll Report', [`As of ${asOfDate}`, `Total liability: ${formatMoney(stats.totalCompanyLiability)}`, `Total earned: ${formatMoney(stats.totalCompanyAccrued)}`, `Total paid: ${formatMoney(stats.totalCompanyPaidOut)}`, '', ...lines]);
-  };
 
   return (
     <div className="space-y-2 sm:space-y-2.5">
@@ -127,14 +85,6 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-          <button
-            onClick={handlePrint}
-            className="px-3.5 py-1.5 bg-[#54623e] hover:bg-[#435031] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition shadow-2xs cursor-pointer flex items-center gap-1.5"
-          >
-            <Printer className="w-3.5 h-3.5" /> Export PDF
-          </button>
-        </div>
       </div>
 
       {/* Main Breakdown Table */}

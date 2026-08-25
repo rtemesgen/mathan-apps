@@ -6,7 +6,6 @@ import { LedgerHistoryView } from './LedgerHistoryView';
 import { IncomePage } from './Pages/IncomePage';
 import { ExpensesPage } from './Pages/ExpensesPage';
 import { ManageTrucksPage } from './Pages/ManageTrucksPage';
-import { ExportPage } from './Pages/ExportPage';
 import { CashReportView } from './Pages/CashReportView';
 import { DashboardView } from './Pages/DashboardView';
 import { PartnersPage } from './Pages/PartnersPage';
@@ -55,6 +54,7 @@ export type TruckViewContentProps = {
   loading: boolean;
   error: string;
   dataError: string;
+  onExportReport: (reportId: string, reportName: string) => void;
 };
 
 export function TruckViewContent({
@@ -90,6 +90,7 @@ export function TruckViewContent({
   loading,
   error,
   dataError,
+  onExportReport,
 }: TruckViewContentProps) {
   const activeTransactions = transactions.filter((transaction) => transaction.truckId === activeTruck.id);
   const openExpenses = () => {
@@ -125,7 +126,7 @@ export function TruckViewContent({
         owners={activeTruckOwners}
         onOpenIncome={() => setCurrentView('income')}
         onOpenExpense={openExpenses}
-        onExport={() => setCurrentView('export')}
+        onExport={() => onExportReport('income-expenses', 'Cash Flow')}
         onEditTransaction={setEditingTransaction}
         onDeleteTransaction={handleDeleteTransaction}
       />}
@@ -156,7 +157,7 @@ export function TruckViewContent({
       {currentView === 'reports' && <ReportsView
         summary={truckFinancials}
         onPayOwner={(ownerId) => { setSelectedPayOwnerId(ownerId); setExpensesTab('pay-owner'); setCurrentView('expenses'); }}
-        onExport={() => setCurrentView('export')}
+        onExport={() => onExportReport('owner-shares-loans', 'Partner Financials')}
       />}
 
       {currentView === 'history' && <LedgerHistoryView
@@ -178,13 +179,6 @@ export function TruckViewContent({
         onBack={() => setCurrentView('dashboard')}
       />}
 
-      {currentView === 'export' && <ExportPage
-        summary={truckFinancials}
-        transactions={activeTransactions}
-        owners={activeTruckOwners}
-        truck={activeTruck}
-        onBack={() => setCurrentView('dashboard')}
-      />}
     </main>
   );
 }

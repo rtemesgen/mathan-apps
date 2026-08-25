@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Truck, Owner, Transaction } from './types';
 import { useAuth } from '../../auth/AuthProvider';
+import { ExportDialog } from '../../components/ExportDialog';
+import { buildTruckExportReports } from './truckExport';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
@@ -26,6 +28,9 @@ export default function App() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [selectedPayOwnerId, setSelectedPayOwnerId] = useState<string | undefined>();
   const [expensesTab, setExpensesTab] = useState<'expense' | 'pay-owner' | 'distribute-profit'>('expense');
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportSelection, setExportSelection] = useState({ id: 'complete-statement', name: 'Truck Financial Report' });
+  const openExport = (id = 'complete-statement', name = 'Truck Financial Report') => { setExportSelection({ id, name }); setExportOpen(true); };
 
   const editable = canEditApp('truck');
   const [error, setError] = useState('');
@@ -84,6 +89,7 @@ export default function App() {
           currentTruckId={currentTruckId}
           onSelectTruck={setCurrentTruckId}
           onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+          onOpenExport={() => openExport(currentView === 'cash-report' ? 'income-expenses' : currentView === 'reports' ? 'owner-shares-loans' : currentView === 'history' ? 'transactions-by-truck-owner' : undefined, currentView === 'cash-report' ? 'Cash Flow' : currentView === 'reports' ? 'Partner Financials' : currentView === 'history' ? 'Activity History' : undefined)}
         />
 
         <TruckViewContent
@@ -119,8 +125,11 @@ export default function App() {
           loading={loading}
           error={error}
           dataError={dataError}
+          onExportReport={openExport}
         />
       </div>
+
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Truck Equity', reportName: exportSelection.name, report: (buildTruckExportReports({ trucks, owners, transactions }).find((item) => item.id === exportSelection.id) ?? buildTruckExportReports({ trucks, owners, transactions })[0]), selectedEntity: activeTruck ? { value: activeTruck.id, label: `${activeTruck.name} (${activeTruck.unitNumber})` } : undefined, activeFilters: activeTruck ? { entityId: activeTruck.id } : undefined, availableEntities: trucks.map((truck) => ({ value: truck.id, label: `${truck.name} (${truck.unitNumber})` })) }} />
 
       {/* Add / Edit Partner Popup Modal */}
       <AddPartnerModal

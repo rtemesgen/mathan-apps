@@ -1,0 +1,22 @@
+import type { Owner, Transaction, Truck } from './types';
+import { calculateTruckFinancials } from './utils/formatters';
+import type { ExportBuildOptions, ExportReportDefinition } from '../../lib/exports/exportTypes';
+
+type TruckExportData = { trucks: Truck[]; owners: Owner[]; transactions: Transaction[]; calculationDate?: string };
+const money = (value: number) => value.toFixed(2);
+const inRange = (date: string, options: ExportBuildOptions) => (!options.startDate || date >= options.startDate) && (!options.endDate || date <= options.endDate);
+
+export function buildTruckExportReports(data: TruckExportData): ExportReportDefinition[] {
+  const trucks = (options: ExportBuildOptions) => data.trucks.filter((truck) => !options.entityId || truck.id === options.entityId);
+  const transactions = (options: ExportBuildOptions) => data.transactions.filter((tx) => (!options.entityId || tx.truckId === options.entityId) && inRange(tx.date, options));
+  const summaries = (options: ExportBuildOptions) => trucks(options).map((truck) => { const owners = data.owners.filter((owner) => owner.truckId === truck.id); const summary = calculateTruckFinancials(truck, owners, transactions({ ...options, entityId: truck.id }), options.endDate ?? data.calculationDate); return [truck.name, truck.unitNumber, money(summary.cashOnHand), money(summary.grossIncome), money(summary.operatingExpenses), money(summary.netProfit), money(summary.totalUnpaidDebtToOwners)]; });
+  const transactionRows = (options: ExportBuildOptions) => { const ownerById = new Map(data.owners.map((owner) => [owner.id, owner])); return transactions(options).sort((a, b) => b.date.localeCompare(a.date)).map((tx) => [tx.date, data.trucks.find((truck) => truck.id === tx.truckId)?.name ?? '', ownerById.get(tx.ownerId ?? '')?.name ?? '', tx.type, tx.category, money(tx.amount), tx.description, tx.referenceNo ?? '']); };
+  const ownerRows = (options: ExportBuildOptions) => trucks(options).flatMap((truck) => { const summary = calculateTruckFinancials(truck, data.owners.filter((owner) => owner.truckId === truck.id), transactions({ ...options, entityId: truck.id }), options.endDate ?? data.calculationDate); return summary.ownerSummaries.map((item) => [truck.name, item.owner.name, item.owner.equityPercentage, money(item.totalInjected), money(item.totalRepaid), money(item.totalUnpaidMoneyOwed)]); });
+  return [
+    { id: 'complete-statement', label: 'Complete statement', description: 'Truck balances, income, expenses, and owners', build: (options) => ({ title: 'Truck complete statement', filename: 'truck-complete-statement', headers: ['Truck', 'Unit', 'Cash', 'Income', 'Expenses', 'Net profit', 'Owed to owners'], rows: summaries(options) }) },
+    { id: 'owner-shares-loans', label: 'Owner shares and loans', description: 'Equity, loans, repayments, and money owed', build: (options) => ({ title: 'Truck owner shares and loans', filename: 'truck-owner-shares-loans', headers: ['Truck', 'Owner', 'Equity %', 'Lent to truck', 'Repaid', 'Remaining owed'], rows: ownerRows(options) }) },
+    { id: 'income-expenses', label: 'Income and expenses', description: 'Every trip, bill, and cash movement', build: (options) => ({ title: 'Truck income and expenses', filename: 'truck-income-expenses', headers: ['Date', 'Truck', 'Owner', 'Type', 'Category', 'Amount', 'Description', 'Reference'], rows: transactionRows(options).filter((row) => row[3] === 'INCOME' || row[3] === 'EXPENSE') }) },
+    { id: 'truck-summary', label: 'Truck summary', description: 'Condensed totals for each truck', build: (options) => ({ title: 'Truck summary', filename: 'truck-summary', headers: ['Truck', 'Unit', 'Cash', 'Income', 'Expenses', 'Net profit', 'Owed to owners'], rows: summaries(options) }) },
+    { id: 'transactions-by-truck-owner', label: 'Transactions by truck and owner', description: 'Full relational transaction breakdown', build: (options) => ({ title: 'Truck transactions by truck and owner', filename: 'truck-transactions-by-truck-owner', headers: ['Date', 'Truck', 'Owner', 'Type', 'Category', 'Amount', 'Description', 'Reference'], rows: transactionRows(options) }) },
+  ];
+}

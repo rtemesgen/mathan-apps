@@ -2,12 +2,14 @@ import React from 'react';
 import { Calendar } from 'lucide-react';
 import { AppBrand } from '../../../components/AppBrand';
 import { AppHeader } from '../../../components/AppHeader';
+import { ExportButton } from '../../../components/ExportButton';
 
 interface HeaderProps {
   activeBookName?: string;
   totalBooksCount: number;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
+  onOpenExport: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   totalBooksCount,
   isSidebarOpen,
   onToggleSidebar,
+  onOpenExport,
 }) => {
   const currentDateFormatted = new Date().toLocaleDateString('en-US', {
     month: '2-digit',
@@ -38,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Side Controls & Status */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          <ExportButton onClick={onOpenExport} />
           {activeBookName && (
             <span className="text-[11px] font-semibold text-[#4B5563] bg-[#F7F5EE] border border-[#E6E2D6] px-2 py-1 rounded-md hidden sm:inline-block">
               {activeBookName}

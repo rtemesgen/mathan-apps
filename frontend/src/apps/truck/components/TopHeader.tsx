@@ -3,6 +3,7 @@ import { Truck } from '../types';
 import { TruckSelect } from './TruckSelect';
 import { AppBrand } from '../../../components/AppBrand';
 import { AppHeader } from '../../../components/AppHeader';
+import { ExportButton } from '../../../components/ExportButton';
 
 interface TopHeaderProps {
   currentView: string;
@@ -11,6 +12,7 @@ interface TopHeaderProps {
   currentTruckId: string;
   onSelectTruck: (truckId: string) => void;
   onToggleSidebar: () => void;
+  onOpenExport: () => void;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -19,6 +21,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   currentTruckId,
   onSelectTruck,
   onToggleSidebar,
+  onOpenExport,
 }) => {
   const getTitle = () => {
     switch (currentView) {
@@ -69,7 +72,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* Right: Active Truck Selector */}
-        <TruckSelect value={currentTruckId} onChange={onSelectTruck} options={trucks.map((truck) => ({ value: truck.id, label: `${truck.name} (${truck.unitNumber})` }))} placeholder="No trucks yet" className="w-44 sm:w-56" />
+        <div className="flex items-center gap-1.5"><ExportButton onClick={onOpenExport} /><TruckSelect value={currentTruckId} onChange={onSelectTruck} options={trucks.map((truck) => ({ value: truck.id, label: `${truck.name} (${truck.unitNumber})` }))} placeholder="No trucks yet" className="w-44 sm:w-56" /></div>
       </div>
     </AppHeader>
   );
