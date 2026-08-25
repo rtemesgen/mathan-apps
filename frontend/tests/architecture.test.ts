@@ -20,8 +20,13 @@ assert.doesNotMatch(read('components/AppNotificationCenter.tsx'), /mathan:sync-s
 assert.doesNotMatch(read('lib/offlineSync.ts'), /mathan:truck-storage-status/);
 assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /mathan:truck-storage-status/);
 assert.match(read('components/AppToast.tsx'), /toast\.tone/);
-assert.match(read('lib/mobile.ts'), /ToastTone/);
+assert.match(read('lib/toast.ts'), /emitSyncStatus/);
+assert.match(read('lib/toast.ts'), /emitSyncConflict/);
 assert.doesNotMatch(read('lib/mobile.ts'), /@capacitor\/toast/);
+assert.doesNotMatch(read('lib/mobile.ts'), /showAppToast|emitToast/);
+assert.doesNotMatch(read('lib/offlineSync.ts'), /window\.dispatchEvent\(new CustomEvent/);
+assert.doesNotMatch(read('lib/repositories/snapshotRepository.ts'), /window\.dispatchEvent\(new CustomEvent/);
+assert.doesNotMatch(read('lib/repositories/useSnapshotRepository.ts'), /window\.dispatchEvent\(new CustomEvent/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /successMessage/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /tone: 'error'/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /Action completed successfully/);

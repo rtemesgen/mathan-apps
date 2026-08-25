@@ -2,8 +2,9 @@ import { supabase } from './supabase';
 import { getQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
 import { offlineStore } from './localStore';
 import { reportPersistenceNotice } from './repositories/types';
+import { emitSyncConflict, emitSyncStatus, type SyncStatus } from './toast';
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'retry' | 'conflicted' | 'error';
+export type { SyncStatus } from './toast';
 
 function reportTruckMutationStatus(status: 'sync pending' | 'sync conflict') {
   reportPersistenceNotice({ app: 'truck', state: status });
@@ -15,7 +16,7 @@ function reportSnapshotMutationStatus(domain: unknown, status: 'sync pending' | 
 }
 
 function report(status: SyncStatus, queued?: number, detail: Record<string, unknown> = {}) {
-  window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status, queued, ...detail } }));
+  emitSyncStatus(status, queued, detail);
 }
 
 const permanentError = (error: { code?: string; message?: string } | null | undefined) => {
@@ -75,7 +76,7 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
       conflict = true;
       remaining.push({ ...mutation, syncStatus: 'conflicted', lastError: 'Remote revision changed' });
       reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict');
-      window.dispatchEvent(new CustomEvent('mathan:sync-conflict', { detail: { domain: mutation.payload.domain, remote: result.payload, revision: result.revision, mutationId: mutation.mutationId } }));
+      emitSyncConflict({ domain: String(mutation.payload.domain ?? ''), remote: result.payload, revision: result.revision, mutationId: mutation.mutationId });
     } else if (error || !result) {
       if (permanentError(error)) { reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: error?.message ?? 'Synchronization failed' }); }
       else { reportSnapshotMutationStatus(mutation.payload.domain, 'sync pending'); failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error?.message ?? 'Synchronization failed' }); }

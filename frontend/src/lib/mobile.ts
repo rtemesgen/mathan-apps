@@ -2,13 +2,8 @@ import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
 import { registerPlugin } from '@capacitor/core';
 import { jsPDF } from 'jspdf';
-import { emitToast, type ToastTone } from './toast';
 
 export const isNativeMobile = () => Capacitor.isNativePlatform();
-
-export function showAppToast(message: string, tone: ToastTone = 'success') {
-  emitToast({ kind: 'message', message, tone });
-}
 
 const LATEST_RELEASE_APK_URL = 'https://github.com/rtemesgen/mathan-apps/releases/latest/download/app-release.apk';
 

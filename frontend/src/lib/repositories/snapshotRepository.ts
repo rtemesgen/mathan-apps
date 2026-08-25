@@ -4,6 +4,7 @@ import { enqueueMutation, getQueuedMutations } from '../syncQueue';
 import { syncQueue } from '../offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from './types';
 import { persistBeforeQueue } from './mutationLifecycle';
+import { emitSyncStatus } from '../toast';
 
 export type SnapshotRepositoryContext = {
   storageKey: string;
@@ -49,7 +50,7 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
     if (!context.workspaceId) throw new Error('A workspace is required to save this record.');
     const persistence: PersistenceState = navigator.onLine ? 'saved locally' : 'offline saved';
     reportPersistenceNotice({ app: context.domain, state: persistence });
-    window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: navigator.onLine ? 'syncing' : 'offline' } }));
+    emitSyncStatus(navigator.onLine ? 'syncing' : 'offline');
     if (navigator.onLine) void syncQueue(context.workspaceId).catch(() => undefined);
     return persistence;
   });

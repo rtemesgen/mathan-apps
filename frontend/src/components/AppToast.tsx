@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { CheckCircle2, CircleAlert, CloudOff, LoaderCircle } from 'lucide-react';
 import { persistenceLabels, type PersistenceState } from '../lib/repositories/types';
-import type { ToastEvent } from '../lib/toast';
+import type { SyncConflictDetail, ToastEvent } from '../lib/toast';
 
-type VisibleToast = { message: string; state?: PersistenceState; tone?: 'success' | 'error' | 'info'; conflict?: SyncConflict };
-type SyncConflict = { domain: string; revision: number };
+type VisibleToast = { message: string; state?: PersistenceState; tone?: 'success' | 'error' | 'info'; conflict?: SyncConflictDetail };
 
 function appForPath(pathname: string) {
   if (pathname.startsWith('/book')) return 'cash_book';
@@ -64,7 +63,7 @@ export function AppToast() {
       timeout = window.setTimeout(() => { setToast(null); lastKey.current = ''; }, next.state === 'sync conflict' ? 5000 : 1800);
     };
     const handleSyncConflict = (event: Event) => {
-      const detail = (event as CustomEvent<SyncConflict>).detail;
+      const detail = (event as CustomEvent<SyncConflictDetail>).detail;
       const app = detail?.domain?.startsWith('cash_book:') ? 'cash_book' : detail?.domain?.startsWith('payroll:') ? 'payroll' : null;
       if (app && appForPath(location.pathname) !== app) return;
       const next = { state: 'sync conflict' as PersistenceState, message: `Sync conflict · newer ${detail.domain.replace(':', ' ')} data exists`, tone: 'error' as const, conflict: detail };

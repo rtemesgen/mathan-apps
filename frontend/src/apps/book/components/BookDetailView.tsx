@@ -16,7 +16,8 @@ import {
   FileText,
   X
 } from 'lucide-react';
-import { exportPdfFile, showAppToast } from '../../../lib/mobile';
+import { exportPdfFile } from '../../../lib/mobile';
+import { emitToast } from '../../../lib/toast';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppSelect } from '../../../components/AppSelect';
 
@@ -126,8 +127,8 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
         ].join(' | ')),
     ];
     void exportPdfFile(`${book.name.replace(/\s+/g, '_')}_transactions.pdf`, `Cash Book Transactions — ${book.name}`, lines)
-      .then(() => showAppToast('Cash Book PDF saved'))
-      .catch(() => showAppToast('Could not save the Cash Book PDF', 'error'));
+      .then(() => emitToast({ kind: 'message', message: 'Cash Book PDF saved' }))
+      .catch(() => emitToast({ kind: 'message', message: 'Could not save the Cash Book PDF', tone: 'error' }));
   };
 
   return (

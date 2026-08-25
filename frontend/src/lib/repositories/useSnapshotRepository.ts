@@ -3,6 +3,7 @@ import { useAuth, type AppId } from '../../auth/AuthProvider';
 import { syncQueue } from '../offlineSync';
 import { hydrateSnapshot, persistSnapshot, readSnapshot, type SnapshotRepositoryContext } from './snapshotRepository';
 import { reportPersistenceNotice, type PersistenceState } from './types';
+import { emitSyncStatus } from '../toast';
 
 export type SnapshotPersistenceStatus = 'idle' | PersistenceState;
 
@@ -64,7 +65,7 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
       } catch {
         setPersistenceStatus('storage error');
         reportPersistenceNotice({ app: domain, state: 'storage error' });
-        window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: 'error' } }));
+        emitSyncStatus('error');
       }
     })();
   }, [value, workspace?.id, domain, key, storageKey, appId, standalone, canEditApp]);
