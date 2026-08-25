@@ -21,6 +21,7 @@ assert.doesNotMatch(read('lib/offlineSync.ts'), /mathan:truck-storage-status/);
 assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /mathan:truck-storage-status/);
 assert.match(read('components/AppToast.tsx'), /toast\.tone/);
 assert.match(read('lib/mobile.ts'), /ToastTone/);
+assert.doesNotMatch(read('lib/mobile.ts'), /@capacitor\/toast/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /successMessage/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /tone: 'error'/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /Action completed successfully/);

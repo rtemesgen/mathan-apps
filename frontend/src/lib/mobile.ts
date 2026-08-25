@@ -1,6 +1,5 @@
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
-import { Toast } from '@capacitor/toast';
 import { registerPlugin } from '@capacitor/core';
 import { jsPDF } from 'jspdf';
 import { emitToast, type ToastTone } from './toast';
@@ -8,10 +7,6 @@ import { emitToast, type ToastTone } from './toast';
 export const isNativeMobile = () => Capacitor.isNativePlatform();
 
 export function showAppToast(message: string, tone: ToastTone = 'success') {
-  if (isNativeMobile()) {
-    void Toast.show({ text: message, duration: 'short' });
-    return;
-  }
   emitToast({ kind: 'message', message, tone });
 }
 
