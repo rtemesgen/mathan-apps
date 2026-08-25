@@ -6,6 +6,12 @@ const DATABASE_VERSION = 1;
 const MIGRATION_KEY = '__offline_sqlite_migration_v1__';
 
 export type LegacyEntry = { key: string; value: unknown };
+export type MigrationStore = {
+  readMarker: () => Promise<boolean | null>;
+  writeEntries: (records: LegacyEntry[], metadata: LegacyEntry[]) => Promise<void>;
+  verifyEntries: (records: LegacyEntry[], metadata: LegacyEntry[]) => Promise<void>;
+  writeMarker: () => Promise<void>;
+};
 
 let connection: SQLiteConnection | null = null;
 let databasePromise: Promise<SQLiteDBConnection> | null = null;
@@ -118,17 +124,24 @@ export async function verifyMigratedEntries(
   }
 }
 
-export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: LegacyEntry[]) {
-  if (await readNativeMetadata<boolean>(MIGRATION_KEY)) return;
-  const database = await openDatabase();
+export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: LegacyEntry[], store?: MigrationStore) {
+  const migrationStore: MigrationStore = store ?? {
+    readMarker: () => readNativeMetadata<boolean>(MIGRATION_KEY),
+    writeEntries: async (records, metadataEntries) => {
+      const database = await openDatabase();
+      const recordStatements = records.map(({ key, value }) => ({ statement: `INSERT INTO records (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`, values: [key, jsonValue(value), Date.now()] }));
+      const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: `INSERT INTO metadata (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`, values: [key, jsonValue(value), Date.now()] }));
+      if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
+    },
+    verifyEntries: (records, metadataEntries) => verifyMigratedEntries(records, metadataEntries),
+    writeMarker: () => writeNativeMetadata(MIGRATION_KEY, true),
+  };
+  if (await migrationStore.readMarker()) return;
   const records = entries.filter(({ value }) => jsonValue(value) !== null);
   const metadataEntries = metadata.filter(({ value }) => jsonValue(value) !== null);
-  const recordStatements = records.map(({ key, value }) => ({ statement: `INSERT INTO records (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`, values: [key, jsonValue(value), Date.now()] }));
-  const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: `INSERT INTO metadata (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`, values: [key, jsonValue(value), Date.now()] }));
-  if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
-
-  await verifyMigratedEntries(records, metadataEntries);
-  await writeNativeMetadata(MIGRATION_KEY, true);
+  await migrationStore.writeEntries(records, metadataEntries);
+  await migrationStore.verifyEntries(records, metadataEntries);
+  await migrationStore.writeMarker();
 }
 
 export { isJsonSerializable } from './sqliteJson';

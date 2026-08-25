@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { verifyMigratedEntries, type LegacyEntry } from '../src/lib/sqliteStore';
+import { migrateLegacyRecords, verifyMigratedEntries, type LegacyEntry, type MigrationStore } from '../src/lib/sqliteStore';
 
 const records: LegacyEntry[] = [{ key: 'cash_book:user:workspace:books', value: [{ id: 'book-1' }] }];
 const metadata: LegacyEntry[] = [{ key: 'sync:workspace', value: { pendingCount: 0 } }];
@@ -20,5 +20,34 @@ await assert.rejects(() => verifyMigratedEntries(records, metadata, {
   listMetadata: async () => [...storedMetadata.keys()],
   readMetadata: async (key) => storedMetadata.get(key),
 }), /migration verification failed/);
+
+const migratedRecords = new Map<string, unknown>();
+const migratedMetadata = new Map<string, unknown>();
+let marker = false;
+let attempts = 0;
+const retryStore: MigrationStore = {
+  readMarker: async () => marker,
+  writeEntries: async (nextRecords, nextMetadata) => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('interrupted migration');
+    nextRecords.forEach((entry) => migratedRecords.set(entry.key, entry.value));
+    nextMetadata.forEach((entry) => migratedMetadata.set(entry.key, entry.value));
+  },
+  verifyEntries: (nextRecords, nextMetadata) => verifyMigratedEntries(nextRecords, nextMetadata, {
+    listRecords: async () => [...migratedRecords.keys()],
+    readRecord: async (key) => migratedRecords.get(key),
+    listMetadata: async () => [...migratedMetadata.keys()],
+    readMetadata: async (key) => migratedMetadata.get(key),
+  }),
+  writeMarker: async () => { marker = true; },
+};
+
+await assert.rejects(() => migrateLegacyRecords([...records, { key: 'crypto-key', value: new Map([['unsupported', true]]) }], metadata, retryStore), /interrupted migration/);
+assert.equal(marker, false, 'an interrupted migration must not set its completion marker');
+await migrateLegacyRecords(records, metadata, retryStore);
+assert.equal(marker, true, 'the migration marker is written only after verification');
+assert.equal(attempts, 2, 'a failed migration must be retried');
+await migrateLegacyRecords([{ key: 'should-not-write', value: { id: 'later' } }], [], retryStore);
+assert.equal(attempts, 2, 'a completed migration must not run again');
 
 console.log('SQLite migration verification tests passed.');
