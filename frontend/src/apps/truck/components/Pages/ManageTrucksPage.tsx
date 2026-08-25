@@ -3,6 +3,7 @@ import { Truck as TruckIcon, Plus, Check, Edit2, Trash2 } from 'lucide-react';
 import { Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
+import { TruckFormFields, type TruckDraft } from '../TruckFormFields';
 
 interface ManageTrucksPageProps {
   trucks: Truck[];
@@ -31,33 +32,28 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
   onBack,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
-  const [name, setName] = useState('');
-  const [unitNumber, setUnitNumber] = useState('');
-  const [makeModel, setMakeModel] = useState('');
-  const [vin, setVin] = useState('');
-  const [licensePlate, setLicensePlate] = useState('');
-  const [cashOnHand, setCashOnHand] = useState('');
+  const [draft, setDraft] = useState<TruckDraft>({ name: '', unitNumber: '', makeModel: '', vin: '', cashOnHand: '', licensePlate: '' });
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
   const { submitting, runAction } = useAsyncAction();
 
   const resetForm = () => {
-    setEditingTruck(null); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setLicensePlate(''); setCashOnHand('');
+    setEditingTruck(null); setShowAddForm(false); setDraft({ name: '', unitNumber: '', makeModel: '', vin: '', cashOnHand: '', licensePlate: '' });
   };
 
   const startEdit = (truck: Truck) => {
-    setEditingTruck(truck); setShowAddForm(true); setName(truck.name); setUnitNumber(truck.unitNumber); setMakeModel(truck.makeModel); setVin(truck.vin); setLicensePlate(truck.licensePlate); setCashOnHand(String(truck.cashOnHand));
+    setEditingTruck(truck); setShowAddForm(true); setDraft({ name: truck.name, unitNumber: truck.unitNumber, makeModel: truck.makeModel, vin: truck.vin, licensePlate: truck.licensePlate, cashOnHand: String(truck.cashOnHand) });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !unitNumber.trim() || submitting) return;
+    if (!draft.name.trim() || !draft.unitNumber.trim() || submitting) return;
     const payload = {
-      name,
-      unitNumber,
-      makeModel,
-      vin,
-      licensePlate,
-      cashOnHand: parseFloat(cashOnHand) || 0,
+      name: draft.name,
+      unitNumber: draft.unitNumber,
+      makeModel: draft.makeModel,
+      vin: draft.vin,
+      licensePlate: draft.licensePlate,
+      cashOnHand: parseFloat(draft.cashOnHand) || 0,
     };
     await runAction({ operation: async () => {
       if (editingTruck) await onUpdateTruck({ ...editingTruck, ...payload });
@@ -90,63 +86,7 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
             {editingTruck ? 'Edit Truck' : 'Add New Truck'}
           </h3>
           <form onSubmit={handleSubmit} className="space-y-3 text-xs font-semibold">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                  Truck Nickname *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Big Red"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                  Unit # *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Unit 101"
-                  value={unitNumber}
-                  onChange={(e) => setUnitNumber(e.target.value)}
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                  Make & Model
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 2024 Kenworth T680"
-                  value={makeModel}
-                  onChange={(e) => setMakeModel(e.target.value)}
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                  Initial Starting Cash ($)
-                </label>
-                <input
-                  type="number"
-                  placeholder="15000"
-                  value={cashOnHand}
-                  onChange={(e) => setCashOnHand(e.target.value)}
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none"
-                />
-              </div>
-            </div>
+            <TruckFormFields value={draft} onChange={(field, value) => setDraft((current) => ({ ...current, [field]: value }))} />
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#f0ebd9]">
               <button

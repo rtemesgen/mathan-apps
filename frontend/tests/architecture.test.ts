@@ -136,6 +136,9 @@ assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /T
 assert.match(read('apps/truck/components/Pages/RecordTransactionPage.tsx'), /TransactionTypeTabs/);
 assert.match(read('apps/truck/components/Modals/AddOwnerModal.tsx'), /OwnerFormFields/);
 assert.match(read('apps/truck/components/Pages/AddOwnerPage.tsx'), /OwnerFormFields/);
+assert.match(read('apps/truck/components/Modals/AddTruckModal.tsx'), /TruckFormFields/);
+assert.match(read('apps/truck/components/Pages/ManageTrucksPage.tsx'), /TruckFormFields/);
+assert.match(read('apps/truck/components/TruckFormFields.tsx'), /vin/);
 for (const obsolete of [
   'apps/payroll/components/AddEmployeeModal.tsx',
   'apps/payroll/components/AddRaiseModal.tsx',
