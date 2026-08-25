@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { ArrowDownLeft, Save, UserPlus } from 'lucide-react';
-import { Owner, TransactionType, Truck } from '../../types';
+import { Customer, Owner, TransactionType, Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 interface IncomePageProps {
   owners: Owner[];
+  customers: Customer[];
   trucks: Truck[];
   currentTruckId: string;
   defaultOwnerId?: string;
@@ -20,12 +22,16 @@ interface IncomePageProps {
     ownerId?: string;
     description: string;
     referenceNo?: string;
-  }) => void;
+    counterpartyType?: 'CUSTOMER' | 'OWNER' | 'OTHER';
+    customerId?: string;
+    counterpartyName?: string;
+  }) => Promise<void>;
   onBack: () => void;
 }
 
 export const IncomePage: React.FC<IncomePageProps> = ({
   owners,
+  customers,
   trucks,
   currentTruckId,
   defaultOwnerId,
@@ -34,33 +40,41 @@ export const IncomePage: React.FC<IncomePageProps> = ({
   onBack,
 }) => {
   const [incomeType, setIncomeType] = useState<'TRIP' | 'OWNER_LOAN'>('TRIP');
+  const [paymentSelection, setPaymentSelection] = useState('CASH');
   const truckId = currentTruckId || (trucks[0]?.id ?? '');
   const [ownerId, setOwnerId] = useState(defaultOwnerId || (owners[0]?.id ?? ''));
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('Trip Pay / Hauling Cargo');
+  const [category, setCategory] = useState('Trip Pay');
   const [customerOrCompany, setCustomerOrCompany] = useState('');
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const { submitting, runAction } = useAsyncAction();
+  const selectedCustomerId = paymentSelection.startsWith('CUSTOMER:') ? paymentSelection.slice('CUSTOMER:'.length) : '';
+  const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const resetForm = () => { setAmount(''); setCustomerOrCompany(''); setPaymentSelection('CASH'); setDescription(''); setReferenceNo(''); setDate(new Date().toISOString().split('T')[0]); };
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) return;
-
-    if (incomeType === 'TRIP') {
-      onSubmit({
+    if (isNaN(numAmount) || numAmount <= 0 || submitting || (incomeType === 'TRIP' && selectedCustomerId && !selectedCustomer)) return;
+    await runAction({ operation: async () => {
+      if (incomeType === 'TRIP') {
+        await onSubmit({
         truckId,
         date,
-        type: 'INCOME',
+        type: selectedCustomerId ? 'RECEIVABLE' : 'INCOME',
         category: category || 'Trip Earnings',
         amount: numAmount,
-        description: description || (customerOrCompany ? `${customerOrCompany} - ${category}` : category),
+        description: description.trim(),
         referenceNo: referenceNo || `INV-${Math.floor(1000 + Math.random() * 9000)}`,
-      });
-    } else {
-      const selectedOwner = owners.find((o) => o.id === ownerId);
-      onSubmit({
+        counterpartyType: selectedCustomerId ? 'CUSTOMER' : undefined,
+        customerId: selectedCustomerId || undefined,
+        counterpartyName: selectedCustomer?.name,
+        });
+      } else {
+        const selectedOwner = owners.find((o) => o.id === ownerId);
+        await onSubmit({
         truckId,
         date,
         type: 'CAPITAL_INJECTION',
@@ -69,10 +83,10 @@ export const IncomePage: React.FC<IncomePageProps> = ({
         ownerId,
         description: description || `Loan from ${selectedOwner?.name || 'Owner'}`,
         referenceNo: referenceNo || `LOAN-${Math.floor(1000 + Math.random() * 9000)}`,
-      });
-    }
-
-    // Keep the user on the current page after saving; navigation is explicit.
+        });
+      }
+      resetForm();
+    }, successMessage: incomeType === 'TRIP' && selectedCustomerId ? 'Customer receivable saved successfully.' : 'Truck income saved successfully.', errorMessage: 'Could not save the Truck income. Your entries were kept.' });
   };
 
   return (
@@ -110,7 +124,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
                 type="button"
                 onClick={() => {
                   setIncomeType('TRIP');
-                  setCategory('Trip Pay / Hauling Cargo');
+                  setCategory('Trip Pay');
                 }}
                 className={`py-2 px-2.5 rounded-lg transition-all text-left flex items-center gap-2 font-bold ${
                   incomeType === 'TRIP'
@@ -126,6 +140,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
                   </div>
                 </div>
               </button>
+
 
               <button
                 type="button"
@@ -150,7 +165,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
             </div>
           </div>
 
-          {/* Partner (if loan) or Customer */}
+          {/* Partner for a loan; trip payment is selected below the date. */}
           {incomeType === 'OWNER_LOAN' ? (
             <div>
               <label className="block text-[#c66900] uppercase text-[10px] mb-1 font-bold">
@@ -160,18 +175,15 @@ export const IncomePage: React.FC<IncomePageProps> = ({
             </div>
           ) : (
             <div>
-              <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                Broker / Customer (Optional)
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., TQL, CH Robinson, Landstar"
-                value={customerOrCompany}
-                onChange={(e) => setCustomerOrCompany(e.target.value)}
-                className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none"
-              />
+              <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">Notes</label>
+              <input type="text" placeholder="Optional loan note" value={customerOrCompany} onChange={(e) => setCustomerOrCompany(e.target.value)} className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none" />
             </div>
           )}
+
+          {incomeType === 'TRIP' && <div>
+            <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">Payment method / customer *</label>
+            <TruckSelect value={paymentSelection} onChange={setPaymentSelection} options={[{ value: 'CASH', label: 'Cash received now' }, ...customers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash received now" />
+          </div>}
 
           {/* Amount & Category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -200,25 +212,12 @@ export const IncomePage: React.FC<IncomePageProps> = ({
               <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
                 Category
               </label>
-              <TruckSelect value={category} onChange={setCategory} options={(incomeType === 'TRIP' ? ['Trip Pay / Hauling Cargo', 'Dedicated Route Pay', 'Extra Waiting Time / Layover Pay', 'Fuel Surcharge (Extra Fuel Pay)', 'Other Trip Income'] : ['Owner Loan to Truck', 'Emergency Repair Loan', 'Insurance Down Payment Loan', 'Cash Cushion Loan']).map((label) => ({ value: label, label }))} />
+              <TruckSelect value={category} onChange={setCategory} options={(incomeType === 'TRIP' ? ['Trip Pay', 'Dedicated Route Pay', 'Extra Waiting Time', 'Fuel Surcharge)', 'Other Trip Income'] : ['Owner Loan to Truck', 'Emergency Repair Loan', 'Insurance Down Payment Loan', 'Cash Cushion Loan']).map((label) => ({ value: label, label }))} />
             </div>
           </div>
 
-          {/* Customer / Company & Reference # */}
+          {/* Reference */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
-              <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                {incomeType === 'TRIP' ? 'Customer / Company Paid By' : 'Notes'}
-              </label>
-              <input
-                type="text"
-                value={customerOrCompany}
-                onChange={(e) => setCustomerOrCompany(e.target.value)}
-                placeholder="e.g. Acme Transport, CH Robinson"
-                className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none"
-              />
-            </div>
-
             <div>
               <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
                 Invoice / Reference #
@@ -259,10 +258,11 @@ export const IncomePage: React.FC<IncomePageProps> = ({
 
             <button
               type="submit"
+              disabled={submitting}
               className="px-4 py-1.5 rounded-lg bg-[#2e7d32] hover:bg-[#256628] text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Save Income</span>
+              <span>{submitting ? 'Saving…' : 'Save Income'}</span>
             </button>
           </div>
         </form>

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Truck as TruckIcon, Plus, Check } from 'lucide-react';
 import { Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
+import { TruckFormFields, type TruckDraft } from '../TruckFormFields';
 
 interface AddTruckModalProps {
   isOpen: boolean;
@@ -16,7 +18,7 @@ interface AddTruckModalProps {
     vin: string;
     cashOnHand: number;
     licensePlate: string;
-  }) => void;
+  }) => Promise<void>;
 }
 
 export const AddTruckModal: React.FC<AddTruckModalProps> = ({
@@ -28,35 +30,22 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
   onAddTruck,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
-  const [name, setName] = useState('');
-  const [unitNumber, setUnitNumber] = useState('');
-  const [makeModel, setMakeModel] = useState('');
-  const [vin, setVin] = useState('');
-  const [cashOnHand, setCashOnHand] = useState('');
-  const [licensePlate, setLicensePlate] = useState('');
+  const [draft, setDraft] = useState<TruckDraft>({ name: '', unitNumber: '', makeModel: '', vin: '', cashOnHand: '', licensePlate: '' });
+  const { submitting, runAction } = useAsyncAction();
 
   if (!isOpen) return null;
 
-  const handleSubmitNew = (e: React.FormEvent) => {
+  const handleSubmitNew = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !unitNumber.trim()) return;
-
-    onAddTruck({
-      name,
-      unitNumber,
-      makeModel,
-      vin,
-      cashOnHand: parseFloat(cashOnHand) || 0,
-      licensePlate: licensePlate || 'TRK-NEW',
-    });
-
-    setShowAddForm(false);
-    setName('');
-    setUnitNumber('');
-    setMakeModel('');
-    setVin('');
-    setCashOnHand('');
-    setLicensePlate('');
+    if (!draft.name.trim() || !draft.unitNumber.trim() || submitting) return;
+    await runAction({ operation: () => onAddTruck({
+      name: draft.name,
+      unitNumber: draft.unitNumber,
+      makeModel: draft.makeModel,
+      vin: draft.vin,
+      cashOnHand: parseFloat(draft.cashOnHand) || 0,
+      licensePlate: draft.licensePlate || 'TRK-NEW',
+    }), successMessage: 'Truck saved successfully.', errorMessage: 'Could not save the Truck. Your entries were kept.' }).then(() => { setShowAddForm(false); setDraft({ name: '', unitNumber: '', makeModel: '', vin: '', cashOnHand: '', licensePlate: '' }); });
   };
 
   return (
@@ -154,75 +143,7 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
           ) : (
             /* Add Truck Form */
             <form onSubmit={handleSubmitNew} className="space-y-3">
-              <div>
-                <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                  Truck Name / Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Kenworth W900 - Fleet #103"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-xl px-3 py-2 text-xs font-bold text-[#1c1d1f] focus:ring-2 focus:ring-[#3f4d34] focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                    Unit Number *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="FL-103"
-                    value={unitNumber}
-                    onChange={(e) => setUnitNumber(e.target.value)}
-                    className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-xl px-3 py-2 text-xs font-bold text-[#1c1d1f] focus:ring-2 focus:ring-[#3f4d34] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                    Initial Cash ($)
-                  </label>
-                  <input
-                    type="number"
-                    value={cashOnHand}
-                    onChange={(e) => setCashOnHand(e.target.value)}
-                    className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-xl px-3 py-2 text-xs font-bold text-[#1c1d1f] focus:ring-2 focus:ring-[#3f4d34] focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                    Make / Model
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="2025 Peterbilt 579"
-                    value={makeModel}
-                    onChange={(e) => setMakeModel(e.target.value)}
-                    className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-xl px-3 py-2 text-xs font-semibold text-[#1c1d1f] focus:ring-2 focus:ring-[#3f4d34] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                    License Plate
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="TRK-8810"
-                    value={licensePlate}
-                    onChange={(e) => setLicensePlate(e.target.value)}
-                    className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-xl px-3 py-2 text-xs font-semibold text-[#1c1d1f] focus:ring-2 focus:ring-[#3f4d34] focus:outline-none"
-                  />
-                </div>
-              </div>
+              <TruckFormFields value={draft} onChange={(field, value) => setDraft((current) => ({ ...current, [field]: value }))} variant="modal" />
 
               <div className="pt-3 flex items-center justify-between">
                 <button
@@ -235,9 +156,10 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
 
                 <button
                   type="submit"
+                  disabled={submitting}
                   className="px-5 py-2 rounded-xl bg-[#3f4d34] hover:bg-[#323e29] text-white font-bold"
                 >
-                  Save Truck
+                  {submitting ? 'Saving…' : 'Save Truck'}
                 </button>
               </div>
             </form>

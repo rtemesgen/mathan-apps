@@ -77,7 +77,7 @@ export function formatTimeAgo(isoString: string): string {
   }
 }
 
-export function calculateBookStats(transactions: Transaction[], bookId?: string): BookStats {
+export function calculateBookStats(transactions: Transaction[], bookId?: string, openingBalance = 0): BookStats {
   const filtered = bookId ? transactions.filter(t => t.bookId === bookId) : transactions;
   
   let totalIn = 0;
@@ -94,7 +94,7 @@ export function calculateBookStats(transactions: Transaction[], bookId?: string)
   return {
     totalIn,
     totalOut,
-    netBalance: totalIn - totalOut,
+    netBalance: openingBalance + totalIn - totalOut,
     transactionCount: filtered.length,
   };
 }

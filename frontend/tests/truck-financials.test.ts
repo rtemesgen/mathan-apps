@@ -17,4 +17,20 @@ assert.equal(result.netProfit, 800);
 assert.equal(result.cashOnHand, 1150);
 assert.equal(result.ownerSummaries[0].unpaidBalance, 250);
 assert.equal(result.ownerSummaries[0].earnedProfitShare, 400);
+
+const creditTransactions: Transaction[] = [
+  { id: 'ar', truckId: 't1', date: '2026-01-01', type: 'RECEIVABLE', category: 'Freight', amount: 500, counterpartyType: 'CUSTOMER', counterpartyName: 'ABC Customer', description: '' },
+  { id: 'ap', truckId: 't1', date: '2026-01-02', type: 'PAYABLE', category: 'Repair', amount: 120, counterpartyType: 'OWNER', counterpartyName: 'Partner', ownerId: 'o1', description: '' },
+  { id: 'ars', truckId: 't1', date: '2026-01-03', type: 'RECEIVABLE_SETTLEMENT', category: 'Payment', amount: 200, counterpartyType: 'CUSTOMER', counterpartyName: 'ABC Customer', description: '' },
+  { id: 'aps', truckId: 't1', date: '2026-01-04', type: 'PAYABLE_SETTLEMENT', category: 'Payment', amount: 20, counterpartyType: 'OWNER', counterpartyName: 'Partner', ownerId: 'o1', description: '' },
+];
+const creditResult = calculateTruckFinancials(truck, [owner], creditTransactions, '2026-01-04');
+assert.equal(creditResult.totalReceivable, 300);
+assert.equal(creditResult.totalPayable, 100);
+assert.equal(creditResult.netProfit, 380);
+assert.equal(creditResult.cashOnHand, 280);
+assert.deepEqual(creditResult.counterpartyBalances.map(({ type, name, amount }) => ({ type, name, amount })), [
+  { type: 'receivable', name: 'ABC Customer', amount: 300 },
+  { type: 'payable', name: 'Partner', amount: 100 },
+]);
 console.log('Truck financial tests passed.');

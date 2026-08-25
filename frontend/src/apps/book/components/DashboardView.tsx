@@ -39,6 +39,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleSortClick = (key: 'recent' | 'balance' | 'name') => {
     if (sortBy === key) {
+      // Recent activity is always newest first. Toggling it to oldest-first
+      // makes the Last Edited control contradict its label.
+      if (key === 'recent') {
+        setSortOrder('desc');
+        return;
+      }
       setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortBy(key);
@@ -48,8 +54,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Total Summary across all books
   const grandTotalStats = useMemo(() => {
-    return calculateBookStats(transactions);
-  }, [transactions]);
+    return calculateBookStats(transactions, undefined, books.reduce((sum, book) => sum + (book.openingBalance ?? 0), 0));
+  }, [transactions, books]);
 
   // Helper to compute latest activity timestamp for a book
   const getLatestTimestamp = (bookId: string, updatedAt: string) => {
@@ -77,8 +83,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           return sortOrder === 'desc' ? diff : -diff;
         }
         if (sortBy === 'balance') {
-          const statsA = calculateBookStats(transactions, a.id);
-          const statsB = calculateBookStats(transactions, b.id);
+          const statsA = calculateBookStats(transactions, a.id, a.openingBalance ?? 0);
+          const statsB = calculateBookStats(transactions, b.id, b.openingBalance ?? 0);
           const diff = statsB.netBalance - statsA.netBalance;
           return sortOrder === 'desc' ? diff : -diff;
         }
@@ -168,9 +174,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             }`}
           >
             <span>Last Edited</span>
-            {sortBy === 'recent' && (
-              <span className="text-[9px]">{sortOrder === 'desc' ? '↓' : '↑'}</span>
-            )}
+            {sortBy === 'recent' && <span className="text-[9px]">↓</span>}
           </button>
           <button
             type="button"

@@ -1,18 +1,11 @@
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
-import { Toast } from '@capacitor/toast';
 import { registerPlugin } from '@capacitor/core';
 import { jsPDF } from 'jspdf';
+import type { ExportMetadata, ExportSummaryItem } from './exports/exportTypes';
+import { buildExportMetadataRows } from './exports/exportMetadata';
 
 export const isNativeMobile = () => Capacitor.isNativePlatform();
-
-export function showAppToast(message: string) {
-  if (isNativeMobile()) {
-    void Toast.show({ text: message, duration: 'short' });
-    return;
-  }
-  window.dispatchEvent(new CustomEvent('mathan:toast', { detail: message }));
-}
 
 const LATEST_RELEASE_APK_URL = 'https://github.com/rtemesgen/mathan-apps/releases/latest/download/app-release.apk';
 
@@ -34,6 +27,7 @@ export async function getLatestAppDownloadUrl() {
 const FileSaver = registerPlugin<{
   saveAndOpen(options: { filename: string; mimeType: string; data: string }): Promise<void>;
   save(options: { filename: string; mimeType: string; data: string }): Promise<{ uri?: string }>;
+  saveBackup(options: { filename: string; mimeType: string; data: string }): Promise<{ uri?: string }>;
 }>('FileSaver');
 
 function toSafeFilename(filename: string) {
@@ -64,6 +58,15 @@ export async function saveTextFile(filename: string, content: string, type = 'te
   }
 
   await FileSaver.saveAndOpen({ filename: toSafeFilename(filename), mimeType: type, data: encodeUtf8(content) });
+}
+
+/** Save an admin backup in Android/media/<package>/backups on Android. */
+export async function saveWorkspaceBackupFile(filename: string, content: string) {
+  if (!isNativeMobile()) {
+    await saveTextFile(filename, content, 'application/json');
+    return;
+  }
+  await FileSaver.saveBackup({ filename: toSafeFilename(filename), mimeType: 'application/json', data: encodeUtf8(content) });
 }
 
 export async function saveBinaryFile(filename: string, mimeType: string, bytes: Uint8Array) {
@@ -124,53 +127,70 @@ function drawPdfFooter(pdf: jsPDF, page: number, total: number, pageWidth: numbe
 }
 
 function drawPdfTableHeader(pdf: jsPDF, labels: string[], x: number, y: number, width: number) {
-  const columnWidth = (width - 16) / labels.length;
+  const columnWidth = width / labels.length;
   pdf.setFillColor(84, 98, 62);
-  pdf.roundedRect(x, y - 12, width, 25, 4, 4, 'F');
+  pdf.setDrawColor(210, 218, 203);
+  pdf.setLineWidth(0.7);
+  pdf.roundedRect(x, y - 12, width, 38, 4, 4, 'FD');
   labels.forEach((label, index) => {
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7.5);
-    pdf.text(label.toUpperCase(), x + 8 + index * columnWidth, y + 3);
+    pdf.setFontSize(11);
+    const wrapped = pdf.splitTextToSize(label.toUpperCase(), columnWidth - 12) as string[];
+    pdf.text(wrapped.slice(0, 2), x + 8 + index * columnWidth, y + (wrapped.length > 1 ? 1 : 8));
+    if (index < labels.length - 1) {
+      pdf.setDrawColor(210, 218, 203);
+      pdf.line(x + (index + 1) * columnWidth, y - 12, x + (index + 1) * columnWidth, y + 26);
+    }
   });
 }
 
-export async function exportPdfFile(filename: string, title: string, lines: string[]) {
+export async function exportPdfFile(filename: string, title: string, lines: string[], tableHeaders: string[] = [], metadata?: ExportMetadata, summary: ExportSummaryItem[] = []) {
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
   const margin = 40;
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   let y = drawPdfHeader(pdf, title, pageWidth);
-  const separatorIndex = lines.findIndex((line) => !line.trim());
-  const summaryLines = lines.slice(0, separatorIndex >= 0 ? separatorIndex : Math.min(lines.length, 4));
-  const bodyLines = separatorIndex >= 0 ? lines.slice(separatorIndex + 1) : lines.slice(summaryLines.length);
-  const summary = summaryLines
-    .filter((line) => line.includes(':'))
-    .map((line) => {
-      const splitAt = line.indexOf(':');
-      return { label: line.slice(0, splitAt).trim(), value: line.slice(splitAt + 1).trim() };
-    })
-    .slice(0, 4);
+  const bodyLines = lines.filter((line) => line.trim());
+  const metadataRows = buildExportMetadataRows(metadata).map((row) => [String(row[0]), String(row[1] ?? '')]);
+
+  if (metadataRows.length) {
+    metadataRows.forEach((item) => {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.setTextColor(84, 98, 62);
+      pdf.text(`${item[0]}:`, margin, y);
+      pdf.setTextColor(31, 36, 31);
+      pdf.text(item[1] || '—', margin + 58, y);
+      y += 18;
+    });
+    y += 8;
+  }
 
   if (summary.length) {
-    const gap = 10;
-    const cardWidth = (pageWidth - margin * 2 - gap * (summary.length - 1)) / summary.length;
+    const gap = 6;
+    const rowGap = 8;
+    const columns = Math.min(summary.length, 6);
+    const cardHeight = 46;
+    const cardWidth = (pageWidth - margin * 2 - gap * (columns - 1)) / columns;
     summary.forEach((item, index) => {
-      const x = margin + index * (cardWidth + gap);
-      pdf.setFillColor(246, 245, 239);
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const x = margin + column * (cardWidth + gap);
+      const cardY = y + row * (cardHeight + rowGap);
+      pdf.setFillColor(item.tone === 'positive' ? 237 : item.tone === 'negative' ? 253 : 246, item.tone === 'positive' ? 250 : item.tone === 'negative' ? 239 : 245, item.tone === 'positive' ? 241 : item.tone === 'negative' ? 239 : 239);
       pdf.setDrawColor(232, 230, 220);
-      pdf.roundedRect(x, y, cardWidth, 62, 8, 8, 'FD');
+      pdf.roundedRect(x, cardY, cardWidth, cardHeight, 7, 7, 'FD');
       pdf.setTextColor(110, 110, 105);
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7);
-      pdf.text(item.label.toUpperCase(), x + 9, y + 16);
-      pdf.setTextColor(24, 24, 27);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10);
-      const value = pdf.splitTextToSize(item.value || '—', cardWidth - 18) as string[];
-      pdf.text(value.slice(0, 2), x + 9, y + 37);
+      pdf.setFontSize(5.5);
+      const label = pdf.splitTextToSize(item.label.toUpperCase(), cardWidth - 12).slice(0, 2);
+      pdf.text(label, x + 6, cardY + 11);
+      pdf.setTextColor(item.tone === 'positive' ? 0 : item.tone === 'negative' ? 185 : 24, item.tone === 'positive' ? 128 : item.tone === 'negative' ? 28 : 24, item.tone === 'positive' ? 90 : item.tone === 'negative' ? 55 : 27);
+      pdf.setFontSize(9);
+      pdf.text(item.value || '—', x + 6, cardY + 34);
     });
-    y += 86;
+    y += Math.ceil(summary.length / columns) * (cardHeight + rowGap) + 8;
   }
 
   pdf.setTextColor(84, 98, 62);
@@ -187,42 +207,49 @@ export async function exportPdfFile(filename: string, title: string, lines: stri
   const firstRow = rows.find((line) => line.includes('|'));
   if (firstRow) {
     const columnCount = firstRow.split('|').length;
-    const labels = title.toLowerCase().includes('cash book')
-      ? ['Date & Time', 'Type', 'Amount', 'Remark', 'Category', 'Payment']
-      : title.toLowerCase().includes('transaction')
-      ? ['Date', 'Employee', 'Amount', 'Notes']
-      : columnCount >= 7
-        ? ['Employee', 'Start Date', 'Monthly Rate', 'Daily Rate', 'Earned', 'Paid', 'Balance']
-        : columnCount >= 5
-          ? ['Employee', 'Department', 'Earned', 'Paid', 'Balance']
-        : ['Date', 'Amount', 'Notes'];
+    const labels = tableHeaders.length ? tableHeaders : Array.from({ length: columnCount }, (_, index) => `Column ${index + 1}`);
     drawPdfTableHeader(pdf, labels.slice(0, columnCount), margin, y, pageWidth - margin * 2);
-    y += 28;
+    y += 38;
   }
 
   // Keep every body row on the same grid as the header. This is especially
   // important for imported or hand-built lines with an unexpected extra cell.
   const tableColumnCount = firstRow
-    ? (title.toLowerCase().includes('cash book') ? 6 : Math.min(firstRow.split('|').length, 7))
+    ? Math.min(firstRow.split('|').length, tableHeaders.length || firstRow.split('|').length)
     : 1;
 
   for (const line of rows) {
     const cells = line.split('|').map((cell) => cell.trim());
-    const rowHeight = cells.length > 1 ? 30 : 22;
+    const rowHeight = cells.length > 1 ? 40 : 30;
     if (y + rowHeight > pageHeight - 52) {
       pdf.addPage();
       y = drawPdfHeader(pdf, title, pageWidth);
     }
     if (cells.length > 1) {
-      pdf.setFillColor((Math.round(y / rowHeight) % 2 === 0) ? 250 : 246, 249, 244);
-      pdf.roundedRect(margin, y - 12, pageWidth - margin * 2, rowHeight, 4, 4, 'F');
+      const incomeIndex = tableHeaders.findIndex((header) => /cash in|income|credit/i.test(header));
+      const expenseIndex = tableHeaders.findIndex((header) => /cash out|expense|debit/i.test(header));
+      const typeIndex = tableHeaders.findIndex((header) => /type|entry/i.test(header));
+      const amountIndex = tableHeaders.findIndex((header) => /^amount$/i.test(header));
+      const typeValue = typeIndex >= 0 ? cells[typeIndex].toLowerCase() : '';
+      const isIncome = (incomeIndex >= 0 && Boolean(cells[incomeIndex])) || /income|cash in|credit|inflow|capital injection/.test(typeValue);
+      const isExpense = (expenseIndex >= 0 && Boolean(cells[expenseIndex])) || /expense|cash out|debit|outflow|withdraw|repay|loan|bill/.test(typeValue);
+      pdf.setFillColor(isIncome ? 239 : isExpense ? 255 : (Math.round(y / rowHeight) % 2 === 0 ? 250 : 246), isIncome ? 249 : isExpense ? 242 : 249, isIncome ? 242 : isExpense ? 242 : 244);
+      pdf.setDrawColor(218, 224, 214);
+      pdf.setLineWidth(0.6);
+      pdf.roundedRect(margin, y - 12, pageWidth - margin * 2, rowHeight, 4, 4, 'FD');
       const visibleColumnCount = tableColumnCount;
-      const columnWidth = (pageWidth - margin * 2 - 16) / visibleColumnCount;
+      const columnWidth = (pageWidth - margin * 2) / visibleColumnCount;
       cells.slice(0, visibleColumnCount).forEach((cell, index) => {
         const isBalance = cell.toLowerCase().includes('balance') || (index === cells.length - 1 && cells.length >= 4);
-        pdf.setTextColor(isBalance ? 84 : index === 0 ? 45 : 85, isBalance ? 98 : index === 0 ? 45 : 85, isBalance ? 62 : index === 0 ? 45 : 85);
+        const isIncomeCell = (index === incomeIndex && Boolean(cell)) || (index === typeIndex && isIncome) || (index === amountIndex && isIncome);
+        const isExpenseCell = (index === expenseIndex && Boolean(cell)) || (index === typeIndex && isExpense) || (index === amountIndex && isExpense);
+        pdf.setTextColor(isIncomeCell ? 0 : isExpenseCell ? 190 : isBalance ? 84 : index === 0 ? 45 : 55, isIncomeCell ? 128 : isExpenseCell ? 32 : isBalance ? 98 : index === 0 ? 45 : 55, isIncomeCell ? 90 : isExpenseCell ? 45 : isBalance ? 62 : index === 0 ? 45 : 55);
         pdf.setFont('helvetica', index === 0 ? 'bold' : 'normal');
-        pdf.setFontSize(visibleColumnCount >= 7 ? 7 : 8);
+        pdf.setFontSize(11);
+        if (index < visibleColumnCount - 1) {
+          pdf.setDrawColor(225, 230, 222);
+          pdf.line(margin + (index + 1) * columnWidth, y - 12, margin + (index + 1) * columnWidth, y + rowHeight - 12);
+        }
         const wrapped = pdf.splitTextToSize(cell, columnWidth - 8) as string[];
         pdf.text(wrapped.slice(0, 2), margin + 8 + index * columnWidth, y + 2);
       });

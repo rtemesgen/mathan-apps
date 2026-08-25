@@ -1,6 +1,8 @@
 package com.mathan.erp;
 
 import android.app.DownloadManager;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -21,6 +23,16 @@ import com.getcapacitor.PluginMethod;
 
 @CapacitorPlugin(name = "AppUpdater")
 public class AppUpdaterPlugin extends Plugin {
+    @PluginMethod
+    public void scheduleUpdateChecks(PluginCall call) {
+        AlarmManager alarm = (AlarmManager) getContext().getSystemService(Context.ALARM_SERVICE);
+        Intent intent = new Intent(getContext(), UpdateCheckReceiver.class);
+        PendingIntent pending = PendingIntent.getBroadcast(getContext(), 9401, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        long interval = 6L * 60L * 60L * 1000L;
+        alarm.setInexactRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 60_000L, interval, pending);
+        call.resolve();
+    }
+
     @PluginMethod
     public void getDownloadProgress(PluginCall call) {
         long downloadId = getContext().getSharedPreferences("mathan-updater", Context.MODE_PRIVATE).getLong("download-id", -1);

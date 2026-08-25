@@ -16,7 +16,7 @@ import {
   FileText,
   X
 } from 'lucide-react';
-import { exportPdfFile, showAppToast } from '../../../lib/mobile';
+import { ExportButton } from '../../../components/ExportButton';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppSelect } from '../../../components/AppSelect';
 
@@ -26,7 +26,8 @@ interface BookDetailViewProps {
   onBackToDashboard: () => void;
   onOpenCashInModal: () => void;
   onOpenCashOutModal: () => void;
-  onDeleteTransaction: (id: string) => void;
+  onDeleteTransaction: (id: string) => void | Promise<void>;
+  onOpenExport: (filters?: { transactionType?: string; query?: string }) => void;
 }
 
 export const BookDetailView: React.FC<BookDetailViewProps> = ({
@@ -36,6 +37,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   onOpenCashInModal,
   onOpenCashOutModal,
   onDeleteTransaction,
+  onOpenExport,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'in' | 'out'>('all');
@@ -49,8 +51,8 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   }, [transactions, book.id]);
 
   const stats = useMemo(() => {
-    return calculateBookStats(bookTransactions);
-  }, [bookTransactions]);
+    return calculateBookStats(bookTransactions, book.id, book.openingBalance ?? 0);
+  }, [bookTransactions, book.id, book.openingBalance]);
 
   // Compute running balance map: tx.id -> net balance after that entry
   const runningBalanceMap = useMemo(() => {
@@ -62,7 +64,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
     });
 
     const map = new Map<string, number>();
-    let currentBalance = 0;
+    let currentBalance = book.openingBalance ?? 0;
 
     for (const tx of sortedChronologically) {
       if (tx.type === 'in') {
@@ -74,7 +76,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
     }
 
     return map;
-  }, [bookTransactions]);
+  }, [bookTransactions, book.openingBalance]);
 
   // Filtered & Sorted Transactions
   const filteredTransactions = useMemo(() => {
@@ -93,10 +95,10 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
       })
       .sort((a, b) => {
         if (sortBy === 'newest') {
-          return new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime();
+          return new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime() || b.id.localeCompare(a.id);
         }
         if (sortBy === 'oldest') {
-          return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
+          return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime() || a.id.localeCompare(b.id);
         }
         if (sortBy === 'highest') {
           return b.amount - a.amount;
@@ -104,31 +106,6 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
         return 0;
       });
   }, [bookTransactions, typeFilter, searchQuery, sortBy]);
-
-  const handleExportPDF = () => {
-    const lines = [
-      `Book: ${book.name}`,
-      `Currency: ${book.currency}`,
-      `Total cash in: ${formatCurrency(stats.totalIn, book.currency)}`,
-      `Total cash out: ${formatCurrency(stats.totalOut, book.currency)}`,
-      `Net balance: ${formatCurrency(stats.netBalance, book.currency)}`,
-      '',
-      ...bookTransactions
-        .slice()
-        .sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime())
-        .map((transaction) => [
-          formatDateTime(transaction.dateTime).dateStr,
-          transaction.type === 'in' ? 'CASH IN' : 'CASH OUT',
-          `${transaction.type === 'in' ? '+' : '-'}${formatCurrency(transaction.amount, book.currency)}`,
-          transaction.remark,
-          transaction.category || '—',
-          transaction.paymentMode || '—',
-        ].join(' | ')),
-    ];
-    void exportPdfFile(`${book.name.replace(/\s+/g, '_')}_transactions.pdf`, `Cash Book Transactions — ${book.name}`, lines)
-      .then(() => showAppToast('Cash Book PDF saved'))
-      .catch(() => showAppToast('Could not save the Cash Book PDF'));
-  };
 
   return (
     <div className="min-h-screen pb-20">
@@ -155,33 +132,38 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             )}
           </div>
 
-          <button
-            onClick={handleExportPDF}
-            title="Export transactions to PDF"
-            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-[#4B5563] hover:text-[#121212] bg-[#FAF9F5] hover:bg-[#EFECE3] border border-[#E6E2D6] rounded-md transition-colors"
-          >
-            <Download className="w-2.5 h-2.5" />
-            <span>Download PDF</span>
-          </button>
+          <ExportButton onClick={() => onOpenExport({ transactionType: typeFilter === 'all' ? undefined : typeFilter, query: searchQuery || undefined })} />
         </div>
       </div>
 
       <div className="max-w-5xl mx-auto px-2 sm:px-3 space-y-2.5">
         {/* SUMMARY CARD VIEW AT TOP - MINIMIZED SIZE */}
         <div className="bg-[#FFFFFF] rounded-lg border border-[#E6E2D6] p-2 sm:p-3 shadow-2xs relative overflow-hidden">
-          <div className="text-center max-w-xs mx-auto mb-2">
-            <span className="text-[8px] font-extrabold tracking-widest text-[#B45309] uppercase bg-[#FEF3C7] px-2 py-0.2 rounded-full border border-[#FDE68A]">
-              NET BALANCE
-            </span>
-            <div className={`text-xl sm:text-2xl font-bold tracking-tight mt-0.5 ${
-              stats.netBalance >= 0 ? 'text-[#121212]' : 'text-[#DC2626]'
-            }`}>
-              {formatCurrency(stats.netBalance, book.currency)}
+          <div className="grid grid-cols-2 gap-1 sm:gap-1.5 mb-1.5">
+            <div className="rounded-md border border-[#D8D3C5] bg-[#FAF9F5] p-1.5 sm:p-2">
+              <span className="block text-[8px] font-extrabold tracking-widest text-[#6B7280] uppercase">
+                OPENING BALANCE
+              </span>
+              <div className="text-lg sm:text-xl font-bold tracking-tight mt-0.5 text-[#121212]">
+                {formatCurrency(book.openingBalance ?? 0, book.currency)}
+              </div>
             </div>
-            <p className="text-[9px] text-[#6B7280] mt-0.5">
-              {stats.transactionCount} entries recorded
-            </p>
+
+            <div className="rounded-md border border-[#FDE68A] bg-[#FFFBEB] p-1.5 sm:p-2">
+              <span className="inline-block text-[8px] font-extrabold tracking-widest text-[#B45309] uppercase bg-[#FEF3C7] px-2 py-0.5 rounded-full border border-[#FDE68A]">
+                NET BALANCE
+              </span>
+              <div className={`text-lg sm:text-xl font-bold tracking-tight mt-0.5 ${
+                stats.netBalance >= 0 ? 'text-[#121212]' : 'text-[#DC2626]'
+              }`}>
+                {formatCurrency(stats.netBalance, book.currency)}
+              </div>
+            </div>
           </div>
+
+          <p className="text-center text-[9px] text-[#6B7280] mb-2">
+            {stats.transactionCount} entries recorded
+          </p>
 
           {/* Sub-cards: Total Cash In (+) and Total Cash Out (-) */}
           <div className="grid grid-cols-2 gap-1.5">
@@ -408,7 +390,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
           </div>
         </div>
       )}
-      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message={transactionToDelete ? <>Are you sure you want to delete <strong className="text-[#121212]">{transactionToDelete.remark}</strong>?</> : ''} onClose={() => setTransactionToDelete(null)} onConfirm={() => { if (transactionToDelete) onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message={transactionToDelete ? <>Are you sure you want to delete <strong className="text-[#121212]">{transactionToDelete.remark}</strong>?</> : ''} onClose={() => setTransactionToDelete(null)} onConfirm={async () => { if (transactionToDelete) await onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} successMessage="Cash Book transaction deleted successfully." />
 
       {/* STICKY BOTTOM BUTTONS OPTIMIZED FOR MOBILE */}
       <div className="native-safe-bottom fixed bottom-0 left-0 right-0 z-40 bg-[#FFFFFF]/95 backdrop-blur-md border-t border-[#E6E2D6] p-1.5 sm:p-2 shadow-lg">

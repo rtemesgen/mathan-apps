@@ -4,7 +4,6 @@ import {
   Calendar, 
   ArrowDownLeft, 
   ArrowUpRight, 
-  Download, 
   Filter, 
   Search, 
   TrendingUp, 
@@ -13,9 +12,11 @@ import {
   Clock,
   Printer
 } from 'lucide-react';
+import { ExportButton } from '../../../../components/ExportButton';
 import { Truck, Transaction, Owner } from '../../types';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { calculateTruckFinancials, formatCurrency, formatDate, transactionDetails } from '../../utils/formatters';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { DeleteConfirmModal } from '../../../../components/DeleteConfirmModal';
 
 interface CashReportViewProps {
   truck: Truck;
@@ -23,12 +24,15 @@ interface CashReportViewProps {
   owners: Owner[];
   onOpenIncome: () => void;
   onOpenExpense: () => void;
-  onExport: () => void;
+  onExport: (filters?: { startDate?: string; endDate?: string; transactionType?: string; query?: string }) => void;
   onEditTransaction: (transaction: Transaction) => void;
-  onDeleteTransaction: (transactionId: string) => void;
+  onDeleteTransaction: (transactionId: string) => void | Promise<void>;
 }
 
 type PeriodFilterType = 'daily' | 'weekly' | 'monthly' | 'custom' | 'all';
+
+const isCashInflow = (type: Transaction['type']) => type === 'INCOME' || type === 'CAPITAL_INJECTION' || type === 'RECEIVABLE_SETTLEMENT';
+const isCashOutflow = (type: Transaction['type']) => type === 'EXPENSE' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION' || type === 'PAYABLE_SETTLEMENT';
 
 export const CashReportView: React.FC<CashReportViewProps> = ({
   truck,
@@ -61,8 +65,9 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
     const lastDay = new Date(year, month, 0).getDate();
     return `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
   });
-  const [txTypeFilter, setTxTypeFilter] = useState<'ALL' | 'INFLOW' | 'OUTFLOW'>('ALL');
+  const [txTypeFilter, setTxTypeFilter] = useState<'ALL' | 'INFLOW' | 'OUTFLOW' | 'CREDIT'>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
 
   // Determine active date range based on period filter
   const { effectiveStart, effectiveEnd, periodLabel } = useMemo(() => {
@@ -118,6 +123,11 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
     return [...transactions].sort((a, b) => a.date.localeCompare(b.date));
   }, [transactions]);
 
+  const financialSnapshot = useMemo(
+    () => calculateTruckFinancials(truck, owners, transactions, effectiveEnd),
+    [truck, owners, transactions, effectiveEnd]
+  );
+
   // 1. Calculate Opening Cash Balance:
   // Baseline truck initial cash + all transactions strictly BEFORE effectiveStart
   const openingBalance = useMemo(() => {
@@ -129,11 +139,8 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
     const priorTransactions = chronologicalTx.filter(t => t.date < effectiveStart);
     let delta = 0;
     priorTransactions.forEach(t => {
-      if (t.type === 'INCOME' || t.type === 'CAPITAL_INJECTION') {
-        delta += t.amount;
-      } else {
-        delta -= t.amount;
-      }
+      if (isCashInflow(t.type)) delta += t.amount;
+      if (isCashOutflow(t.type)) delta -= t.amount;
     });
     return truck.cashOnHand + delta;
   }, [truck.cashOnHand, chronologicalTx, effectiveStart]);
@@ -169,6 +176,10 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
       } else if (t.type === 'PROFIT_DISTRIBUTION') {
         outflow += t.amount;
         div += t.amount;
+      } else if (t.type === 'RECEIVABLE_SETTLEMENT') {
+        inflow += t.amount;
+      } else if (t.type === 'PAYABLE_SETTLEMENT') {
+        outflow += t.amount;
       }
     });
 
@@ -190,15 +201,15 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
   const ledgerWithRunningBalance = useMemo(() => {
     let running = openingBalance;
     return periodTransactions.map(tx => {
-      const isInflow = tx.type === 'INCOME' || tx.type === 'CAPITAL_INJECTION';
-      if (isInflow) {
+      const flow = isCashInflow(tx.type) ? 'INFLOW' : isCashOutflow(tx.type) ? 'OUTFLOW' : 'CREDIT';
+      if (flow === 'INFLOW') {
         running += tx.amount;
-      } else {
+      } else if (flow === 'OUTFLOW') {
         running -= tx.amount;
       }
       return {
         ...tx,
-        isInflow,
+        flow,
         balanceAfter: running,
       };
     });
@@ -207,8 +218,7 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
   // 5. Apply UI search and Inflow/Outflow filters to the ledger list
   const filteredLedger = useMemo(() => {
     return ledgerWithRunningBalance.filter(tx => {
-      if (txTypeFilter === 'INFLOW' && !tx.isInflow) return false;
-      if (txTypeFilter === 'OUTFLOW' && tx.isInflow) return false;
+      if (txTypeFilter !== 'ALL' && tx.flow !== txTypeFilter) return false;
 
       if (searchTerm.trim()) {
         const query = searchTerm.toLowerCase();
@@ -219,26 +229,29 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
       }
 
       return true;
-    }).reverse(); // Display most recent first in table
+    }).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)); // Display most recent first in table
   }, [ledgerWithRunningBalance, txTypeFilter, searchTerm]);
 
   // Filtered Totals
   const totalFilteredInflow = useMemo(() => {
     return filteredLedger
-      .filter(tx => tx.isInflow)
+      .filter(tx => tx.flow === 'INFLOW')
       .reduce((sum, tx) => sum + tx.amount, 0);
   }, [filteredLedger]);
 
   const totalFilteredOutflow = useMemo(() => {
     return filteredLedger
-      .filter(tx => !tx.isInflow)
+      .filter(tx => tx.flow === 'OUTFLOW')
       .reduce((sum, tx) => sum + tx.amount, 0);
   }, [filteredLedger]);
+
+  const totalFilteredReceivable = useMemo(() => filteredLedger.filter((tx) => tx.type === 'RECEIVABLE').reduce((sum, tx) => sum + tx.amount, 0), [filteredLedger]);
+  const totalFilteredPayable = useMemo(() => filteredLedger.filter((tx) => tx.type === 'PAYABLE').reduce((sum, tx) => sum + tx.amount, 0), [filteredLedger]);
 
   const netFilteredCash = totalFilteredInflow - totalFilteredOutflow;
 
   return (
-    <div className="p-3 sm:p-5 max-w-5xl mx-auto space-y-3">
+    <div className="max-w-5xl mx-auto space-y-3 p-3 sm:p-5">
       {/* Header Banner */}
       <div className="flex items-center justify-between pb-2 border-b border-[#e5dfd2] flex-wrap gap-2">
         <div className="flex items-center gap-2">
@@ -263,13 +276,9 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
             <Printer className="w-3 h-3" />
             <span>Print</span>
           </button>
-          <button
-            onClick={onExport}
-            className="bg-[#1c1d1f] hover:bg-[#2c2d30] text-white text-[11px] font-bold px-3 py-1 rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-          >
-            <Download className="w-3 h-3" />
-            <span>Export</span>
-          </button>
+          <ExportButton
+            onClick={() => onExport({ startDate: effectiveStart, endDate: effectiveEnd, transactionType: txTypeFilter === 'ALL' ? undefined : txTypeFilter, query: searchTerm || undefined })}
+          />
         </div>
       </div>
 
@@ -375,8 +384,8 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
         </div>
       </div>
 
-      {/* Primary 4-Card Cash Summary Totals (Opening, Income, Payment, Remaining) - Single Row, Compact */}
-      <div className="grid grid-cols-4 gap-1.5">
+      {/* Compact cash summary */}
+      <div className="grid grid-cols-3 gap-2">
         {/* 1. Opening Balance */}
         <div className="bg-white border border-[#e5dfd2] rounded-lg px-2 py-1.5 shadow-2xs">
           <div className="flex items-center justify-between text-[#787672]">
@@ -442,6 +451,20 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
             </span>
           </div>
         </div>
+
+        {/* 5. Receivables */}
+        <div className="rounded-lg border border-blue-200 bg-gradient-to-b from-white to-blue-50/50 px-2.5 py-2 shadow-2xs">
+          <div className="flex items-center justify-between text-blue-700"><span className="text-[8px] font-bold uppercase tracking-wider">Receivable</span><ArrowDownLeft className="h-2.5 w-2.5" /></div>
+          <div className="mt-0.5 text-sm font-bold tracking-tight text-blue-950">{formatCurrency(financialSnapshot.totalReceivable, false)}</div>
+          <div className="text-[8px] text-blue-700">Customers owe truck</div>
+        </div>
+
+        {/* 6. Payables */}
+        <div className="rounded-lg border border-rose-200 bg-gradient-to-b from-white to-rose-50/50 px-2.5 py-2 shadow-2xs">
+          <div className="flex items-center justify-between text-rose-700"><span className="text-[8px] font-bold uppercase tracking-wider">Payable</span><ArrowUpRight className="h-2.5 w-2.5" /></div>
+          <div className="mt-0.5 text-sm font-bold tracking-tight text-rose-950">{formatCurrency(financialSnapshot.totalPayable, false)}</div>
+          <div className="text-[8px] text-rose-700">Truck owes others</div>
+        </div>
       </div>
 
       {/* Cash Flow Ledger Table Header & Search */}
@@ -478,6 +501,16 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
           >
             Outflow Only
           </button>
+          <button
+            onClick={() => setTxTypeFilter('CREDIT')}
+            className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+              txTypeFilter === 'CREDIT'
+                ? 'bg-[#1565c0] text-white'
+                : 'text-[#787672] hover:text-[#1565c0]'
+            }`}
+          >
+            Credit / Owed
+          </button>
         </div>
 
         {/* Search */}
@@ -496,14 +529,17 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
       {/* Cash Statement Table */}
       <div className="bg-white border border-[#e5dfd2] rounded-xl overflow-hidden shadow-2xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full min-w-[840px] table-auto text-left text-xs">
             <thead className="bg-[#f8f6f0] border-b border-[#e5dfd2] text-[#787672] uppercase text-[9px] font-bold tracking-wider">
               <tr>
                 <th className="py-2 px-3">Date</th>
-                <th className="py-2 px-3">Category & Details</th>
+                <th className="py-2 px-3">Category</th>
+                <th className="py-2 px-3">Details</th>
                 <th className="py-2 px-3">Reference #</th>
                 <th className="py-2 px-3 text-right">Inflow (+)</th>
                 <th className="py-2 px-3 text-right">Outflow (-)</th>
+                <th className="py-2 px-3 text-right text-blue-700">Receivable</th>
+                <th className="py-2 px-3 text-right text-rose-700">Payable</th>
                 <th className="py-2 px-3 text-right font-bold text-[#1c1d1f]">Balance</th>
                 <th className="py-2 px-3 text-center">Actions</th>
               </tr>
@@ -511,8 +547,8 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
             <tbody className="divide-y divide-[#f0ebd9] font-medium text-[#1c1d1f]">
               {filteredLedger.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-[#8c8880] text-xs">
-                    No cash transactions recorded during this period.
+                  <td colSpan={10} className="py-8 text-center text-[#8c8880] text-xs">
+                    No entries recorded during this period.
                   </td>
                 </tr>
               ) : (
@@ -521,43 +557,48 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
                   const isLoan = tx.type === 'CAPITAL_INJECTION';
                   const isRepay = tx.type === 'CAPITAL_REPAYMENT';
                   const isDiv = tx.type === 'PROFIT_DISTRIBUTION';
+                  const isReceivable = tx.type === 'RECEIVABLE' || tx.type === 'RECEIVABLE_SETTLEMENT';
+                  const isPayable = tx.type === 'PAYABLE' || tx.type === 'PAYABLE_SETTLEMENT';
 
                   return (
                     <tr key={tx.id} className="hover:bg-[#faf8f5]">
                       <td className="py-2 px-3 text-[#787672] whitespace-nowrap text-[11px]">
                         {formatDate(tx.date)}
                       </td>
-                      <td className="py-2 px-3 max-w-[280px]">
+                      <td className="py-2 px-3 max-w-[220px]">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
                             isIncome ? 'bg-[#e8f5e9] text-[#2e7d32]' :
                             isLoan ? 'bg-[#fff8e1] text-[#f57f17]' :
                             isRepay ? 'bg-[#e0f2f1] text-[#00796b]' :
                             isDiv ? 'bg-[#ede7f6] text-[#512da8]' :
+                            isReceivable ? 'bg-blue-50 text-blue-700' :
+                            isPayable ? 'bg-rose-50 text-rose-700' :
                             'bg-[#fbe9e7] text-[#c62828]'
                           }`}>
                             {tx.category}
                           </span>
                         </div>
-                        <div className="text-[11px] text-[#4a4843] truncate mt-0.5">
-                          {tx.description}
-                        </div>
+                      </td>
+                      <td className="py-2 px-3 max-w-[260px] text-[11px] text-[#4a4843]"><div className="break-words">{transactionDetails(tx) || '—'}</div>
                       </td>
                       <td className="py-2 px-3 text-[#787672] text-[10px] font-mono">
                         {tx.referenceNo || '—'}
                       </td>
                       <td className="py-2 px-3 text-right font-bold text-[#2e7d32] whitespace-nowrap">
-                        {tx.isInflow ? `+${formatCurrency(tx.amount)}` : '—'}
+                        {tx.flow === 'INFLOW' ? `+${formatCurrency(tx.amount)}` : '—'}
                       </td>
                       <td className="py-2 px-3 text-right font-bold text-[#c62828] whitespace-nowrap">
-                        {!tx.isInflow ? `-${formatCurrency(tx.amount)}` : '—'}
+                        {tx.flow === 'OUTFLOW' ? `-${formatCurrency(tx.amount)}` : '—'}
                       </td>
+                      <td className="py-2 px-3 text-right font-bold text-blue-700 whitespace-nowrap">{tx.type === 'RECEIVABLE' ? formatCurrency(tx.amount) : '—'}</td>
+                      <td className="py-2 px-3 text-right font-bold text-rose-700 whitespace-nowrap">{tx.type === 'PAYABLE' ? formatCurrency(tx.amount) : '—'}</td>
                       <td className="py-2 px-3 text-right font-bold text-[#1c1d1f] whitespace-nowrap">
                         {formatCurrency(tx.balanceAfter)}
                       </td>
                       <td className="py-2 px-3 text-center whitespace-nowrap">
                         <button type="button" onClick={() => onEditTransaction(tx)} className="mr-1 rounded px-1 py-0.5 text-[10px] font-bold text-[#54623e] hover:bg-[#edf2e7]">Edit</button>
-                        <button type="button" onClick={() => onDeleteTransaction(tx.id)} className="rounded px-1 py-0.5 text-[10px] font-bold text-[#b42318] hover:bg-[#fef2f2]">Delete</button>
+                        <button type="button" onClick={() => setTransactionToDelete(tx)} className="rounded px-1 py-0.5 text-[10px] font-bold text-[#b42318] hover:bg-[#fef2f2]">Delete</button>
                       </td>
                     </tr>
                   );
@@ -571,20 +612,26 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
                     Total
                   </td>
                   <td className="py-2.5 px-3 text-right font-black text-[#2e7d32] whitespace-nowrap text-xs">
-                    {txTypeFilter !== 'OUTFLOW' && totalFilteredInflow > 0 ? `+${formatCurrency(totalFilteredInflow)}` : '—'}
+                    {txTypeFilter !== 'OUTFLOW' && txTypeFilter !== 'CREDIT' && totalFilteredInflow > 0 ? `+${formatCurrency(totalFilteredInflow)}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right font-black text-[#c62828] whitespace-nowrap text-xs">
-                    {txTypeFilter !== 'INFLOW' && totalFilteredOutflow > 0 ? `-${formatCurrency(totalFilteredOutflow)}` : '—'}
+                    {txTypeFilter !== 'INFLOW' && txTypeFilter !== 'CREDIT' && totalFilteredOutflow > 0 ? `-${formatCurrency(totalFilteredOutflow)}` : '—'}
                   </td>
-                  <td className="py-2.5 px-3 text-right whitespace-nowrap text-[#8c8880]">
-                    —
+                  <td className="py-2.5 px-3 text-right font-black text-blue-700 whitespace-nowrap text-xs">
+                    {txTypeFilter !== 'OUTFLOW' && txTypeFilter !== 'INFLOW' && totalFilteredReceivable > 0 ? formatCurrency(totalFilteredReceivable) : '—'}
                   </td>
+                  <td className="py-2.5 px-3 text-right font-black text-rose-700 whitespace-nowrap text-xs">
+                    {txTypeFilter !== 'OUTFLOW' && txTypeFilter !== 'INFLOW' && totalFilteredPayable > 0 ? formatCurrency(totalFilteredPayable) : '—'}
+                  </td>
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap text-[#8c8880]">—</td>
+                  <td></td>
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
       </div>
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message={transactionToDelete ? <>Are you sure you want to delete <strong>{transactionToDelete.description || transactionToDelete.category}</strong>?</> : ''} onClose={() => setTransactionToDelete(null)} onConfirm={async () => { if (transactionToDelete) await onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} successMessage="Truck transaction deleted successfully." />
     </div>
   );
 };

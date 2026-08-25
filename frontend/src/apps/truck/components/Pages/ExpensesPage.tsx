@@ -6,15 +6,17 @@ import {
   Save, 
   DollarSign
 } from 'lucide-react';
-import { Owner, TransactionType, Truck, TruckFinancialSummary } from '../../types';
+import { Customer, Owner, TransactionType, Truck, TruckFinancialSummary } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { CategoryAutocomplete } from '../CategoryAutocomplete';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 interface ExpensesPageProps {
   summary: TruckFinancialSummary;
   owners: Owner[];
+  customers: Customer[];
   trucks: Truck[];
   currentTruckId: string;
   defaultTab?: 'expense' | 'pay-owner' | 'distribute-profit';
@@ -28,15 +30,19 @@ interface ExpensesPageProps {
     ownerId?: string;
     description: string;
     referenceNo?: string;
-  }) => void;
-  onSubmitPayOwner: (ownerId: string, amount: number, memo: string) => void;
-  onExecuteProfitDistribution: (allocations: { ownerId: string; amount: number }[]) => void;
+    counterpartyType?: 'CUSTOMER' | 'OWNER' | 'OTHER';
+    customerId?: string;
+    counterpartyName?: string;
+  }) => Promise<void>;
+  onSubmitPayOwner: (ownerId: string, amount: number, memo: string) => Promise<void>;
+  onExecuteProfitDistribution: (allocations: { ownerId: string; amount: number }[]) => Promise<void>;
   onBack: () => void;
 }
 
 export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   summary,
   owners,
+  customers,
   trucks,
   currentTruckId,
   defaultTab = 'expense',
@@ -57,6 +63,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseRef, setExpenseRef] = useState('');
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expensePaymentSelection, setExpensePaymentSelection] = useState('CASH');
 
   // Tab 2: Pay Owner State
   const [payOwnerId, setPayOwnerId] = useState<string>(
@@ -70,6 +77,9 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [dividendPool, setDividendPool] = useState<string>(
     availableCash > 0 ? (availableCash * 0.5).toFixed(0) : '0'
   );
+  const { submitting, runAction } = useAsyncAction();
+  const expenseCustomerId = expensePaymentSelection.startsWith('CUSTOMER:') ? expensePaymentSelection.slice('CUSTOMER:'.length) : '';
+  const selectedExpenseCustomer = customers.find((customer) => customer.id === expenseCustomerId);
 
   useEffect(() => {
     if (defaultTab) {
@@ -91,50 +101,49 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     }
   };
 
-  const handleExpenseSubmit = (e: React.FormEvent) => {
+  const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const num = parseFloat(expenseAmount);
-    if (isNaN(num) || num <= 0) return;
+    if (isNaN(num) || num <= 0 || submitting || (expenseCustomerId && !selectedExpenseCustomer)) return;
 
     if (!expenseCategory.trim()) {
       setCategoryError(true);
       return;
     }
 
-    onSubmitExpense({
+    await runAction({ operation: () => onSubmitExpense({
       truckId,
       date: expenseDate,
-      type: 'EXPENSE',
+      type: expenseCustomerId ? 'PAYABLE' : 'EXPENSE',
       category: expenseCategory.trim(),
       amount: num,
-      description: expenseDesc || (expenseVendor ? `${expenseVendor} - ${expenseCategory.trim()}` : expenseCategory.trim()),
+      description: expenseDesc.trim(),
       referenceNo: expenseRef || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
-    });
-
-    // Keep the user on the current page after saving; navigation is explicit.
+      counterpartyType: expenseCustomerId ? 'CUSTOMER' : undefined,
+      customerId: expenseCustomerId || undefined,
+      counterpartyName: expenseCustomerId ? selectedExpenseCustomer?.name : expenseVendor.trim() || undefined,
+    }), successMessage: expenseCustomerId ? 'Customer payable saved successfully.' : 'Truck expense saved successfully.', errorMessage: 'Could not save the Truck expense. Your entries were kept.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); setExpensePaymentSelection('CASH'); });
   };
 
-  const handlePayOwnerSubmit = (e: React.FormEvent) => {
+  const handlePayOwnerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const num = parseFloat(payAmount);
-    if (isNaN(num) || num <= 0 || !currentPaySummary) return;
+    if (isNaN(num) || num <= 0 || !currentPaySummary || submitting) return;
 
-    onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo);
-    // Keep the user on the current page after saving; navigation is explicit.
+    await runAction({ operation: () => onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo), successMessage: 'Owner payment saved successfully.', errorMessage: 'Could not save the owner payment. Your entry was kept.' }).then(() => setPayAmount(''));
   };
 
-  const handleProfitDividendSubmit = (e: React.FormEvent) => {
+  const handleProfitDividendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const pool = parseFloat(dividendPool) || 0;
-    if (pool <= 0) return;
+    if (pool <= 0 || submitting) return;
 
     const allocations = owners.map((o) => ({
       ownerId: o.id,
       amount: Number(((pool * o.equityPercentage) / 100).toFixed(2)),
     }));
 
-    onExecuteProfitDistribution(allocations);
-    // Keep the user on the current page after saving; navigation is explicit.
+    await runAction({ operation: () => onExecuteProfitDistribution(allocations), successMessage: 'Profit distribution saved successfully.', errorMessage: 'Could not save the profit distribution. Your entries were kept.' }).then(() => setDividendPool('0'));
   };
 
   const poolAmount = parseFloat(dividendPool) || 0;
@@ -211,6 +220,13 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
               </div>
             </div>
 
+            <div>
+              <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">Paid To / Store / Mechanic</label>
+              <input type="text" value={expenseVendor} onChange={(e) => setExpenseVendor(e.target.value)} placeholder="e.g. Love's, Pilot, Repair Shop" className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none" />
+            </div>
+
+            <div><label className="block text-[#787672] uppercase text-[10px] font-bold">Payment method / customer *</label><TruckSelect value={expensePaymentSelection} onChange={setExpensePaymentSelection} options={[{ value: 'CASH', label: 'Cash paid now' }, ...customers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash paid now" /></div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
@@ -260,19 +276,6 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                  Paid To / Store / Mechanic
-                </label>
-                <input
-                  type="text"
-                  value={expenseVendor}
-                  onChange={(e) => setExpenseVendor(e.target.value)}
-                  placeholder="e.g. Love's, Pilot, Repair Shop"
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
                   Receipt / Invoice #
                 </label>
                 <input
@@ -309,10 +312,11 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
 
               <button
                 type="submit"
+                disabled={submitting}
                 className="px-4 py-1.5 rounded-lg bg-[#c62828] hover:bg-[#b71c1c] text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>Save Expense</span>
+                <span>{submitting ? 'Saving…' : 'Save Expense'}</span>
               </button>
             </div>
           </form>
@@ -396,10 +400,11 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
 
               <button
                 type="submit"
+                disabled={submitting}
                 className="px-4 py-1.5 rounded-lg bg-[#3f4d34] hover:bg-[#323e29] text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
               >
                 <DollarSign className="w-3.5 h-3.5" />
-                <span>Pay Owner</span>
+                <span>{submitting ? 'Saving…' : 'Pay Owner'}</span>
               </button>
             </div>
           </form>
@@ -497,11 +502,11 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
 
               <button
                 type="submit"
-                disabled={poolAmount <= 0}
+                disabled={poolAmount <= 0 || submitting}
                 className="px-4 py-1.5 rounded-lg bg-[#5b21b6] hover:bg-[#4c1d95] disabled:opacity-50 text-white transition-colors font-bold text-xs flex items-center gap-1.5 shadow-2xs"
               >
                 <TrendingUp className="w-3.5 h-3.5 text-[#d8b4fe]" />
-                <span>Split Profit</span>
+                <span>{submitting ? 'Saving…' : 'Split Profit'}</span>
               </button>
             </div>
           </form>

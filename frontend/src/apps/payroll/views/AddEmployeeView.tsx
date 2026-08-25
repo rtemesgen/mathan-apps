@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Employee } from '../types';
-import { calculateDaysBetween } from '../utils/calc';
+import { calculateDaysBetween, calculateEmployeeAccrual, getSalaryCycleDailyRate } from '../utils/calc';
 import { AppDatePicker } from '../../../components/AppDatePicker';
 import {
   UserPlus,
@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Calculator
 } from 'lucide-react';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface AddEmployeeViewProps {
   onAddEmployee: (employee: Employee) => void;
@@ -27,13 +28,24 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
   const [initialSalary, setInitialSalary] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdEmpName, setCreatedEmpName] = useState('');
+  const { submitting, runAction } = useAsyncAction();
 
   const monthlySalaryNum = parseFloat(initialSalary) || 0;
   const daysWorked = startDate ? Math.max(0, calculateDaysBetween(startDate, asOfDate)) : 0;
-  const estimatedDailyRate = (monthlySalaryNum * 12) / 365.25;
-  const estimatedInitialEarned = daysWorked * estimatedDailyRate;
+  const estimatedInitialEarned = calculateEmployeeAccrual({
+    id: 'preview',
+    name: name || 'Preview',
+    startDate,
+    initialSalary: monthlySalaryNum,
+    salaryHistory: [],
+    status: 'active',
+    createdAt: '',
+  }, [], asOfDate).totalAccruedWages;
+  const estimatedDailyRate = startDate && monthlySalaryNum > 0
+    ? getSalaryCycleDailyRate(startDate, asOfDate >= startDate ? asOfDate : startDate, monthlySalaryNum)
+    : 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !startDate || !initialSalary) return;
 
@@ -47,7 +59,11 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    onAddEmployee(newEmp);
+    await runAction({
+      operation: () => onAddEmployee(newEmp),
+      successMessage: 'Employee saved successfully.',
+      errorMessage: 'Could not save the employee. Your entries were kept.',
+    });
     setCreatedEmpName(name.trim());
     setIsSuccess(true);
   };
@@ -154,7 +170,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
                     className="w-full pl-6 pr-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs text-zinc-900 font-bold"
                   />
                 </div>
-                <p className="text-[9px] text-zinc-500 mt-0.5">Converted to daily rate (Monthly × 12 / 365.25)</p>
+                <p className="text-[9px] text-zinc-500 mt-0.5">Accrues by monthly start-date cycles</p>
               </div>
             </div>
 
@@ -168,9 +184,10 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
               </button>
               <button
                 type="submit"
+                disabled={submitting}
                 className="px-3.5 py-1.5 bg-[#54623e] hover:bg-[#435031] text-white font-bold uppercase tracking-wider rounded-lg text-xs transition shadow-2xs cursor-pointer flex items-center gap-1"
               >
-                <UserPlus className="w-3.5 h-3.5" /> Save Employee
+                <UserPlus className="w-3.5 h-3.5" /> {submitting ? 'Saving…' : 'Save Employee'}
               </button>
             </div>
           </form>

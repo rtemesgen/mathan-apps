@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { X, DollarSign, Calendar, Tag, FileText, User, Truck as TruckIcon } from 'lucide-react';
 import { Owner, Transaction, TransactionType, Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useTruckTransactionForm, TruckTransactionInput } from '../useTruckTransactionForm';
+import { TransactionTypeTabs } from '../TransactionTypeTabs';
 
 interface RecordTransactionModalProps {
   isOpen: boolean;
@@ -14,16 +16,7 @@ interface RecordTransactionModalProps {
   defaultOwnerId?: string;
   defaultType?: TransactionType;
   editingTransaction?: Transaction | null;
-  onSubmit: (txData: {
-    truckId: string;
-    date: string;
-    type: TransactionType;
-    category: string;
-    amount: number;
-    ownerId?: string;
-    description: string;
-    referenceNo?: string;
-}) => void;
+  onSubmit: (txData: TruckTransactionInput) => Promise<void>;
 }
 
 export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
@@ -37,53 +30,10 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
   editingTransaction,
   onSubmit,
 }) => {
-  const [truckId, setTruckId] = useState(currentTruckId || (trucks[0]?.id ?? ''));
-  const [type, setType] = useState<TransactionType>(defaultType);
-  const [ownerId, setOwnerId] = useState(defaultOwnerId || (owners[0]?.id ?? ''));
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('Freight Load Revenue');
-  const [description, setDescription] = useState('');
-  const [referenceNo, setReferenceNo] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    if (editingTransaction) {
-      setTruckId(editingTransaction.truckId); setType(editingTransaction.type); setOwnerId(editingTransaction.ownerId ?? ''); setAmount(String(editingTransaction.amount)); setCategory(editingTransaction.category); setDescription(editingTransaction.description); setReferenceNo(editingTransaction.referenceNo ?? ''); setDate(editingTransaction.date);
-    } else {
-      setTruckId(currentTruckId || (trucks[0]?.id ?? '')); setType(defaultType); setOwnerId(defaultOwnerId || (owners[0]?.id ?? '')); setAmount(''); setCategory('Freight Load Revenue'); setDescription(''); setReferenceNo(''); setDate(new Date().toISOString().split('T')[0]);
-    }
-  }, [isOpen, editingTransaction, currentTruckId, defaultOwnerId, defaultType, owners, trucks]);
+  const form = useTruckTransactionForm({ owners, trucks, currentTruckId, defaultOwnerId, defaultType, editingTransaction, active: isOpen, onSubmit, onComplete: onClose });
+  const { truckId, setTruckId, type, ownerId, setOwnerId, amount, setAmount, category, setCategory, description, setDescription, referenceNo, setReferenceNo, counterpartyType, setCounterpartyType, counterpartyName, setCounterpartyName, date, setDate, submitting, handleTypeChange, handleSubmit } = form;
 
   if (!isOpen) return null;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) return;
-
-    onSubmit({
-      truckId,
-      date,
-      type,
-      category,
-      amount: numAmount,
-      ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
-      description: description || `${category} entry`,
-      referenceNo,
-    });
-
-    onClose();
-  };
-
-  const handleTypeChange = (newType: TransactionType) => {
-    setType(newType);
-    if (newType === 'INCOME') setCategory('Cross-Country Freight Load');
-    else if (newType === 'EXPENSE') setCategory('Diesel Fuel');
-    else if (newType === 'CAPITAL_INJECTION') setCategory('Owner Emergency Repair Loan');
-    else if (newType === 'CAPITAL_REPAYMENT') setCategory('Owner Debt Clearance');
-    else if (newType === 'PROFIT_DISTRIBUTION') setCategory('Quarterly Profit Share Dividend');
-  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -107,73 +57,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs font-semibold">
-          {/* Transaction Type Tabs */}
-          <div>
-            <label className="block text-[#8c8880] uppercase tracking-wider text-[10px] mb-1.5 font-bold">
-              Entry Type
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 bg-[#f3efe6] p-1.5 rounded-2xl border border-[#e5dfd2]">
-              <button
-                type="button"
-                onClick={() => handleTypeChange('INCOME')}
-                className={`py-2 px-2 rounded-xl transition-all text-center ${
-                  type === 'INCOME'
-                    ? 'bg-[#2e7d32] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Freight Revenue
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('EXPENSE')}
-                className={`py-2 px-2 rounded-xl transition-all text-center ${
-                  type === 'EXPENSE'
-                    ? 'bg-[#c62828] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Truck Expense
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('CAPITAL_INJECTION')}
-                className={`py-2 px-2 rounded-xl transition-all text-center ${
-                  type === 'CAPITAL_INJECTION'
-                    ? 'bg-[#e65100] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Owner Cash Loan
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('CAPITAL_REPAYMENT')}
-                className={`py-2 px-2 rounded-xl transition-all text-center ${
-                  type === 'CAPITAL_REPAYMENT'
-                    ? 'bg-[#3f4d34] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Truck Repays Loan
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('PROFIT_DISTRIBUTION')}
-                className={`py-2 px-2 rounded-xl transition-all text-center col-span-2 sm:col-span-2 ${
-                  type === 'PROFIT_DISTRIBUTION'
-                    ? 'bg-[#6a1b9a] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Distribute Profit Dividend
-              </button>
-            </div>
-          </div>
+          <TransactionTypeTabs value={type} onChange={handleTypeChange} compact />
 
           {/* Amount & Date */}
           <div className="grid grid-cols-2 gap-3">
@@ -214,6 +98,12 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
               <TruckSelect value={ownerId} onChange={setOwnerId} options={owners.map((o) => ({ value: o.id, label: `${o.name} (${o.equityPercentage}% Share)` }))} />
             </div>
           )}
+
+          {(['RECEIVABLE', 'PAYABLE', 'RECEIVABLE_SETTLEMENT', 'PAYABLE_SETTLEMENT'] as TransactionType[]).includes(type) && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+            <label className="block text-[#787672] uppercase text-[10px] font-bold">Money is with / owed by<select value={counterpartyType} onChange={(event) => setCounterpartyType(event.target.value as typeof counterpartyType)} className="mt-1 w-full rounded-xl border border-[#d8d0be] bg-white px-3 py-2.5 text-xs font-bold"><option value="CUSTOMER">Customer</option><option value="OWNER">Owner</option><option value="OTHER">Other person / place</option></select></label>
+            <label className="block text-[#787672] uppercase text-[10px] font-bold">Name / location<input required value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} placeholder="e.g. ABC Customer or Owner John" className="mt-1 w-full rounded-xl border border-[#d8d0be] bg-white px-3 py-2.5 text-xs font-bold" /></label>
+            {counterpartyType === 'OWNER' && <label className="block text-[#787672] uppercase text-[10px] font-bold sm:col-span-2">Owner record<TruckSelect value={ownerId} onChange={setOwnerId} options={owners.map((o) => ({ value: o.id, label: o.name }))} /></label>}
+          </div>}
 
           {/* Category */}
           <div>
@@ -270,9 +160,10 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
             </button>
             <button
               type="submit"
+              disabled={submitting}
               className="px-6 py-2.5 rounded-xl bg-[#3f4d34] hover:bg-[#323e29] text-white font-bold shadow-xs transition-transform active:scale-95"
             >
-              Record Entry
+              {submitting ? 'Saving…' : 'Record Entry'}
             </button>
           </div>
         </form>

@@ -13,7 +13,7 @@ export function BackupRecoveryCard() {
   const [passphrase, setPassphrase] = useState('');
   const exportBackup = async () => {
     if (!workspace) return; setBusy(true); setError(''); setMessage('');
-    try { downloadWorkspaceBackup(await createWorkspaceBackup(workspace.id)); setMessage('Workspace backup downloaded.'); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Backup export failed.'); } finally { setBusy(false); }
+    try { await downloadWorkspaceBackup(await createWorkspaceBackup(workspace.id)); setMessage('Workspace backup saved in Android/media/.../backups.'); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Backup export failed.'); } finally { setBusy(false); }
   };
   const importBackup = async (file: File) => {
     setBusy(true); setError(''); setMessage('');

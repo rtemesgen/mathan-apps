@@ -1,11 +1,7 @@
 import React, { useState } from 'react';
 import { Employee, Transaction } from '../types';
-import { calculateCompanyStats, calculateEmployeeAccrual, downloadFile } from '../utils/calc';
-import { exportPdfFile } from '../../../lib/mobile';
+import { calculateCompanyStats, calculateEmployeeAccrual, getSalaryCycleDailyRate } from '../utils/calc';
 import {
-  FileSpreadsheet,
-  Download,
-  Printer,
   Search,
   Filter,
   Building,
@@ -15,12 +11,14 @@ import {
   Users,
   CheckCircle2
 } from 'lucide-react';
+import { ExportButton } from '../../../components/ExportButton';
 
 interface ReportsViewProps {
   employees: Employee[];
   transactions: Transaction[];
   asOfDate: string;
   onSelectEmployee: (employee: Employee) => void;
+  onOpenExport: (filters?: { query?: string }) => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
@@ -28,6 +26,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   transactions,
   asOfDate,
   onSelectEmployee,
+  onOpenExport,
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -46,43 +45,6 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       currency: 'USD',
       minimumFractionDigits: 2,
     }).format(val);
-
-  // Export CSV
-  const handleExportCSV = () => {
-    const headers = [
-      'Employee ID',
-      'Name',
-      'Start Date',
-      'Monthly Base Rate ($)',
-      'Gross Earned ($)',
-      'Total Withdrawn ($)',
-      'Net Owed Balance ($)',
-    ];
-
-    const rows = filteredEmployees.map((emp) => {
-      const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-      return [
-        emp.id,
-        `"${emp.name}"`,
-        emp.startDate,
-        info.currentMonthlySalary.toFixed(2),
-        info.totalAccruedWages.toFixed(2),
-        info.totalWithdrawn.toFixed(2),
-        info.remainingBalance.toFixed(2),
-      ];
-    });
-
-    downloadFile(`Payroll_Report_AsOf_${asOfDate}.csv`, [headers.join(','), ...rows.map((r) => r.join(','))].join('\n'));
-  };
-
-  const handlePrint = () => {
-    const lines = filteredEmployees.map((emp) => {
-      const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-      const dailyRate = (info.currentMonthlySalary * 12) / 365.25;
-      return `${emp.name} | ${emp.startDate} | ${formatMoney(info.currentMonthlySalary)} | ${formatMoney(dailyRate)} | ${formatMoney(info.totalAccruedWages)} | ${formatMoney(info.totalWithdrawn)} | ${formatMoney(info.remainingBalance)}`;
-    });
-    void exportPdfFile(`Payroll_Report_AsOf_${asOfDate}.pdf`, 'Mathan ERP Payroll Report', [`As of ${asOfDate}`, `Total liability: ${formatMoney(stats.totalCompanyLiability)}`, `Total earned: ${formatMoney(stats.totalCompanyAccrued)}`, `Total paid: ${formatMoney(stats.totalCompanyPaidOut)}`, '', ...lines]);
-  };
 
   return (
     <div className="space-y-2 sm:space-y-2.5">
@@ -125,15 +87,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             className="w-full pl-9 pr-4 py-2 bg-[#f2f0e6] border border-zinc-200 rounded-2xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-800 placeholder:italic"
           />
         </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-          <button
-            onClick={handlePrint}
-            className="px-3.5 py-1.5 bg-[#54623e] hover:bg-[#435031] text-white text-xs font-bold uppercase tracking-wider rounded-xl transition shadow-2xs cursor-pointer flex items-center gap-1.5"
-          >
-            <Printer className="w-3.5 h-3.5" /> Export PDF
-          </button>
-        </div>
+        <ExportButton onClick={() => onOpenExport({ query: searchTerm || undefined })} />
       </div>
 
       {/* Main Breakdown Table */}
@@ -161,7 +115,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               ) : (
                 filteredEmployees.map((emp) => {
                   const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-                  const dailyRate = (info.currentMonthlySalary * 12) / 365.25;
+                  const dailyRate = getSalaryCycleDailyRate(emp.startDate, asOfDate, info.currentMonthlySalary);
                   return (
                     <tr
                       key={emp.id}

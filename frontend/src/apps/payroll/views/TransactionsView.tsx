@@ -4,7 +4,6 @@ import {
   Receipt,
   Search,
   Filter,
-  Printer,
   Trash2,
   Calendar,
   CreditCard,
@@ -15,15 +14,16 @@ import {
   ChevronUp,
   FileText
 } from 'lucide-react';
-import { exportPdfFile } from '../../../lib/mobile';
+import { ExportButton } from '../../../components/ExportButton';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppSelect } from '../../../components/AppSelect';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
   employees: Employee[];
-  onDeleteTransaction: (txId: string) => void;
+  onDeleteTransaction: (txId: string) => void | Promise<void>;
   onNavigateTab: (tab: 'pay-salary') => void;
+  onOpenExport: (filters?: { entityId?: string; query?: string }) => void;
 }
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
@@ -31,6 +31,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   employees,
   onDeleteTransaction,
   onNavigateTab,
+  onOpenExport,
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [employeeFilter, setEmployeeFilter] = useState<string>('All');
@@ -56,10 +57,6 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       currency: 'USD',
       minimumFractionDigits: 2,
     }).format(val);
-
-  const handleExportPDF = () => {
-    void exportPdfFile(`Payroll_Transactions_${new Date().toISOString().slice(0, 10)}.pdf`, 'Mathan ERP Payroll Transactions', [`Filtered total: ${formatMoney(totalPayoutSum)}`, `Records found: ${filteredTransactions.length}`, '', ...filteredTransactions.map((tx) => `${tx.date} | ${tx.employeeName || 'Employee'} | ${formatMoney(tx.amount)} | ${tx.notes || 'No notes'}`)]);
-  };
 
   return (
     <div className="space-y-3">
@@ -104,12 +101,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             >
               <Plus className="w-3.5 h-3.5" /> New Payment
             </button>
-            <button
-              onClick={handleExportPDF}
-              className="px-3 py-1.5 bg-[#f2f0e6] hover:bg-zinc-200 border border-zinc-200 text-zinc-800 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
-            >
-              <Printer className="w-3.5 h-3.5" /> Export PDF
-            </button>
+            <ExportButton onClick={() => onOpenExport({ entityId: employeeFilter === 'All' ? undefined : employeeFilter, query: searchTerm || undefined })} />
           </div>
         </div>
       </div>
@@ -196,7 +188,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           </table>
         </div>
       </div>
-      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message="Are you sure you want to delete this payroll transaction?" onClose={() => setTransactionToDelete(null)} onConfirm={() => { if (transactionToDelete) onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} />
+      <DeleteConfirmModal isOpen={!!transactionToDelete} title="Delete transaction?" message="Are you sure you want to delete this payroll transaction?" onClose={() => setTransactionToDelete(null)} onConfirm={async () => { if (transactionToDelete) await onDeleteTransaction(transactionToDelete.id); setTransactionToDelete(null); }} successMessage="Payroll transaction deleted successfully." />
     </div>
   );
 };

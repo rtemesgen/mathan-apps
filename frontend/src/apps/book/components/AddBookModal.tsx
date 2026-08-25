@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Book } from '../types';
 import { X, BookPlus } from 'lucide-react';
 import { AppSelect } from '../../../components/AppSelect';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -18,22 +19,29 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const [description, setDescription] = useState('');
   const [currency, setCurrency] = useState('$');
   const [category, setCategory] = useState('Business');
+  const [openingBalance, setOpeningBalance] = useState('');
   const [error, setError] = useState('');
+  const { submitting, runAction } = useAsyncAction();
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError('Please enter a book name');
       return;
     }
 
-    onSave({
-      name: name.trim(),
-      description: description.trim(),
-      currency: currency.trim() || '$',
-      category: category.trim(),
+    await runAction({
+      operation: () => onSave({
+        name: name.trim(),
+        description: description.trim(),
+        currency: currency.trim() || '$',
+        category: category.trim(),
+        openingBalance: Math.max(0, Number(openingBalance) || 0),
+      }),
+      successMessage: 'Cash Book saved successfully.',
+      errorMessage: 'Could not save the Cash Book. Your entries were kept.',
     });
 
     // Reset form
@@ -41,6 +49,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
     setDescription('');
     setCurrency('$');
     setCategory('Business');
+    setOpeningBalance('');
     setError('');
     onClose();
   };
@@ -48,7 +57,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
       <div 
-        className="w-full max-w-sm bg-[#FFFFFF] rounded-xl border border-[#E6E2D6] shadow-xl overflow-hidden text-[#121212]"
+        className="w-full max-w-md bg-[#FFFFFF] rounded-xl border border-[#E6E2D6] shadow-xl overflow-hidden text-[#121212]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -80,6 +89,22 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
 
           <div>
             <label className="block text-[10px] font-bold tracking-wider text-[#4B5563] uppercase mb-1">
+              Opening Balance
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={openingBalance}
+              onChange={(e) => setOpeningBalance(e.target.value)}
+              placeholder="0.00"
+              className="w-full px-3 py-1.5 text-xs bg-[#FAF9F5] border border-[#D8D3C5] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#121212]"
+            />
+            <p className="mt-1 text-[10px] text-[#6B7280]">The balance already in this book before the first recorded entry.</p>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold tracking-wider text-[#4B5563] uppercase mb-1">
               Book Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -100,7 +125,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
             <label className="block text-[10px] font-bold tracking-wider text-[#4B5563] uppercase mb-1">
               Category
             </label>
-            <AppSelect value={category} onChange={setCategory} options={[{value:'Business',label:'Business / Shop'},{value:'Payroll',label:'Payroll & Staff'},{value:'Personal',label:'Personal Ledger'},{value:'Projects',label:'Client Project'},{value:'Other',label:'Other Category'}]} />
+            <AppSelect value={category} onChange={setCategory} truncateSelected={false} className="w-full" options={[{value:'Business',label:'Business / Shop'},{value:'Payroll',label:'Payroll & Staff'},{value:'Personal',label:'Personal Ledger'},{value:'Projects',label:'Client Project'},{value:'Other',label:'Other Category'}]} />
           </div>
 
           <div>
@@ -127,9 +152,10 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
             </button>
             <button
               type="submit"
+              disabled={submitting}
               className="px-4 py-1.5 text-xs font-bold text-white bg-[#121212] hover:bg-[#27272A] rounded-lg shadow-2xs transition-colors flex items-center gap-1"
             >
-              Save Book
+              {submitting ? 'Saving…' : 'Save Book'}
             </button>
           </div>
         </form>

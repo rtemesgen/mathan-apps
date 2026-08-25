@@ -20,6 +20,8 @@ export interface Book {
   description?: string;
   currency: string;
   category?: string;
+  /** Starting balance entered when the book is created or edited. Older books default to zero. */
+  openingBalance?: number;
   createdAt: string;
   updatedAt: string;
 }
