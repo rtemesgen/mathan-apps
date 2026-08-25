@@ -3,6 +3,7 @@ import { offlineStore } from '../../lib/localStore';
 import { enqueueMutation, getWorkspaceMutationStatus } from '../../lib/syncQueue';
 import { syncQueue } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
+import { persistBeforeQueue } from '../../lib/repositories/mutationLifecycle';
 import type { Owner, Transaction, Truck } from './types';
 
 export type TruckPersistenceStatus = 'saving' | 'saved locally' | 'offline saved' | 'sync pending' | 'storage error' | 'sync conflict';
@@ -111,45 +112,57 @@ export async function refreshTruckDataFromCloud(workspaceId: string) {
 export async function createTruck(workspaceId: string, v: Omit<Truck, 'id'>, localOnly = false) {
   const row = { id: crypto.randomUUID(), workspace_id: workspaceId, name: v.name.trim(), unit_number: v.unitNumber.trim(), make_model: v.makeModel.trim(), vin: v.vin.trim(), cash_on_hand: v.cashOnHand, license_plate: v.licensePlate.trim() };
   const truck = truckFromDb(row);
-  await updateCache(workspaceId, (cache) => ({ ...cache, trucks: [...cache.trucks.filter((item) => item.id !== truck.id), truck] }));
-  if (!localOnly) await queueRow('trucks', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, trucks: [...cache.trucks.filter((item) => item.id !== truck.id), truck] })),
+    () => localOnly ? Promise.resolve() : queueRow('trucks', workspaceId, row),
+  );
   return truck;
 }
 
 export async function createTruckOwner(workspaceId: string, v: Omit<Owner, 'id'> & { userId?: string | null }, localOnly = false) {
   const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, user_id: v.userId ?? null, name: v.name, start_date: v.startDate, equity_percentage: v.equityPercentage, monthly_draw_rate: v.monthlyDrawRate, avatar_color: v.avatarColor };
   const owner = ownerFromDb(row);
-  await updateCache(workspaceId, (cache) => ({ ...cache, owners: [...cache.owners.filter((item) => item.id !== owner.id), owner] }));
-  if (!localOnly) await queueRow('truck_owners', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, owners: [...cache.owners.filter((item) => item.id !== owner.id), owner] })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_owners', workspaceId, row),
+  );
   return owner;
 }
 
 export async function updateTruckOwner(workspaceId: string, v: Owner, localOnly = false) {
   const row = { id: v.id, workspace_id: workspaceId, truck_id: v.truckId, name: v.name, start_date: v.startDate, equity_percentage: v.equityPercentage, monthly_draw_rate: v.monthlyDrawRate, avatar_color: v.avatarColor, updated_at: new Date().toISOString() };
-  await updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.map((item) => item.id === v.id ? v : item) }));
-  if (!localOnly) await queueRow('truck_owners', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.map((item) => item.id === v.id ? v : item) })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_owners', workspaceId, row),
+  );
   return v;
 }
 
 export async function updateTruck(workspaceId: string, v: Truck, localOnly = false) {
   const row = { id: v.id, workspace_id: workspaceId, name: v.name, unit_number: v.unitNumber, make_model: v.makeModel, vin: v.vin, cash_on_hand: v.cashOnHand, license_plate: v.licensePlate, updated_at: new Date().toISOString() };
-  await updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.map((item) => item.id === v.id ? v : item) }));
-  if (!localOnly) await queueRow('trucks', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.map((item) => item.id === v.id ? v : item) })),
+    () => localOnly ? Promise.resolve() : queueRow('trucks', workspaceId, row),
+  );
   return v;
 }
 
 export async function deleteTruck(workspaceId: string, id: string, localOnly = false) {
   const deletedAt = new Date().toISOString();
   const row = { id, deleted_at: deletedAt, updated_at: deletedAt };
-  await updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.filter((item) => item.id !== id) }));
-  if (!localOnly) await queueRow('trucks', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.filter((item) => item.id !== id) })),
+    () => localOnly ? Promise.resolve() : queueRow('trucks', workspaceId, row),
+  );
 }
 
 export async function createTruckTransaction(workspaceId: string, v: Omit<Transaction, 'id'>, localOnly = false) {
   const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null };
   const transaction = transactionFromDb(row);
-  await updateCache(workspaceId, (cache) => ({ ...cache, transactions: [...cache.transactions.filter((item) => item.id !== transaction.id), transaction] }));
-  if (!localOnly) await queueRow('truck_transactions', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, transactions: [...cache.transactions.filter((item) => item.id !== transaction.id), transaction] })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_transactions', workspaceId, row),
+  );
   return transaction;
 }
 
@@ -157,33 +170,41 @@ export async function createTruckTransactionBatch(workspaceId: string, values: O
   if (!values.length) return [];
   const rows = values.map((v) => ({ id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null }));
   const transactions = rows.map((row) => transactionFromDb(row));
-  await withCacheLock(workspaceId, async () => {
-    const cache = await getCache(workspaceId);
-    await saveCache(workspaceId, { ...cache, transactions: [...transactions, ...cache.transactions] });
-  });
-  if (!localOnly) await queueRows('truck_transactions', workspaceId, rows);
+  await persistBeforeQueue(
+    () => withCacheLock(workspaceId, async () => {
+      const cache = await getCache(workspaceId);
+      await saveCache(workspaceId, { ...cache, transactions: [...transactions, ...cache.transactions] });
+    }),
+    () => localOnly ? Promise.resolve() : queueRows('truck_transactions', workspaceId, rows),
+  );
   return transactions;
 }
 
 export async function updateTruckTransaction(workspaceId: string, v: Transaction, localOnly = false) {
   const row = { id: v.id, workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, updated_at: new Date().toISOString() };
-  await updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.map((item) => item.id === v.id ? v : item) }));
-  if (!localOnly) await queueRow('truck_transactions', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.map((item) => item.id === v.id ? v : item) })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_transactions', workspaceId, row),
+  );
   return v;
 }
 
 export async function softDeleteTruckTransaction(workspaceId: string, id: string, localOnly = false) {
   const deletedAt = new Date().toISOString();
   const row = { id, deleted_at: deletedAt, updated_at: deletedAt };
-  await updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.filter((item) => item.id !== id) }));
-  if (!localOnly) await queueRow('truck_transactions', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.filter((item) => item.id !== id) })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_transactions', workspaceId, row),
+  );
 }
 
 export async function deleteTruckOwner(workspaceId: string, id: string, localOnly = false) {
   const deletedAt = new Date().toISOString();
   const row = { id, deleted_at: deletedAt, updated_at: deletedAt };
-  await updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.filter((item) => item.id !== id) }));
-  if (!localOnly) await queueRow('truck_owners', workspaceId, row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.filter((item) => item.id !== id) })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_owners', workspaceId, row),
+  );
 }
 
 export async function loadTruckWorkspaceMembers(workspaceId: string) { const { data, error } = await supabase.rpc('list_workspace_members', { target_workspace: workspaceId }); if (error) throw error; return (data ?? []) as Array<{ user_id: string; email: string; display_name: string }>; }

@@ -3,6 +3,7 @@ import { supabase } from '../supabase';
 import { enqueueMutation, getQueuedMutations } from '../syncQueue';
 import { syncQueue } from '../offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from './types';
+import { persistBeforeQueue } from './mutationLifecycle';
 
 export type SnapshotRepositoryContext = {
   storageKey: string;
@@ -31,15 +32,21 @@ export async function readSnapshot<T>(storageKey: string, initialValue: T) {
 
 export async function persistSnapshot<T>(context: SnapshotRepositoryContext, value: T, revision: number): Promise<PersistenceState> {
   return withSnapshotLock(context.storageKey, async () => {
-    await offlineStore.write(context.storageKey, value);
+    const payload = context.workspaceId ? { workspace_id: context.workspaceId, domain: `${context.domain}:${context.key}`, payload: value, expected_revision: revision } : null;
+    await persistBeforeQueue(
+      () => offlineStore.write(context.storageKey, value),
+      async () => {
+        if (context.standalone) return;
+        if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
+        const mutationId = crypto.randomUUID();
+        await enqueueMutation({ mutationId, userId: context.userId ?? 'unknown', companyId: context.workspaceId, entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: revision, table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId } });
+      },
+    );
     if (context.standalone) {
       reportPersistenceNotice({ app: context.domain, state: 'offline saved' });
       return 'offline saved';
     }
     if (!context.workspaceId) throw new Error('A workspace is required to save this record.');
-    const payload = { workspace_id: context.workspaceId, domain: `${context.domain}:${context.key}`, payload: value, expected_revision: revision };
-    const mutationId = crypto.randomUUID();
-    await enqueueMutation({ mutationId, userId: context.userId ?? 'unknown', companyId: context.workspaceId, entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: revision, table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId } });
     const persistence: PersistenceState = navigator.onLine ? 'saved locally' : 'offline saved';
     reportPersistenceNotice({ app: context.domain, state: persistence });
     window.dispatchEvent(new CustomEvent('mathan:sync-status', { detail: { status: navigator.onLine ? 'syncing' : 'offline' } }));

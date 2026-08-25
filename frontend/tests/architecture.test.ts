@@ -10,6 +10,7 @@ const appFiles = ['apps/book/App.tsx', 'apps/payroll/App.tsx', 'apps/truck/App.t
 assert.doesNotMatch(appFiles, /PersistenceToast|usePersistenceStatus|useCloudSnapshot/);
 assert.doesNotMatch(appFiles, /supabase|localStore|offlineStore|app_state_snapshots|syncQueue/);
 assert.match(read('lib/repositories/useSnapshotRepository.ts'), /persistSnapshot/);
+assert.match(read('lib/repositories/mutationLifecycle.ts'), /persistBeforeQueue/);
 assert.match(read('components/AppToast.tsx'), /mathan:toast/);
 assert.match(read('components/AppToast.tsx'), /lastKey/);
 assert.doesNotMatch(read('lib/offlineSync.ts'), /mathan:truck-storage-status/);
@@ -52,8 +53,9 @@ assert.match(read('apps/book/cashBookRepository.ts'), /export async function sav
 assert.match(read('apps/payroll/payrollRepository.ts'), /export function addEmployee/);
 assert.match(read('apps/payroll/payrollRepository.ts'), /export async function saveEmployee/);
 assert.match(read('apps/truck/truckRepository.ts'), /withCacheLock/);
-assert.match(read('apps/truck/truckRepository.ts'), /await updateCache\(workspaceId/);
-assert.match(read('apps/truck/truckRepository.ts'), /await queueRow\(/);
+assert.match(read('apps/truck/truckRepository.ts'), /persistBeforeQueue/);
+assert.match(read('apps/truck/truckRepository.ts'), /updateCache\(workspaceId/);
+assert.match(read('apps/truck/truckRepository.ts'), /queueRow\(/);
 assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /supabase\.from\('(trucks|truck_owners|truck_transactions)'\)\.(insert|update)/);
 assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /supabase\.from\('truck_transactions'\)\.insert/);
 assert.match(read('apps/truck/useTruckData.ts'), /refreshTruckDataFromCloud/);
