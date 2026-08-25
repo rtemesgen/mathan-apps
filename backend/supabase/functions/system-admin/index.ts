@@ -218,7 +218,7 @@ async function listWorkspaces(body: Body) {
   };
 }
 
-const backupResources = ['profiles', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'system_audit_events', 'backup_runs', 'invitations', 'attachments', 'attachment_links', 'notifications', 'approvals', 'trucks', 'truck_owners', 'truck_transactions'] as const;
+const backupResources = ['profiles', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'system_audit_events', 'backup_runs', 'invitations', 'attachments', 'attachment_links', 'notifications', 'approvals', 'trucks', 'truck_owners', 'truck_customers', 'truck_transactions'] as const;
 type BackupResource = typeof backupResources[number] | 'users';
 
 async function backupResource(actorId: string, runId: string, resource: BackupResource, offset: number, limit: number) {
@@ -245,7 +245,8 @@ async function backupResource(actorId: string, runId: string, resource: BackupRe
     approvals: { table: 'approval_requests', columns: 'id,workspace_id,requester_id,approver_id,action_type,target_record_type,target_record_id,reason,metadata,status,decision_comment,created_at,decided_at,expires_at' },
     trucks: { table: 'trucks', columns: 'id,workspace_id,name,unit_number,make_model,vin,cash_on_hand,license_plate,deleted_at,created_at,updated_at' },
     truck_owners: { table: 'truck_owners', columns: 'id,workspace_id,truck_id,user_id,name,start_date,equity_percentage,monthly_draw_rate,avatar_color,deleted_at,created_at,updated_at' },
-    truck_transactions: { table: 'truck_transactions', columns: 'id,workspace_id,truck_id,owner_id,occurred_on,transaction_type,category,amount,description,reference_no,deleted_at,created_at,updated_at' },
+    truck_customers: { table: 'truck_customers', columns: 'id,workspace_id,truck_id,name,phone,address,notes,deleted_at,created_at,updated_at' },
+    truck_transactions: { table: 'truck_transactions', columns: 'id,workspace_id,truck_id,owner_id,customer_id,occurred_on,transaction_type,category,amount,description,reference_no,counterparty_type,counterparty_name,settles_transaction_id,deleted_at,created_at,updated_at' },
   };
   const item = config[resource as Exclude<BackupResource, 'users'>];
   if (!item) throw new Error('Unsupported backup resource.');
@@ -265,7 +266,7 @@ async function startBackup(actorId: string, kind: 'automatic' | 'manual') {
   const users = await getAllUsers(admin);
   const counts: Record<string, number> = { users: users.length };
   for (const resource of backupResources) {
-    const table = ({ profiles: 'workspace_profiles', workspaces: 'workspaces', members: 'workspace_members', apps: 'workspace_apps', permissions: 'workspace_member_app_permissions', snapshots: 'app_state_snapshots', audit_events: 'audit_events', system_audit_events: 'system_admin_audit_events', backup_runs: 'system_backup_runs', invitations: 'workspace_invitations', attachments: 'record_attachments', attachment_links: 'cash_transaction_attachments', notifications: 'notifications', approvals: 'approval_requests', trucks: 'trucks', truck_owners: 'truck_owners', truck_transactions: 'truck_transactions' } as const)[resource];
+    const table = ({ profiles: 'workspace_profiles', workspaces: 'workspaces', members: 'workspace_members', apps: 'workspace_apps', permissions: 'workspace_member_app_permissions', snapshots: 'app_state_snapshots', audit_events: 'audit_events', system_audit_events: 'system_admin_audit_events', backup_runs: 'system_backup_runs', invitations: 'workspace_invitations', attachments: 'record_attachments', attachment_links: 'cash_transaction_attachments', notifications: 'notifications', approvals: 'approval_requests', trucks: 'trucks', truck_owners: 'truck_owners', truck_customers: 'truck_customers', truck_transactions: 'truck_transactions' } as const)[resource];
     const { count, error } = await admin.from(table).select('*', { count: 'exact', head: true });
     if (error) throw error;
     counts[resource] = count ?? 0;

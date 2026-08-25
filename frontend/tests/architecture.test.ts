@@ -5,6 +5,7 @@ import { createActionGate } from '../src/hooks/useAsyncAction';
 
 const sourceRoot = path.resolve('src');
 const read = (relativePath: string) => fs.readFileSync(path.join(sourceRoot, relativePath), 'utf8');
+const readBackend = (relativePath: string) => fs.readFileSync(path.resolve('../backend', relativePath), 'utf8');
 
 const appFiles = ['apps/book/App.tsx', 'apps/payroll/App.tsx', 'apps/truck/App.tsx'].map(read).join('\n');
 assert.doesNotMatch(appFiles, /PersistenceToast|usePersistenceStatus|useCloudSnapshot/);
@@ -94,6 +95,15 @@ assert.match(read('lib/sqliteStore.ts'), /verifyMigratedEntries/);
 assert.match(read('lib/localStore.ts'), /Capacitor\.isNativePlatform\(\)/);
 assert.match(read('lib/sqliteStore.ts'), /androidIsEncryption|setEncryptionSecret|createConnection\(DATABASE_NAME, true, 'secret'/);
 assert.match(read('admin/adminBackup.ts'), /saveWorkspaceBackupFile/);
+assert.match(read('admin/adminBackup.ts'), /truck_customers/);
+const adminFunctionSource = readBackend('supabase/functions/system-admin/index.ts');
+assert.match(adminFunctionSource, /truck_customers/);
+assert.match(adminFunctionSource, /customer_id,occurred_on,transaction_type/);
+assert.match(adminFunctionSource, /counterparty_type,counterparty_name,settles_transaction_id/);
+const truckRestoreMigration = readBackend('supabase/migrations/202608260002_complete_truck_backup_restore.sql');
+assert.match(truckRestoreMigration, /target_backup->'truck_customers'/);
+assert.match(truckRestoreMigration, /transaction_map/);
+assert.match(readBackend('supabase/functions/lifecycle/index.ts'), /'truck_customers'/);
 assert.doesNotMatch(read('admin/adminBackup.ts'), /saveBinaryFile/);
 assert.match(read('components/SettingsPage.tsx'), /SyncSettingsCard/);
 assert.match(read('components/SettingsPage.tsx'), /mathan:sync-progress/);
