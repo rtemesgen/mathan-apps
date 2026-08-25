@@ -43,8 +43,13 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
     else {
       if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
       const mutationId = crypto.randomUUID();
+      // Keep the queue's user identity aligned with the snapshot storage key
+      // even during the short auth/workspace transition at app startup.
+      // Otherwise the sync worker could write the acknowledged payload to an
+      // `unknown:` key while the UI reads the real user-scoped key.
+      const queueUserId = context.userId ?? context.storageKey.split(':')[0] ?? 'unknown';
       await enqueueMutationsAtomic([{
-        mutationId, userId: context.userId ?? 'unknown', companyId: context.workspaceId,
+        mutationId, userId: queueUserId, companyId: context.workspaceId,
         entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: revision,
         table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId },
       }], [{ key: context.storageKey, value }]);

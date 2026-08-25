@@ -51,8 +51,10 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
   return withCacheLock(workspaceId, async () => {
     reportTruckStatus('saving');
     try {
-      const { data } = await supabase.auth.getSession();
-      const userId = knownUserId ?? data.session?.user.id ?? 'guest';
+      // The workspace/auth provider already supplies the signed-in ID in the
+      // normal path. Avoid waiting on Supabase auth storage for every local
+      // Truck save; only resolve a session for legacy callers that omit it.
+      const userId = knownUserId ?? (await supabase.auth.getSession()).data.session?.user.id ?? 'guest';
       const storageKey = `truck:${userId}:${workspaceId}`;
       const cached = await offlineStore.read<TruckCache>(storageKey);
       const next = update(cached ? { ...emptyCache(), ...cached, customers: cached.customers ?? [] } : emptyCache());
