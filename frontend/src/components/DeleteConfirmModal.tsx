@@ -17,7 +17,7 @@ interface DeleteConfirmModalProps {
   errorMessage?: string;
 }
 
-export function DeleteConfirmModal({ isOpen, title = 'Delete item?', message, onClose, onConfirm, confirmLabel = 'Delete', itemName, itemDetails, successMessage, errorMessage }: DeleteConfirmModalProps) {
+export function DeleteConfirmModal({ isOpen, title = 'Delete item?', message, onClose, onConfirm, confirmLabel = 'Delete', itemName, itemDetails, successMessage = 'Action completed successfully.', errorMessage }: DeleteConfirmModalProps) {
   const [submitting, setSubmitting] = useState(false);
   if (!isOpen) return null;
   const handleConfirm = async () => {
@@ -25,7 +25,7 @@ export function DeleteConfirmModal({ isOpen, title = 'Delete item?', message, on
     setSubmitting(true);
     try {
       await onConfirm();
-      if (successMessage) emitToast({ kind: 'message', message: successMessage, tone: 'success' });
+      emitToast({ kind: 'message', message: successMessage, tone: 'success' });
     } catch (error) {
       emitToast({ kind: 'message', message: errorMessage ?? (error instanceof Error ? error.message : 'Could not complete the delete.'), tone: 'error' });
     } finally { setSubmitting(false); }

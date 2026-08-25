@@ -22,6 +22,7 @@ assert.match(read('components/AppToast.tsx'), /toast\.tone/);
 assert.match(read('lib/mobile.ts'), /ToastTone/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /successMessage/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /tone: 'error'/);
+assert.match(read('components/DeleteConfirmModal.tsx'), /Action completed successfully/);
 assert.match(read('hooks/useDeleteConfirmation.ts'), /close only after the operation succeeds/);
 assert.match(read('hooks/useDeleteConfirmation.ts'), /await request\.onConfirm/);
 assert.match(read('apps/truck/useTruckMutations.ts'), /DeleteConfirmationRequest/);
