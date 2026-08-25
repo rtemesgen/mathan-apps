@@ -69,7 +69,7 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await page.getByRole('button', { name: 'Add Employee', exact: true }).first().click();
   await page.getByPlaceholder('e.g. Sarah Jenkins').fill('Payroll Persistence Employee');
   await page.getByPlaceholder('Enter amount').fill('5000');
-  await page.locator('form').evaluate((form) => form.requestSubmit());
+  await page.getByRole('button', { name: 'Save Employee' }).click();
   await expect(page.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
 
   await page.goto('/book');

@@ -52,6 +52,10 @@ assert.match(read('apps/book/cashBookRepository.ts'), /export async function sav
 assert.match(read('apps/payroll/payrollRepository.ts'), /export function addEmployee/);
 assert.match(read('apps/payroll/payrollRepository.ts'), /export async function saveEmployee/);
 assert.match(read('apps/truck/truckRepository.ts'), /withCacheLock/);
+assert.match(read('apps/truck/truckRepository.ts'), /await updateCache\(workspaceId/);
+assert.match(read('apps/truck/truckRepository.ts'), /await queueRow\(/);
+assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /supabase\.from\('(trucks|truck_owners|truck_transactions)'\)\.(insert|update)/);
+assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /supabase\.from\('truck_transactions'\)\.insert/);
 assert.match(read('apps/truck/useTruckData.ts'), /refreshTruckDataFromCloud/);
 assert.doesNotMatch(read('apps/truck/App.tsx'), /from ['"]\.\/truckRepository/);
 assert.match(read('apps/truck/useTruckMutations.ts'), /createTruckTransactionBatch/);

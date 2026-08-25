@@ -50,7 +50,7 @@ export default function App() {
   // Close side menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (!isSidebarOpen) return;
+      if (!isSidebarOpen || window.innerWidth >= 768) return;
 
       const target = event.target as Node;
       const isInsideDesktop = desktopSidebarRef.current?.contains(target);

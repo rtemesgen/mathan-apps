@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase';
 import { offlineStore } from '../../lib/localStore';
 import { enqueueMutation, getWorkspaceMutationStatus } from '../../lib/syncQueue';
+import { syncQueue } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import type { Owner, Transaction, Truck } from './types';
 
@@ -54,11 +55,19 @@ async function updateCache(workspaceId: string, update: (cache: TruckCache) => T
   });
 }
 
-async function queueRow(table: string, workspaceId: string, payload: Record<string, unknown>) {
+async function queueRows(table: string, workspaceId: string, payloads: Record<string, unknown>[]) {
+  if (!payloads.length) return;
   const { data } = await supabase.auth.getSession();
-  const entityId = String(payload.id ?? '');
-  await enqueueMutation({ mutationId: crypto.randomUUID(), userId: data.session?.user.id ?? 'guest', companyId: workspaceId, entityType: table, entityId, table, operation: 'upsert', payload: { ...payload, workspace_id: workspaceId } });
+  for (const payload of payloads) {
+    const entityId = String(payload.id ?? '');
+    await enqueueMutation({ mutationId: crypto.randomUUID(), userId: data.session?.user.id ?? 'guest', companyId: workspaceId, entityType: table, entityId, table, operation: 'upsert', payload: { ...payload, workspace_id: workspaceId } });
+  }
   reportTruckStatus('sync pending');
+  if (navigator.onLine) void syncQueue(workspaceId).catch(() => undefined);
+}
+
+async function queueRow(table: string, workspaceId: string, payload: Record<string, unknown>) {
+  await queueRows(table, workspaceId, [payload]);
 }
 
 async function fetchTruckData(workspaceId: string) {
@@ -101,148 +110,80 @@ export async function refreshTruckDataFromCloud(workspaceId: string) {
 
 export async function createTruck(workspaceId: string, v: Omit<Truck, 'id'>, localOnly = false) {
   const row = { id: crypto.randomUUID(), workspace_id: workspaceId, name: v.name.trim(), unit_number: v.unitNumber.trim(), make_model: v.makeModel.trim(), vin: v.vin.trim(), cash_on_hand: v.cashOnHand, license_plate: v.licensePlate.trim() };
-  if (localOnly || !navigator.onLine) {
-    const truck = truckFromDb(row);
-    await updateCache(workspaceId, (cache) => ({ ...cache, trucks: [...cache.trucks, truck] }));
-    if (!localOnly) await queueRow('trucks', workspaceId, row);
-    return truck;
-  }
-  const { data, error } = await supabase.from('trucks').insert(row).select('*').single();
-  if (error) throw explain(error);
-  const truck = truckFromDb(data);
+  const truck = truckFromDb(row);
   await updateCache(workspaceId, (cache) => ({ ...cache, trucks: [...cache.trucks.filter((item) => item.id !== truck.id), truck] }));
+  if (!localOnly) await queueRow('trucks', workspaceId, row);
   return truck;
 }
 
 export async function createTruckOwner(workspaceId: string, v: Omit<Owner, 'id'> & { userId?: string | null }, localOnly = false) {
   const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, user_id: v.userId ?? null, name: v.name, start_date: v.startDate, equity_percentage: v.equityPercentage, monthly_draw_rate: v.monthlyDrawRate, avatar_color: v.avatarColor };
-  if (localOnly || !navigator.onLine) {
-    const owner = ownerFromDb(row);
-    await updateCache(workspaceId, (cache) => ({ ...cache, owners: [...cache.owners, owner] }));
-    if (!localOnly) await queueRow('truck_owners', workspaceId, row);
-    return owner;
-  }
-  const { data, error } = await supabase.from('truck_owners').insert(row).select('*').single();
-  if (error) throw error;
-  const owner = ownerFromDb(data);
+  const owner = ownerFromDb(row);
   await updateCache(workspaceId, (cache) => ({ ...cache, owners: [...cache.owners.filter((item) => item.id !== owner.id), owner] }));
+  if (!localOnly) await queueRow('truck_owners', workspaceId, row);
   return owner;
 }
 
 export async function updateTruckOwner(workspaceId: string, v: Owner, localOnly = false) {
   const row = { id: v.id, workspace_id: workspaceId, truck_id: v.truckId, name: v.name, start_date: v.startDate, equity_percentage: v.equityPercentage, monthly_draw_rate: v.monthlyDrawRate, avatar_color: v.avatarColor, updated_at: new Date().toISOString() };
-  if (localOnly || !navigator.onLine) {
-    await updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.map((item) => item.id === v.id ? v : item) }));
-    if (!localOnly) await queueRow('truck_owners', workspaceId, row);
-    return v;
-  }
-  const { data, error } = await supabase.from('truck_owners').update(row).eq('workspace_id', workspaceId).eq('id', v.id).select('*').single();
-  if (error) throw error;
-  const owner = ownerFromDb(data);
-  await updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.map((item) => item.id === owner.id ? owner : item) }));
-  return owner;
+  await updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.map((item) => item.id === v.id ? v : item) }));
+  if (!localOnly) await queueRow('truck_owners', workspaceId, row);
+  return v;
 }
 
 export async function updateTruck(workspaceId: string, v: Truck, localOnly = false) {
   const row = { id: v.id, workspace_id: workspaceId, name: v.name, unit_number: v.unitNumber, make_model: v.makeModel, vin: v.vin, cash_on_hand: v.cashOnHand, license_plate: v.licensePlate, updated_at: new Date().toISOString() };
-  if (localOnly || !navigator.onLine) {
-    await updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.map((item) => item.id === v.id ? v : item) }));
-    if (!localOnly) await queueRow('trucks', workspaceId, row);
-    return v;
-  }
-  const { data, error } = await supabase.from('trucks').update(row).eq('workspace_id', workspaceId).eq('id', v.id).select('*').single();
-  if (error) throw error;
-  const truck = truckFromDb(data);
-  await updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.map((item) => item.id === truck.id ? truck : item) }));
-  return truck;
+  await updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.map((item) => item.id === v.id ? v : item) }));
+  if (!localOnly) await queueRow('trucks', workspaceId, row);
+  return v;
 }
 
 export async function deleteTruck(workspaceId: string, id: string, localOnly = false) {
   const deletedAt = new Date().toISOString();
-  if (localOnly || !navigator.onLine) {
-    await updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.filter((item) => item.id !== id) }));
-    if (!localOnly) await queueRow('trucks', workspaceId, { id, deleted_at: deletedAt, updated_at: deletedAt });
-    return;
-  }
-  const { error } = await supabase.from('trucks').update({ deleted_at: deletedAt, updated_at: deletedAt }).eq('workspace_id', workspaceId).eq('id', id).is('deleted_at', null);
-  if (error) throw error;
+  const row = { id, deleted_at: deletedAt, updated_at: deletedAt };
   await updateCache(workspaceId, (cache) => ({ ...cache, trucks: cache.trucks.filter((item) => item.id !== id) }));
+  if (!localOnly) await queueRow('trucks', workspaceId, row);
 }
 
 export async function createTruckTransaction(workspaceId: string, v: Omit<Transaction, 'id'>, localOnly = false) {
   const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null };
-  if (localOnly || !navigator.onLine) {
-    const transaction = transactionFromDb(row);
-    await updateCache(workspaceId, (cache) => ({ ...cache, transactions: [...cache.transactions, transaction] }));
-    if (!localOnly) await queueRow('truck_transactions', workspaceId, row);
-    return transaction;
-  }
-  const { data, error } = await supabase.from('truck_transactions').insert(row).select('*').single();
-  if (error) throw error;
-  const transaction = transactionFromDb(data);
+  const transaction = transactionFromDb(row);
   await updateCache(workspaceId, (cache) => ({ ...cache, transactions: [...cache.transactions.filter((item) => item.id !== transaction.id), transaction] }));
+  if (!localOnly) await queueRow('truck_transactions', workspaceId, row);
   return transaction;
 }
 
 export async function createTruckTransactionBatch(workspaceId: string, values: Omit<Transaction, 'id'>[], localOnly = false) {
   if (!values.length) return [];
   const rows = values.map((v) => ({ id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null }));
-  if (localOnly || !navigator.onLine) {
-    const transactions = rows.map((row) => transactionFromDb(row));
-    await withCacheLock(workspaceId, async () => {
-      const cache = await getCache(workspaceId);
-      await saveCache(workspaceId, { ...cache, transactions: [...transactions, ...cache.transactions] });
-    });
-    if (!localOnly) for (const row of rows) await queueRow('truck_transactions', workspaceId, row);
-    return transactions;
-  }
-  const results = await Promise.all(rows.map((row) => supabase.from('truck_transactions').insert(row).select('*').single()));
-  const error = results.find((result) => result.error)?.error;
-  if (error) throw error;
-  const transactions = results.map((result) => transactionFromDb(result.data as Record<string, unknown>));
+  const transactions = rows.map((row) => transactionFromDb(row));
   await withCacheLock(workspaceId, async () => {
     const cache = await getCache(workspaceId);
     await saveCache(workspaceId, { ...cache, transactions: [...transactions, ...cache.transactions] });
   });
+  if (!localOnly) await queueRows('truck_transactions', workspaceId, rows);
   return transactions;
 }
 
 export async function updateTruckTransaction(workspaceId: string, v: Transaction, localOnly = false) {
   const row = { id: v.id, workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, updated_at: new Date().toISOString() };
-  if (localOnly || !navigator.onLine) {
-    await updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.map((item) => item.id === v.id ? v : item) }));
-    if (!localOnly) await queueRow('truck_transactions', workspaceId, row);
-    return v;
-  }
-  const { data, error } = await supabase.from('truck_transactions').update(row).eq('workspace_id', workspaceId).eq('id', v.id).is('deleted_at', null).select('*').single();
-  if (error) throw error;
-  const transaction = transactionFromDb(data);
-  await updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.map((item) => item.id === transaction.id ? transaction : item) }));
-  return transaction;
+  await updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.map((item) => item.id === v.id ? v : item) }));
+  if (!localOnly) await queueRow('truck_transactions', workspaceId, row);
+  return v;
 }
 
 export async function softDeleteTruckTransaction(workspaceId: string, id: string, localOnly = false) {
   const deletedAt = new Date().toISOString();
-  if (localOnly || !navigator.onLine) {
-    await updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.filter((item) => item.id !== id) }));
-    if (!localOnly) await queueRow('truck_transactions', workspaceId, { id, deleted_at: deletedAt, updated_at: deletedAt });
-    return;
-  }
-  const { error } = await supabase.rpc('delete_truck_transaction', { target_workspace: workspaceId, target_transaction: id, approval_id: null });
-  if (error) throw error;
+  const row = { id, deleted_at: deletedAt, updated_at: deletedAt };
   await updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.filter((item) => item.id !== id) }));
+  if (!localOnly) await queueRow('truck_transactions', workspaceId, row);
 }
 
 export async function deleteTruckOwner(workspaceId: string, id: string, localOnly = false) {
   const deletedAt = new Date().toISOString();
-  if (localOnly || !navigator.onLine) {
-    await updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.filter((item) => item.id !== id) }));
-    if (!localOnly) await queueRow('truck_owners', workspaceId, { id, deleted_at: deletedAt, updated_at: deletedAt });
-    return;
-  }
-  const { error } = await supabase.from('truck_owners').update({ deleted_at: deletedAt, updated_at: deletedAt }).eq('workspace_id', workspaceId).eq('id', id);
-  if (error) throw error;
+  const row = { id, deleted_at: deletedAt, updated_at: deletedAt };
   await updateCache(workspaceId, (cache) => ({ ...cache, owners: cache.owners.filter((item) => item.id !== id) }));
+  if (!localOnly) await queueRow('truck_owners', workspaceId, row);
 }
 
 export async function loadTruckWorkspaceMembers(workspaceId: string) { const { data, error } = await supabase.rpc('list_workspace_members', { target_workspace: workspaceId }); if (error) throw error; return (data ?? []) as Array<{ user_id: string; email: string; display_name: string }>; }
