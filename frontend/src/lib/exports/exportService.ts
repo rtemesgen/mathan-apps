@@ -9,7 +9,7 @@ const dateStamp = () => new Date().toISOString().slice(0, 10);
 function reportLines(report: ExportReport) {
   const metadata = report.metadata;
   const identity = metadata ? [metadata.companyName, `${metadata.appName} — ${metadata.reportName}`, metadata.entityName ? `Entity: ${metadata.entityName}` : '', metadata.startDate || metadata.endDate ? `Period: ${metadata.startDate ?? 'All time'} – ${metadata.endDate ?? 'Current'}` : '', metadata.detailLabel ? `Report: ${metadata.detailLabel}` : '', `Generated: ${formatDateTime(metadata.generatedAt)}`, ''] : [];
-  return report.lines ?? [...identity, report.title, '', report.headers.join(' | '), ...report.rows.map((row) => row.map((value) => String(value ?? '')).join(' | '))];
+  return [...identity, report.title, '', ...(report.lines ?? [report.headers.join(' | '), ...report.rows.map((row) => row.map((value) => String(value ?? '')).join(' | '))])];
 }
 
 function formatDateTime(value?: string) {
@@ -23,7 +23,7 @@ function metadataRows(report: ExportReport) {
     ['Company', m.companyName], ['App', m.appName], ['Report', m.reportName],
     ...(m.entityName ? [['Entity', m.entityName]] : []),
     ...(m.startDate || m.endDate ? [['Period', `${m.startDate ?? 'All time'} – ${m.endDate ?? 'Current'}`]] : []),
-    ...(m.detailLabel ? [['Detail', m.detailLabel]] : []), ['Generated', formatDateTime(m.generatedAt)], ['',''],
+    ...(m.detailLabel ? [['Detail', m.detailLabel]] : []), ['Generated', formatDateTime(m.generatedAt)], ['', ''],
   ];
 }
 
@@ -32,7 +32,9 @@ function printReport(report: ExportReport) {
   if (!printWindow) throw new Error('Allow pop-ups to print this report.');
   const header = report.headers.map((value) => `<th>${escapeHtml(value)}</th>`).join('');
   const rows = report.rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(String(value ?? ''))}</td>`).join('')}</tr>`).join('');
-  printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(report.title)}</title><style>body{font:12px Arial,sans-serif;color:#1c1d1f;padding:28px}h1{font-size:20px}table{border-collapse:collapse;width:100%;margin-top:18px}th,td{border:1px solid #d8d3c5;padding:7px;text-align:left;vertical-align:top}th{background:#f0ebd9}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(report.title)}</h1><table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table><button onclick="window.print()">Print</button></body></html>`);
+  const m = report.metadata;
+  const identity = m ? `<div><strong>${escapeHtml(m.companyName)}</strong><br>${escapeHtml(m.appName)} — ${escapeHtml(m.reportName)}${m.entityName ? `<br>Entity: ${escapeHtml(m.entityName)}` : ''}${m.startDate || m.endDate ? `<br>Period: ${escapeHtml(m.startDate ?? 'All time')} – ${escapeHtml(m.endDate ?? 'Current')}` : ''}${m.detailLabel ? `<br>Detail: ${escapeHtml(m.detailLabel)}` : ''}<br>Generated: ${escapeHtml(formatDateTime(m.generatedAt))}</div>` : '';
+  printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(report.title)}</title><style>body{font:12px Arial,sans-serif;color:#1c1d1f;padding:28px}h1{font-size:20px}table{border-collapse:collapse;width:100%;margin-top:18px}th,td{border:1px solid #d8d3c5;padding:7px;text-align:left;vertical-align:top}th{background:#f0ebd9}@media print{button{display:none}}</style></head><body>${identity}<h1>${escapeHtml(report.title)}</h1><table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table><button onclick="window.print()">Print</button></body></html>`);
   printWindow.document.close();
   printWindow.focus();
   printWindow.setTimeout(() => printWindow.print(), 150);

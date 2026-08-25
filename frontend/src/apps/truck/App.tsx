@@ -29,8 +29,9 @@ export default function App() {
   const [selectedPayOwnerId, setSelectedPayOwnerId] = useState<string | undefined>();
   const [expensesTab, setExpensesTab] = useState<'expense' | 'pay-owner' | 'distribute-profit'>('expense');
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState<{ entityId?: string; startDate?: string; endDate?: string; transactionType?: string; query?: string }>({});
   const [exportSelection, setExportSelection] = useState({ id: 'complete-statement', name: 'Truck Financial Report' });
-  const openExport = (id = 'complete-statement', name = 'Truck Financial Report') => { setExportSelection({ id, name }); setExportOpen(true); };
+  const openExport = (id = 'complete-statement', name = 'Truck Financial Report', filters: typeof exportFilters = {}) => { setExportSelection({ id, name }); setExportFilters(filters); setExportOpen(true); };
 
   const editable = canEditApp('truck');
   const [error, setError] = useState('');
@@ -89,7 +90,6 @@ export default function App() {
           currentTruckId={currentTruckId}
           onSelectTruck={setCurrentTruckId}
           onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
-          onOpenExport={() => openExport(currentView === 'cash-report' ? 'income-expenses' : currentView === 'reports' ? 'owner-shares-loans' : currentView === 'history' ? 'transactions-by-truck-owner' : undefined, currentView === 'cash-report' ? 'Cash Flow' : currentView === 'reports' ? 'Partner Financials' : currentView === 'history' ? 'Activity History' : undefined)}
         />
 
         <TruckViewContent
@@ -129,7 +129,21 @@ export default function App() {
         />
       </div>
 
-      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Truck Equity', reportName: exportSelection.name, report: (buildTruckExportReports({ trucks, owners, transactions }).find((item) => item.id === exportSelection.id) ?? buildTruckExportReports({ trucks, owners, transactions })[0]), selectedEntity: activeTruck ? { value: activeTruck.id, label: `${activeTruck.name} (${activeTruck.unitNumber})` } : undefined, activeFilters: activeTruck ? { entityId: activeTruck.id } : undefined, availableEntities: trucks.map((truck) => ({ value: truck.id, label: `${truck.name} (${truck.unitNumber})` })) }} />
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        context={{
+          companyName: workspace?.name ?? 'Company',
+          appName: 'Truck Equity',
+          reportName: exportSelection.name,
+          report: buildTruckExportReports({ trucks, owners, transactions }).find((item) => item.id === exportSelection.id) ?? buildTruckExportReports({ trucks, owners, transactions })[0],
+          selectedEntity: activeTruck ? { value: activeTruck.id, label: `${activeTruck.name} (${activeTruck.unitNumber})` } : undefined,
+          activeFilters: { ...exportFilters, ...(activeTruck ? { entityId: activeTruck.id } : {}) },
+          availableEntities: exportSelection.id === 'owner-shares-loans' ? (activeTruck ? [{ value: activeTruck.id, label: `${activeTruck.name} (${activeTruck.unitNumber})` }] : []) : trucks.map((truck) => ({ value: truck.id, label: `${truck.name} (${truck.unitNumber})` })),
+          availableOwners: exportSelection.id === 'owner-shares-loans' ? activeTruckOwners.map((owner) => ({ value: owner.id, label: owner.name })) : undefined,
+          availableTransactionTypes: exportSelection.id === 'income-expenses' ? [{ value: '', label: 'All cash movements' }, { value: 'INFLOW', label: 'Income / inflow only' }, { value: 'OUTFLOW', label: 'Expenses / outflow only' }] : exportSelection.id === 'transactions-by-truck-owner' ? [{ value: '', label: 'All activity' }, { value: 'INCOME', label: 'Trip income' }, { value: 'EXPENSE', label: 'Expenses' }, { value: 'CAPITAL_INJECTION', label: 'Owner loans' }, { value: 'CAPITAL_REPAYMENT', label: 'Loan repayments' }, { value: 'PROFIT_DISTRIBUTION', label: 'Profit distributions' }] : undefined,
+        }}
+      />
 
       {/* Add / Edit Partner Popup Modal */}
       <AddPartnerModal

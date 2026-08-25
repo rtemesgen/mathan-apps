@@ -11,12 +11,14 @@ import {
   Users,
   CheckCircle2
 } from 'lucide-react';
+import { ExportButton } from '../../../components/ExportButton';
 
 interface ReportsViewProps {
   employees: Employee[];
   transactions: Transaction[];
   asOfDate: string;
   onSelectEmployee: (employee: Employee) => void;
+  onOpenExport: (filters?: { query?: string }) => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
@@ -24,6 +26,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   transactions,
   asOfDate,
   onSelectEmployee,
+  onOpenExport,
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -84,7 +87,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             className="w-full pl-9 pr-4 py-2 bg-[#f2f0e6] border border-zinc-200 rounded-2xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-800 placeholder:italic"
           />
         </div>
-
+        <ExportButton onClick={() => onOpenExport({ query: searchTerm || undefined })} />
       </div>
 
       {/* Main Breakdown Table */}

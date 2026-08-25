@@ -25,6 +25,7 @@ type PayrollViewContentProps = {
   onDeleteEmployee: (employeeId: string) => Promise<void>;
   onSaveRaise: (employeeId: string, raise: SalaryChange) => Promise<void>;
   onDeleteTransaction: (transactionId: string) => Promise<void>;
+  onOpenExport: (filters?: { entityId?: string; startDate?: string; endDate?: string; transactionType?: string; query?: string }) => void;
 };
 
 export function PayrollViewContent({
@@ -43,6 +44,7 @@ export function PayrollViewContent({
   onDeleteEmployee,
   onSaveRaise,
   onDeleteTransaction,
+  onOpenExport,
 }: PayrollViewContentProps) {
   return <main className="mobile-content-safe flex-1 max-w-7xl w-full mx-auto p-2 pb-16 sm:p-3 sm:pb-6">
     {activeTab === 'dashboard' && <DashboardView
@@ -71,8 +73,8 @@ export function PayrollViewContent({
 
     {activeTab === 'add-raise' && <AddRaiseView employees={employees} asOfDate={asOfDate} onSaveRaise={onSaveRaise} onNavigateTab={onNavigateTab} />}
 
-    {activeTab === 'reports' && <ReportsView employees={employees} transactions={transactions} asOfDate={asOfDate} onSelectEmployee={onSelectEmployee} />}
+    {activeTab === 'reports' && <ReportsView employees={employees} transactions={transactions} asOfDate={asOfDate} onSelectEmployee={onSelectEmployee} onOpenExport={onOpenExport} />}
 
-    {activeTab === 'transactions' && <TransactionsView transactions={transactions} employees={employees} onDeleteTransaction={onDeleteTransaction} onNavigateTab={onNavigateTab} />}
+    {activeTab === 'transactions' && <TransactionsView transactions={transactions} employees={employees} onDeleteTransaction={onDeleteTransaction} onNavigateTab={onNavigateTab} onOpenExport={onOpenExport} />}
   </main>;
 }

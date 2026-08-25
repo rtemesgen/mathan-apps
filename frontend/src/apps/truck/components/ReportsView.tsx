@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Search, FileText, Download } from 'lucide-react';
+import { Search, FileText } from 'lucide-react';
 import { TruckFinancialSummary } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { ExportButton } from '../../../components/ExportButton';
 
 interface ReportsViewProps {
   summary: TruckFinancialSummary;
@@ -30,13 +31,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ summary, onPayOwner, o
           </h2>
         </div>
 
-        <button
-          onClick={onExport}
-          className="bg-[#1c1d1f] hover:bg-[#2e2f33] text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-2xs"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Export / Print</span>
-        </button>
+        <ExportButton onClick={onExport} />
       </div>
 
       {/* 3 Metric Cards in One Single Row */}

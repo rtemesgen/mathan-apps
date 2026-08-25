@@ -4,7 +4,6 @@ import {
   Calendar, 
   ArrowDownLeft, 
   ArrowUpRight, 
-  Download, 
   Filter, 
   Search, 
   TrendingUp, 
@@ -13,6 +12,7 @@ import {
   Clock,
   Printer
 } from 'lucide-react';
+import { ExportButton } from '../../../../components/ExportButton';
 import { Truck, Transaction, Owner } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
@@ -24,7 +24,7 @@ interface CashReportViewProps {
   owners: Owner[];
   onOpenIncome: () => void;
   onOpenExpense: () => void;
-  onExport: () => void;
+  onExport: (filters?: { startDate?: string; endDate?: string; transactionType?: string; query?: string }) => void;
   onEditTransaction: (transaction: Transaction) => void;
   onDeleteTransaction: (transactionId: string) => void | Promise<void>;
 }
@@ -265,13 +265,9 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
             <Printer className="w-3 h-3" />
             <span>Print</span>
           </button>
-          <button
-            onClick={onExport}
-            className="bg-[#1c1d1f] hover:bg-[#2c2d30] text-white text-[11px] font-bold px-3 py-1 rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-          >
-            <Download className="w-3 h-3" />
-            <span>Export</span>
-          </button>
+          <ExportButton
+            onClick={() => onExport({ startDate: effectiveStart, endDate: effectiveEnd, transactionType: txTypeFilter === 'ALL' ? undefined : txTypeFilter, query: searchTerm || undefined })}
+          />
         </div>
       </div>
 

@@ -16,8 +16,7 @@ import {
   FileText,
   X
 } from 'lucide-react';
-import { exportPdfFile } from '../../../lib/mobile';
-import { emitToast } from '../../../lib/toast';
+import { ExportButton } from '../../../components/ExportButton';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppSelect } from '../../../components/AppSelect';
 
@@ -28,6 +27,7 @@ interface BookDetailViewProps {
   onOpenCashInModal: () => void;
   onOpenCashOutModal: () => void;
   onDeleteTransaction: (id: string) => void | Promise<void>;
+  onOpenExport: (filters?: { transactionType?: string; query?: string }) => void;
 }
 
 export const BookDetailView: React.FC<BookDetailViewProps> = ({
@@ -37,6 +37,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   onOpenCashInModal,
   onOpenCashOutModal,
   onDeleteTransaction,
+  onOpenExport,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'in' | 'out'>('all');
@@ -106,31 +107,6 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
       });
   }, [bookTransactions, typeFilter, searchQuery, sortBy]);
 
-  const handleExportPDF = () => {
-    const lines = [
-      `Book: ${book.name}`,
-      `Currency: ${book.currency}`,
-      `Total cash in: ${formatCurrency(stats.totalIn, book.currency)}`,
-      `Total cash out: ${formatCurrency(stats.totalOut, book.currency)}`,
-      `Net balance: ${formatCurrency(stats.netBalance, book.currency)}`,
-      '',
-      ...bookTransactions
-        .slice()
-        .sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime())
-        .map((transaction) => [
-          formatDateTime(transaction.dateTime).dateStr,
-          transaction.type === 'in' ? 'CASH IN' : 'CASH OUT',
-          `${transaction.type === 'in' ? '+' : '-'}${formatCurrency(transaction.amount, book.currency)}`,
-          transaction.remark,
-          transaction.category || '—',
-          transaction.paymentMode || '—',
-        ].join(' | ')),
-    ];
-    void exportPdfFile(`${book.name.replace(/\s+/g, '_')}_transactions.pdf`, `Cash Book Transactions — ${book.name}`, lines)
-      .then(() => emitToast({ kind: 'message', message: 'Cash Book PDF saved' }))
-      .catch(() => emitToast({ kind: 'message', message: 'Could not save the Cash Book PDF', tone: 'error' }));
-  };
-
   return (
     <div className="min-h-screen pb-20">
       {/* Top Navigation Bar inside Book */}
@@ -156,14 +132,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             )}
           </div>
 
-          <button
-            onClick={handleExportPDF}
-            title="Export transactions to PDF"
-            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-[#4B5563] hover:text-[#121212] bg-[#FAF9F5] hover:bg-[#EFECE3] border border-[#E6E2D6] rounded-md transition-colors"
-          >
-            <Download className="w-2.5 h-2.5" />
-            <span>Download PDF</span>
-          </button>
+          <ExportButton onClick={() => onOpenExport({ transactionType: typeFilter === 'all' ? undefined : typeFilter, query: searchQuery || undefined })} />
         </div>
       </div>
 

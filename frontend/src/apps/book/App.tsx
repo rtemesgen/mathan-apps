@@ -33,6 +33,8 @@ export default function App() {
   const [targetBookForTransaction, setTargetBookForTransaction] = useState<Book | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState<{ transactionType?: string; query?: string }>({});
+  const openExport = (filters: typeof exportFilters = {}) => { setExportFilters(filters); setExportOpen(true); };
 
   useAndroidBackHandler(() => {
     if (transactionModalType) {
@@ -138,7 +140,6 @@ export default function App() {
         totalBooksCount={books.length}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(value => !value)}
-        onOpenExport={() => setExportOpen(true)}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -158,6 +159,7 @@ export default function App() {
           onAddMembers={setBookForMembers}
           onOpenImport={() => setIsImportBookOpen(true)}
           onDeleteTransaction={handleDeleteTransaction}
+          onOpenExport={openExport}
         />
       </div>
 
@@ -190,7 +192,7 @@ export default function App() {
         onClose={() => setIsImportBookOpen(false)}
         onImport={handleImportBooks}
       />
-      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Cash Book', reportName: activeBook ? `Current Book Report — ${activeBook.name}` : 'Cash Book Summary', report: buildCashBookExportReports({ books, transactions })[activeBook ? 1 : 0], selectedEntity: activeBook ? { value: activeBook.id, label: activeBook.name } : undefined, activeFilters: activeBook ? { entityId: activeBook.id } : undefined, availableEntities: activeBook ? undefined : books.map(book => ({ value: book.id, label: book.name })) }} />
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Cash Book', reportName: activeBook ? `Current Book Report — ${activeBook.name}` : 'Cash Book Summary', report: buildCashBookExportReports({ books, transactions })[activeBook ? 1 : 0], selectedEntity: activeBook ? { value: activeBook.id, label: activeBook.name } : undefined, activeFilters: { ...exportFilters, ...(activeBook ? { entityId: activeBook.id } : {}) }, availableDetailLevels: activeBook ? ['condensed', 'detailed', 'full'] : ['condensed'], availableTransactionTypes: activeBook ? [{ value: '', label: 'All transactions' }, { value: 'in', label: 'Cash In only' }, { value: 'out', label: 'Cash Out only' }] : undefined, availableEntities: activeBook ? undefined : books.map(book => ({ value: book.id, label: book.name })) }} />
 
       {/* Cash In / Cash Out Transaction Modal */}
       {transactionModalType && targetBookForTransaction && (

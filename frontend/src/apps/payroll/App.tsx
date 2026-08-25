@@ -73,6 +73,8 @@ export default function App() {
   const [selectedDetailEmp, setSelectedDetailEmp] = useState<Employee | null>(null);
   const [selectedPayEmployeeId, setSelectedPayEmployeeId] = useState<string | undefined>();
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState<{ entityId?: string; startDate?: string; endDate?: string; transactionType?: string; query?: string }>({});
+  const openExport = (filters: typeof exportFilters = {}) => { setExportFilters(filters); setExportOpen(true); };
 
   useAndroidBackHandler(() => {
     if (selectedDetailEmp) {
@@ -196,7 +198,6 @@ export default function App() {
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           toggleButtonRef={toggleBtnRef}
-          onOpenExport={() => setExportOpen(true)}
         />
 
         <PayrollViewContent
@@ -215,6 +216,7 @@ export default function App() {
           onSaveRaise={handleSaveRaise}
           onRecordWithdrawal={handleRecordWithdrawal}
           onDeleteTransaction={handleDeleteTransaction}
+          onOpenExport={openExport}
         />
       </div>
 
@@ -241,7 +243,7 @@ export default function App() {
           onDeleteRaise={handleDeleteRaise}
         />
       )}
-      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Payroll', reportName: activeTab === 'transactions' ? 'Payment History' : 'Payroll History', report: buildPayrollExportReports({ employees, transactions, asOfDate })[activeTab === 'transactions' ? 3 : 1], activeFilters: { endDate: asOfDate }, availableEntities: employees.map(employee => ({ value: employee.id, label: employee.name })) }} />
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Payroll', reportName: activeTab === 'transactions' ? 'Payment History' : 'Payroll History', report: buildPayrollExportReports({ employees, transactions, asOfDate })[activeTab === 'transactions' ? 3 : 1], activeFilters: { ...exportFilters, ...(activeTab === 'reports' ? { endDate: exportFilters.endDate ?? asOfDate } : {}) }, availableDetailLevels: ['condensed', 'detailed', 'full'], availableEntities: employees.map(employee => ({ value: employee.id, label: employee.name })) }} />
     </div>
   );
 }

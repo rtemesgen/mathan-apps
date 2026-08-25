@@ -6,6 +6,8 @@ export type ExportDetail = 'condensed' | 'detailed' | 'full';
 export type ExportBuildOptions = {
   detail: ExportDetail;
   entityId?: string;
+  ownerId?: string;
+  query?: string;
   startDate?: string;
   endDate?: string;
   transactionType?: string;
@@ -40,6 +42,7 @@ export type ExportReportDefinition = {
 };
 
 export type ExportEntityOption = { value: string; label: string };
+export type ExportFilterOption = { value: string; label: string };
 
 export type ExportContext = {
   companyName: string;
@@ -47,8 +50,10 @@ export type ExportContext = {
   reportName: string;
   report: ExportReportDefinition;
   selectedEntity?: ExportEntityOption;
-  activeFilters?: Pick<ExportBuildOptions, 'entityId' | 'startDate' | 'endDate' | 'transactionType' | 'status'>;
+  activeFilters?: Pick<ExportBuildOptions, 'entityId' | 'ownerId' | 'query' | 'startDate' | 'endDate' | 'transactionType' | 'status'>;
   availableFormats?: ExportFormat[];
   availableDetailLevels?: ExportDetail[];
   availableEntities?: ExportEntityOption[];
+  availableTransactionTypes?: ExportFilterOption[];
+  availableOwners?: ExportEntityOption[];
 };

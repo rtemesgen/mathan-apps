@@ -54,7 +54,7 @@ export type TruckViewContentProps = {
   loading: boolean;
   error: string;
   dataError: string;
-  onExportReport: (reportId: string, reportName: string) => void;
+  onExportReport: (reportId: string, reportName: string, filters?: { startDate?: string; endDate?: string; transactionType?: string; query?: string }) => void;
 };
 
 export function TruckViewContent({
@@ -126,7 +126,7 @@ export function TruckViewContent({
         owners={activeTruckOwners}
         onOpenIncome={() => setCurrentView('income')}
         onOpenExpense={openExpenses}
-        onExport={() => onExportReport('income-expenses', 'Cash Flow')}
+        onExport={(filters) => onExportReport('income-expenses', 'Cash Flow', filters)}
         onEditTransaction={setEditingTransaction}
         onDeleteTransaction={handleDeleteTransaction}
       />}
@@ -167,6 +167,7 @@ export function TruckViewContent({
         onEditTransaction={setEditingTransaction}
         onOpenIncome={() => setCurrentView('income')}
         onOpenExpense={openExpenses}
+        onExport={(filters) => onExportReport('transactions-by-truck-owner', 'Activity History', filters)}
       />}
 
       {currentView === 'manage-trucks' && <ManageTrucksPage

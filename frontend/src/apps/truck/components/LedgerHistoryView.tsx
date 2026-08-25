@@ -8,6 +8,7 @@ import {
 import { Transaction, Owner, TransactionType } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { AppDatePicker } from '../../../components/AppDatePicker';
+import { ExportButton } from '../../../components/ExportButton';
 
 interface LedgerHistoryViewProps {
   transactions: Transaction[];
@@ -16,6 +17,7 @@ interface LedgerHistoryViewProps {
   onEditTransaction: (transaction: Transaction) => void;
   onOpenIncome?: () => void;
   onOpenExpense?: () => void;
+  onExport?: (filters: { startDate?: string; endDate?: string; transactionType?: string; query?: string }) => void;
 }
 
 export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
@@ -23,6 +25,7 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
   owners,
   onDeleteTransaction,
   onEditTransaction,
+  onExport,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('ALL');
@@ -91,6 +94,7 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
             Activity History ({filteredTx.length}{filteredTx.length !== transactions.length ? ` / ${transactions.length}` : ''})
           </h2>
         </div>
+        {onExport && <ExportButton onClick={() => onExport({ startDate: fromDate || undefined, endDate: toDate || undefined, transactionType: selectedType === 'ALL' ? undefined : selectedType, query: searchTerm || undefined })} />}
 
         {/* From and To Date Filter - Single Row */}
         <div className="flex flex-row items-center gap-1.5 bg-white border border-[#d8d0be] rounded-lg px-2 py-1 shadow-2xs text-xs font-bold whitespace-nowrap flex-nowrap">

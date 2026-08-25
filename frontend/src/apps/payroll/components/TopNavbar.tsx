@@ -18,7 +18,6 @@ import {
   PanelLeft,
   PanelLeftClose
 } from 'lucide-react';
-import { ExportButton } from '../../../components/ExportButton';
 
 interface TopNavbarProps {
   activeTab: ActiveTab;
@@ -27,7 +26,6 @@ interface TopNavbarProps {
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
   toggleButtonRef?: React.RefObject<HTMLButtonElement | null>;
-  onOpenExport: () => void;
 }
 
 export const TopNavbar: React.FC<TopNavbarProps> = ({
@@ -37,7 +35,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   isSidebarOpen,
   onToggleSidebar,
   toggleButtonRef,
-  onOpenExport,
 }) => {
   const getPageTitle = (tab: ActiveTab) => {
     switch (tab) {
@@ -123,7 +120,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
 
       {/* Right side evaluation date badge & LIVE badge */}
       <div className="ml-2 flex shrink-0 items-center gap-1 sm:ml-3 sm:gap-3">
-        <ExportButton onClick={onOpenExport} />
         {/* Live Pill Badge */}
         <div className="hidden sm:flex items-center gap-1 bg-white border border-zinc-200 px-2 py-0.5 rounded-full text-[9px] font-extrabold text-zinc-700 uppercase tracking-widest shadow-2xs">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
