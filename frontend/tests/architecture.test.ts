@@ -23,6 +23,7 @@ assert.match(read('apps/book/components/DeleteBookModal.tsx'), /successMessage/)
 assert.match(read('apps/truck/App.tsx'), /successMessage="Truck record deleted successfully\."/);
 assert.match(read('components/AppConnectivityBanner.tsx'), /useOnlineStatus/);
 assert.match(read('components/AppConnectivityBanner.tsx'), /Offline/);
+assert.match(read('index.css'), /admin-sidebar \{ width: 240px !important/);
 assert.match(read('lib/fileExport.ts'), /createCsv/);
 assert.match(read('apps/truck/components/Modals/ExportModal.tsx'), /downloadCsvFile/);
 assert.match(read('apps/payroll/views/ReportsView.tsx'), /downloadCsvFile/);
