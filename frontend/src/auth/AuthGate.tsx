@@ -42,19 +42,31 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     if (!auth.user || standaloneMode || auth.isGuest) { setPhoneStatus('complete'); return () => { cancelled = true; }; }
-    setPhoneStatus('checking');
     const cacheKey = `mathan_profile_phone_verified_${auth.user.id}`;
+    let cachedVerified = false;
     try {
-      if (localStorage.getItem(cacheKey) === 'true') setPhoneStatus('complete');
+      cachedVerified = localStorage.getItem(cacheKey) === 'true';
     } catch { /* storage may be unavailable */ }
-    void supabase.from('workspace_profiles').select('phone').eq('user_id', auth.user.id).maybeSingle().then(({ data }) => {
+    const metadataPhone = auth.user.user_metadata?.phone as string | undefined;
+    const metadataVerified = isValidPhone(metadataPhone ?? '');
+    if (!navigator.onLine) {
+      setPhoneStatus(cachedVerified || metadataVerified ? 'complete' : 'required');
+      return () => { cancelled = true; };
+    }
+    setPhoneStatus(cachedVerified || metadataVerified ? 'complete' : 'checking');
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setPhoneStatus(cachedVerified || metadataVerified ? 'complete' : 'required');
+    }, 3500);
+    void Promise.resolve(supabase.from('workspace_profiles').select('phone').eq('user_id', auth.user.id).maybeSingle()).then(({ data }) => {
       if (cancelled) return;
-      const phoneValue = data?.phone ?? (auth.user?.user_metadata?.phone as string | undefined) ?? '';
+      const phoneValue = data?.phone ?? metadataPhone ?? '';
       const valid = isValidPhone(phoneValue);
       setPhoneStatus(valid ? 'complete' : 'required');
       try { if (valid) localStorage.setItem(cacheKey, 'true'); else localStorage.removeItem(cacheKey); } catch { /* storage may be unavailable */ }
-    });
-    return () => { cancelled = true; };
+    }).catch(() => {
+      if (!cancelled) setPhoneStatus(cachedVerified || metadataVerified ? 'complete' : 'required');
+    }).finally(() => window.clearTimeout(timeout));
+    return () => { cancelled = true; window.clearTimeout(timeout); };
   }, [auth.user?.id, auth.isGuest]);
   if (standaloneMode || auth.isGuest) return <>{children}</>;
   if (!auth.configured) return <Panel><Building2 className="h-8 w-8 text-emerald-700" /><h1 className="mt-4 font-serif text-2xl font-bold">Connect Supabase</h1><p className="mt-2 text-sm text-zinc-500">Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env, then restart the web app.</p><button onClick={auth.continueAsGuest} className="mt-6 w-full rounded-xl border border-zinc-300 p-3 text-sm font-bold text-zinc-800">Continue as guest</button><p className="mt-2 text-center text-[11px] text-zinc-400">Guest data stays on this device.</p></Panel>;

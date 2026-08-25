@@ -65,14 +65,19 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
 export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, revision: number) {
   if (!context.workspaceId || context.standalone || !navigator.onLine) return { value: undefined as T | undefined, revision };
   return withSnapshotStorageLock(context.storageKey, async () => {
-    await syncQueue(context.workspaceId!);
+    // Hydration must never wait for a network flush. The local snapshot is
+    // already available to the app, and sync can continue in the background.
+    // Waiting here made app switching and reopening feel like a save was stuck
+    // whenever another queued mutation was retrying.
+    void syncQueue(context.workspaceId!).catch(() => undefined);
+    const currentLocalRevision = (await offlineStore.read<number>(`${context.storageKey}:revision`)) ?? revision;
     const { data } = await supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', context.workspaceId).eq('domain', `${context.domain}:${context.key}`).maybeSingle();
     const remote = data as unknown as { payload?: T; revision?: number } | null;
     const queued = await getQueuedMutations();
     const relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === `${context.domain}:${context.key}`);
     if (relevant.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error')) reportPersistenceNotice({ app: context.domain, state: 'sync conflict' });
     else if (relevant.length > 0) reportPersistenceNotice({ app: context.domain, state: 'sync pending' });
-    if (remote?.revision === undefined || !shouldApplyRemoteSnapshot(remote.revision, revision, relevant.length > 0)) return { value: undefined as T | undefined, revision };
+    if (remote?.revision === undefined || !shouldApplyRemoteSnapshot(remote.revision, currentLocalRevision, relevant.length > 0)) return { value: undefined as T | undefined, revision: currentLocalRevision };
     await offlineStore.write(`${context.storageKey}:revision`, remote.revision);
     if (remote.payload === undefined) return { value: undefined as T | undefined, revision: remote.revision };
     await offlineStore.write(context.storageKey, remote.payload);
