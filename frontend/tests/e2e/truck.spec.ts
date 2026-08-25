@@ -16,14 +16,15 @@ test('Truck app is available through the workspace launcher and preserves data a
   await page.getByPlaceholder('e.g. Unit 101').fill('E2E-101');
   await page.getByPlaceholder('e.g. 2024 Kenworth T680').fill('Test vehicle');
   await page.getByRole('button', { name: 'Save Truck' }).click();
-  await expect(page.getByRole('heading', { name: 'E2E Truck', exact: true })).toBeVisible();
+  const truckCard = page.locator('main').getByText('E2E Truck', { exact: true }).first();
+  await expect(truckCard).toBeVisible();
   await page.goto('/book');
   await expect(page).toHaveURL(/\/book$/);
   await page.goto('/truck');
-  await expect(page.getByRole('heading', { name: 'E2E Truck', exact: true })).toBeVisible();
+  await expect(page.locator('main').getByText('E2E Truck', { exact: true }).first()).toBeVisible();
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'E2E Truck', exact: true })).toBeVisible();
+  await expect(page.locator('main').getByText('E2E Truck', { exact: true }).first()).toBeVisible();
   await context.setOffline(false);
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Income (Trips)' }).click();

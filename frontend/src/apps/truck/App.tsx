@@ -21,6 +21,7 @@ import { useTruckData } from './useTruckData';
 import { useTruckMutations, type TruckDeleteRequest } from './useTruckMutations';
 import { useTruckFinancials } from './useTruckFinancials';
 import { useTruckPreferences } from './useTruckPreferences';
+import { useDeleteConfirmation } from '../../hooks/useDeleteConfirmation';
 import { UserPlus, Plus, Users, ArrowUpDown } from 'lucide-react';
 import './index.css';
 
@@ -36,26 +37,12 @@ export default function App() {
   const [selectedPayOwnerId, setSelectedPayOwnerId] = useState<string | undefined>();
   const [expensesTab, setExpensesTab] = useState<'expense' | 'pay-owner' | 'distribute-profit'>('expense');
 
-  // Deletion confirmation modal state
-  const [deleteModal, setDeleteModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    itemName?: string;
-    itemDetails?: string;
-    onConfirm: () => void | Promise<void>;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: () => {},
-  });
-
   const editable = canEditApp('truck');
   const [error, setError] = useState('');
   const { activeTruck, activeTruckOwners, truckFinancials, sortedOwnerSummaries } = useTruckFinancials(trucks, owners, transactions, currentTruckId, calculationDate, sortBy);
 
-  const openDelete = (request: TruckDeleteRequest) => setDeleteModal({ isOpen: true, ...request, onConfirm: async () => { await request.onConfirm(); setDeleteModal((previous) => ({ ...previous, isOpen: false })); } });
+  const deleteConfirmation = useDeleteConfirmation('Truck record deleted successfully.');
+  const openDelete = (request: TruckDeleteRequest) => deleteConfirmation.open(request);
   const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner } = useTruckMutations({ workspaceId: workspace?.id, isGuest, editable, trucks, owners, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
 
   const handleResetDemoData = () => setError('Demo reset is unavailable for cloud workspaces.');
@@ -336,14 +323,14 @@ export default function App() {
 
       {/* Global Confirmation Popup for Deleting */}
       <DeleteConfirmModal
-        isOpen={deleteModal.isOpen}
-        title={deleteModal.title}
-        message={deleteModal.message}
-        itemName={deleteModal.itemName}
-        itemDetails={deleteModal.itemDetails}
-        onConfirm={deleteModal.onConfirm}
-        onClose={() => setDeleteModal((prev) => ({ ...prev, isOpen: false }))}
-        successMessage="Truck record deleted successfully."
+        isOpen={!!deleteConfirmation.request}
+        title={deleteConfirmation.request?.title ?? ''}
+        message={deleteConfirmation.request?.message ?? ''}
+        itemName={deleteConfirmation.request?.itemName}
+        itemDetails={deleteConfirmation.request?.itemDetails}
+        onConfirm={deleteConfirmation.confirm}
+        onClose={deleteConfirmation.close}
+        successMessage={deleteConfirmation.successMessage}
       />
     </div>
   );
