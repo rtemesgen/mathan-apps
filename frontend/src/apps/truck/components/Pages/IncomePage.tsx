@@ -43,14 +43,14 @@ export const IncomePage: React.FC<IncomePageProps> = ({
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
 
   const resetForm = () => { setAmount(''); setCustomerOrCompany(''); setDescription(''); setReferenceNo(''); setDate(new Date().toISOString().split('T')[0]); };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0 || submitting) return;
-    await run(async () => {
+    await runAction({ operation: async () => {
       if (incomeType === 'TRIP') {
         await onSubmit({
         truckId,
@@ -75,7 +75,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
         });
       }
       resetForm();
-    });
+    }, errorMessage: 'Could not save the Truck income. Your entries were kept.' });
   };
 
   return (

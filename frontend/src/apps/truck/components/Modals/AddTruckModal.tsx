@@ -35,21 +35,21 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
   const [vin, setVin] = useState('');
   const [cashOnHand, setCashOnHand] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
 
   if (!isOpen) return null;
 
   const handleSubmitNew = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !unitNumber.trim() || submitting) return;
-    await run(() => onAddTruck({
+    await runAction({ operation: () => onAddTruck({
       name,
       unitNumber,
       makeModel,
       vin,
       cashOnHand: parseFloat(cashOnHand) || 0,
       licensePlate: licensePlate || 'TRK-NEW',
-    })).then(() => { setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setCashOnHand(''); setLicensePlate(''); });
+    }), errorMessage: 'Could not save the Truck. Your entries were kept.' }).then(() => { setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setCashOnHand(''); setLicensePlate(''); });
   };
 
   return (

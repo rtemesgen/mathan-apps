@@ -38,7 +38,7 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
   const [licensePlate, setLicensePlate] = useState('');
   const [cashOnHand, setCashOnHand] = useState('');
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
 
   const resetForm = () => {
     setEditingTruck(null); setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setLicensePlate(''); setCashOnHand('');
@@ -59,11 +59,11 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
       licensePlate,
       cashOnHand: parseFloat(cashOnHand) || 0,
     };
-    await run(async () => {
+    await runAction({ operation: async () => {
       if (editingTruck) await onUpdateTruck({ ...editingTruck, ...payload });
       else await onAddTruck(payload);
       resetForm();
-    });
+    }, errorMessage: 'Could not save the Truck. Your entries were kept.' });
   };
 
   return (

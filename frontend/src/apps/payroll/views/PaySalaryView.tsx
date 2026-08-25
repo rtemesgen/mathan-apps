@@ -44,7 +44,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [lastTx, setLastTx] = useState<Transaction | null>(null);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
   const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {
@@ -85,7 +85,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    await run(() => onRecordWithdrawal(newTx));
+    await runAction({ operation: () => onRecordWithdrawal(newTx), errorMessage: 'Could not save the salary payment. Your entries were kept.' });
     setLastTx(newTx);
     setIsSuccess(true);
     setAmount('');

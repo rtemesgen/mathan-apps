@@ -32,7 +32,7 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
 
   useEffect(() => {
     if (editingOwner) {
@@ -53,14 +53,14 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || submitting) return;
-    await run(() => onSubmitOwner({
+    await runAction({ operation: () => onSubmitOwner({
       id: editingOwner ? editingOwner.id : undefined,
       truckId: assignedTruckId || currentTruckId,
       name,
       startDate,
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
-      })).then(onBack);
+      }), errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onBack);
   };
 
   return (

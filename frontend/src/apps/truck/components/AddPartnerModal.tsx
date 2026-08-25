@@ -40,7 +40,7 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
   const [equityPercentage, setEquityPercentage] = useState('');
   const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
   const [linkedUserId, setLinkedUserId] = useState('');
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
 
   useEffect(() => {
     if (editingOwner) {
@@ -66,7 +66,7 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
     e.preventDefault();
     if (!name.trim() || submitting) return;
 
-    await run(() => onSubmitPartner({
+    await runAction({ operation: () => onSubmitPartner({
       id: editingOwner ? editingOwner.id : undefined,
       truckId: assignedTruckId || currentTruckId,
       name: name.trim(),
@@ -74,7 +74,7 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
       userId: linkedUserId || null,
-    }));
+    }), errorMessage: 'Could not save the Truck owner. Your entries were kept.' });
 
     onClose();
   };
