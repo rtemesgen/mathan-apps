@@ -127,6 +127,8 @@ assert.match(read('apps/truck/components/Pages/ManageTrucksPage.tsx'), /runActio
 assert.match(read('apps/truck/components/Pages/RecordTransactionPage.tsx'), /useTruckTransactionForm/);
 assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /useTruckTransactionForm/);
 assert.match(read('apps/truck/components/useTruckTransactionForm.ts'), /runAction/);
+assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /TransactionTypeTabs/);
+assert.match(read('apps/truck/components/Pages/RecordTransactionPage.tsx'), /TransactionTypeTabs/);
 for (const obsolete of [
   'apps/payroll/components/AddEmployeeModal.tsx',
   'apps/payroll/components/AddRaiseModal.tsx',

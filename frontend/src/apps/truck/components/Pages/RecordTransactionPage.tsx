@@ -4,6 +4,7 @@ import { Owner, TransactionType, Truck } from '../../types';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
 import { useTruckTransactionForm, TruckTransactionInput } from '../useTruckTransactionForm';
+import { TransactionTypeTabs } from '../TransactionTypeTabs';
 
 interface RecordTransactionPageProps {
   owners: Owner[];
@@ -53,73 +54,7 @@ export const RecordTransactionPage: React.FC<RecordTransactionPageProps> = ({
       {/* Main Form Card */}
       <div className="bg-white border border-[#e5dfd2] rounded-3xl p-6 md:p-8 shadow-xs">
         <form onSubmit={handleSubmit} className="space-y-6 text-xs font-semibold">
-          {/* Entry Type Selector */}
-          <div>
-            <label className="block text-[#8c8880] uppercase tracking-wider text-[10px] mb-2 font-bold">
-              Select Entry Type
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-[#f3efe6] p-2 rounded-2xl border border-[#e5dfd2]">
-              <button
-                type="button"
-                onClick={() => handleTypeChange('INCOME')}
-                className={`py-2.5 px-3 rounded-xl transition-all text-center font-bold ${
-                  type === 'INCOME'
-                    ? 'bg-[#2e7d32] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Freight Revenue
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('EXPENSE')}
-                className={`py-2.5 px-3 rounded-xl transition-all text-center font-bold ${
-                  type === 'EXPENSE'
-                    ? 'bg-[#c62828] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Truck Expense
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('CAPITAL_INJECTION')}
-                className={`py-2.5 px-3 rounded-xl transition-all text-center font-bold ${
-                  type === 'CAPITAL_INJECTION'
-                    ? 'bg-[#e65100] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Owner Cash Loan
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('CAPITAL_REPAYMENT')}
-                className={`py-2.5 px-3 rounded-xl transition-all text-center font-bold ${
-                  type === 'CAPITAL_REPAYMENT'
-                    ? 'bg-[#3f4d34] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Truck Repays Loan
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('PROFIT_DISTRIBUTION')}
-                className={`py-2.5 px-3 rounded-xl transition-all text-center col-span-2 sm:col-span-2 font-bold ${
-                  type === 'PROFIT_DISTRIBUTION'
-                    ? 'bg-[#6a1b9a] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Distribute Profit Dividend
-              </button>
-            </div>
-          </div>
+          <TransactionTypeTabs value={type} onChange={handleTypeChange} label="Select Entry Type" />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Truck Selector */}

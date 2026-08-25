@@ -5,6 +5,7 @@ import { formatCurrency } from '../../utils/formatters';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
 import { useTruckTransactionForm, TruckTransactionInput } from '../useTruckTransactionForm';
+import { TransactionTypeTabs } from '../TransactionTypeTabs';
 
 interface RecordTransactionModalProps {
   isOpen: boolean;
@@ -56,73 +57,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs font-semibold">
-          {/* Transaction Type Tabs */}
-          <div>
-            <label className="block text-[#8c8880] uppercase tracking-wider text-[10px] mb-1.5 font-bold">
-              Entry Type
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 bg-[#f3efe6] p-1.5 rounded-2xl border border-[#e5dfd2]">
-              <button
-                type="button"
-                onClick={() => handleTypeChange('INCOME')}
-                className={`py-2 px-2 rounded-xl transition-all text-center ${
-                  type === 'INCOME'
-                    ? 'bg-[#2e7d32] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Freight Revenue
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('EXPENSE')}
-                className={`py-2 px-2 rounded-xl transition-all text-center ${
-                  type === 'EXPENSE'
-                    ? 'bg-[#c62828] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Truck Expense
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('CAPITAL_INJECTION')}
-                className={`py-2 px-2 rounded-xl transition-all text-center ${
-                  type === 'CAPITAL_INJECTION'
-                    ? 'bg-[#e65100] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Owner Cash Loan
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('CAPITAL_REPAYMENT')}
-                className={`py-2 px-2 rounded-xl transition-all text-center ${
-                  type === 'CAPITAL_REPAYMENT'
-                    ? 'bg-[#3f4d34] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Truck Repays Loan
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTypeChange('PROFIT_DISTRIBUTION')}
-                className={`py-2 px-2 rounded-xl transition-all text-center col-span-2 sm:col-span-2 ${
-                  type === 'PROFIT_DISTRIBUTION'
-                    ? 'bg-[#6a1b9a] text-white shadow-xs font-bold'
-                    : 'text-[#4a4843] hover:text-[#1c1d1f]'
-                }`}
-              >
-                Distribute Profit Dividend
-              </button>
-            </div>
-          </div>
+          <TransactionTypeTabs value={type} onChange={handleTypeChange} compact />
 
           {/* Amount & Date */}
           <div className="grid grid-cols-2 gap-3">
