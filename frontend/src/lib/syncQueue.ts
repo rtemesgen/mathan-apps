@@ -20,21 +20,33 @@ export interface QueuedMutation {
 const KEY = 'sync-queue-v1';
 let queueTail: Promise<void> = Promise.resolve();
 
+export type QueuedMutationInput = Partial<Pick<QueuedMutation, 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision'>>
+  & Omit<QueuedMutation, 'id' | 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision' | 'queuedAt' | 'syncStatus' | 'retryCount'>;
+
 function withQueueLock<T>(operation: () => Promise<T>) {
   const result = queueTail.then(operation, operation);
   queueTail = result.then(() => undefined, () => undefined);
   return result;
 }
 
-export async function enqueueMutation(mutation: Partial<Pick<QueuedMutation, 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision'>> & Omit<QueuedMutation, 'id' | 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision' | 'queuedAt' | 'syncStatus' | 'retryCount'>) {
+function queuedMutation(mutation: QueuedMutationInput): QueuedMutation {
+  const mutationId = mutation.mutationId ?? crypto.randomUUID();
+  const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
+  const entityId = mutation.entityId ?? String(mutation.payload.id ?? mutation.payload.client_id ?? mutation.payload.domain ?? '');
+  return { ...mutation, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: new Date().toISOString(), syncStatus: 'pending', retryCount: 0 };
+}
+
+/** Persist local records and their mutations in one durable storage transaction. */
+export async function enqueueMutationsAtomic(mutations: QueuedMutationInput[], records: Array<{ key: string; value: unknown }>) {
   return withQueueLock(async () => {
     const queue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const mutationId = mutation.mutationId ?? crypto.randomUUID();
-    const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
-    const entityId = mutation.entityId ?? String(mutation.payload.id ?? mutation.payload.client_id ?? mutation.payload.domain ?? '');
-    const next: QueuedMutation = { ...mutation, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: new Date().toISOString(), syncStatus: 'pending', retryCount: 0 };
-    await offlineStore.write(KEY, mergeQueuedMutation(queue, next));
+    const nextQueue = mutations.reduce((current, mutation) => mergeQueuedMutation(current, queuedMutation(mutation)), queue);
+    await offlineStore.writeAtomic([...records, { key: KEY, value: nextQueue }]);
   });
+}
+
+export async function enqueueMutation(mutation: QueuedMutationInput) {
+  return enqueueMutationsAtomic([mutation], []);
 }
 
 export async function getQueuedMutations() {

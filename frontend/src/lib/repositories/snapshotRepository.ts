@@ -1,9 +1,8 @@
 import { offlineStore } from '../localStore';
 import { supabase } from '../supabase';
-import { enqueueMutation, getQueuedMutations } from '../syncQueue';
+import { enqueueMutationsAtomic, getQueuedMutations } from '../syncQueue';
 import { syncQueue } from '../offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from './types';
-import { persistBeforeQueue } from './mutationLifecycle';
 import { emitSyncStatus } from '../toast';
 
 export type SnapshotRepositoryContext = {
@@ -15,9 +14,15 @@ export type SnapshotRepositoryContext = {
   key: string;
 };
 
+/** Cloud data may replace a local snapshot only when it is newer and settled. */
+export function shouldApplyRemoteSnapshot(remoteRevision: number, localRevision: number, hasPendingMutation: boolean) {
+  return !hasPendingMutation && remoteRevision > localRevision;
+}
+
 const snapshotTails = new Map<string, Promise<void>>();
 
-function withSnapshotLock<T>(storageKey: string, operation: () => Promise<T>) {
+/** Serialize every operation that can read or replace one snapshot record. */
+export function withSnapshotStorageLock<T>(storageKey: string, operation: () => Promise<T>) {
   const previous = snapshotTails.get(storageKey) ?? Promise.resolve();
   const result = previous.then(operation, operation);
   const tail = result.then(() => undefined, () => undefined);
@@ -32,17 +37,18 @@ export async function readSnapshot<T>(storageKey: string, initialValue: T) {
 }
 
 export async function persistSnapshot<T>(context: SnapshotRepositoryContext, value: T, revision: number): Promise<PersistenceState> {
-  return withSnapshotLock(context.storageKey, async () => {
+  return withSnapshotStorageLock(context.storageKey, async () => {
     const payload = context.workspaceId ? { workspace_id: context.workspaceId, domain: `${context.domain}:${context.key}`, payload: value, expected_revision: revision } : null;
-    await persistBeforeQueue(
-      () => offlineStore.write(context.storageKey, value),
-      async () => {
-        if (context.standalone) return;
-        if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
-        const mutationId = crypto.randomUUID();
-        await enqueueMutation({ mutationId, userId: context.userId ?? 'unknown', companyId: context.workspaceId, entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: revision, table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId } });
-      },
-    );
+    if (context.standalone) await offlineStore.write(context.storageKey, value);
+    else {
+      if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
+      const mutationId = crypto.randomUUID();
+      await enqueueMutationsAtomic([{
+        mutationId, userId: context.userId ?? 'unknown', companyId: context.workspaceId,
+        entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: revision,
+        table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId },
+      }], [{ key: context.storageKey, value }]);
+    }
     if (context.standalone) {
       reportPersistenceNotice({ app: context.domain, state: 'offline saved' });
       return 'offline saved';
@@ -58,7 +64,7 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
 
 export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, revision: number) {
   if (!context.workspaceId || context.standalone || !navigator.onLine) return { value: undefined as T | undefined, revision };
-  return withSnapshotLock(context.storageKey, async () => {
+  return withSnapshotStorageLock(context.storageKey, async () => {
     await syncQueue(context.workspaceId!);
     const { data } = await supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', context.workspaceId).eq('domain', `${context.domain}:${context.key}`).maybeSingle();
     const remote = data as unknown as { payload?: T; revision?: number } | null;
@@ -66,7 +72,7 @@ export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, rev
     const relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === `${context.domain}:${context.key}`);
     if (relevant.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error')) reportPersistenceNotice({ app: context.domain, state: 'sync conflict' });
     else if (relevant.length > 0) reportPersistenceNotice({ app: context.domain, state: 'sync pending' });
-    if (relevant.length > 0 || remote?.revision === undefined || remote.revision <= revision) return { value: undefined as T | undefined, revision };
+    if (remote?.revision === undefined || !shouldApplyRemoteSnapshot(remote.revision, revision, relevant.length > 0)) return { value: undefined as T | undefined, revision };
     await offlineStore.write(`${context.storageKey}:revision`, remote.revision);
     if (remote.payload === undefined) return { value: undefined as T | undefined, revision: remote.revision };
     await offlineStore.write(context.storageKey, remote.payload);

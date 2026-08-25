@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { deleteNativeRecord, isJsonSerializable, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
+import { deleteNativeRecord, isJsonSerializable, isNativeMigrationComplete, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
 
 const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
@@ -84,6 +84,9 @@ async function readLegacyLocalStorage() {
 async function getNativeStoreReady() {
   if (!Capacitor.isNativePlatform()) return false;
   nativeStoreReady ??= (async () => {
+    // Reopening an already migrated Android database must not rescan every
+    // legacy IndexedDB record before the first read or save.
+    if (await isNativeMigrationComplete()) return true;
     const [records, metadata, localStorageRecords] = await Promise.all([
       readLegacyStore(STORE_NAME),
       readLegacyStore(META_STORE_NAME),
@@ -216,8 +219,12 @@ export async function writeOfflineAtomic(entries: Array<{ key: string; value: un
         transaction.onabort = () => reject(transaction.error ?? new Error('Offline cache transaction aborted'));
       });
       entries.forEach(({ key }) => removeFallback(key));
-    } catch {
-      try { entries.forEach(({ key, value }) => localStorage.setItem(fallbackKey(key), JSON.stringify(value))); } catch { /* storage is unavailable */ }
+    } catch (primaryError) {
+      try {
+        entries.forEach(({ key, value }) => localStorage.setItem(fallbackKey(key), JSON.stringify(value)));
+      } catch {
+        throw primaryError;
+      }
     }
   });
 }
