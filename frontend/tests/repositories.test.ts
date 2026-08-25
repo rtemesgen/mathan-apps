@@ -14,6 +14,12 @@ const raise: SalaryChange = { id: 'r1', effectiveDate: '2026-02-01', newMonthlyS
 const lifecycleOrder: string[] = [];
 await persistBeforeQueue(async () => { lifecycleOrder.push('local'); return 'stored'; }, async () => { lifecycleOrder.push('queue'); });
 assert.deepEqual(lifecycleOrder, ['local', 'queue'], 'every repository mutation must persist locally before queueing');
+let queuedAfterStorageFailure = false;
+await assert.rejects(
+  persistBeforeQueue(async () => { throw new Error('storage unavailable'); }, async () => { queuedAfterStorageFailure = true; }),
+  /storage unavailable/,
+);
+assert.equal(queuedAfterStorageFailure, false, 'a storage failure must never enqueue a mutation');
 
 const createdBook = createBook({ name: 'New', currency: 'USD' }, '2026-01-02T00:00:00.000Z').data;
 assert.equal(createdBook.createdAt, '2026-01-02T00:00:00.000Z');
