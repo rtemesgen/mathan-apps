@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Save, Truck as TruckIcon } from 'lucide-react';
 import { Owner, Truck } from '../../types';
 import { TruckSelect } from '../TruckSelect';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 import { OwnerFormFields } from '../OwnerFormFields';
+import { useOwnerFormDraft } from '../useOwnerFormDraft';
 
 interface AddOwnerPageProps {
   editingOwner?: Owner | null;
@@ -27,39 +28,24 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
   onSubmitOwner,
   onBack,
 }) => {
-  const [name, setName] = useState('');
   const [assignedTruckId, setAssignedTruckId] = useState(editingOwner?.truckId || currentTruckId);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [equityPercentage, setEquityPercentage] = useState('');
-  const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
+  const { draft, setField } = useOwnerFormDraft(editingOwner, `${currentTruckId}:${editingOwner?.id ?? 'new'}`);
   const { submitting, runAction } = useAsyncAction();
 
   useEffect(() => {
-    if (editingOwner) {
-      setName(editingOwner.name);
-      setAssignedTruckId(editingOwner.truckId || currentTruckId);
-      setStartDate(editingOwner.startDate);
-      setEquityPercentage(editingOwner.equityPercentage.toString());
-      setMonthlyDrawRate(editingOwner.monthlyDrawRate.toString());
-    } else {
-      setName('');
-      setAssignedTruckId(currentTruckId);
-      setStartDate(new Date().toISOString().split('T')[0]);
-      setEquityPercentage('');
-      setMonthlyDrawRate('');
-    }
+    setAssignedTruckId(editingOwner?.truckId || currentTruckId);
   }, [editingOwner, currentTruckId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || submitting) return;
+    if (!draft.name.trim() || submitting) return;
     await runAction({ operation: () => onSubmitOwner({
       id: editingOwner ? editingOwner.id : undefined,
       truckId: assignedTruckId || currentTruckId,
-      name,
-      startDate,
-      equityPercentage: parseFloat(equityPercentage) || 0,
-      monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
+      name: draft.name,
+      startDate: draft.startDate,
+      equityPercentage: parseFloat(draft.equityPercentage) || 0,
+      monthlyDrawRate: parseFloat(draft.monthlyDrawRate) || 0,
       }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onBack);
   };
 
@@ -86,7 +72,7 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
             </p>
           </div>
 
-          <OwnerFormFields name={name} setName={setName} startDate={startDate} setStartDate={setStartDate} equityPercentage={equityPercentage} setEquityPercentage={setEquityPercentage} monthlyDrawRate={monthlyDrawRate} setMonthlyDrawRate={setMonthlyDrawRate} compact />
+          <OwnerFormFields name={draft.name} setName={(value) => setField('name', value)} startDate={draft.startDate} setStartDate={(value) => setField('startDate', value)} equityPercentage={draft.equityPercentage} setEquityPercentage={(value) => setField('equityPercentage', value)} monthlyDrawRate={draft.monthlyDrawRate} setMonthlyDrawRate={(value) => setField('monthlyDrawRate', value)} compact />
 
           {/* Form Submit Actions */}
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#f0ebd9]">

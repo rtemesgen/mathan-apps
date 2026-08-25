@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { X, UserPlus, PieChart, DollarSign, Calendar } from 'lucide-react';
 import { Owner } from '../../types';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 import { OwnerFormFields } from '../OwnerFormFields';
+import { useOwnerFormDraft } from '../useOwnerFormDraft';
 
 interface AddOwnerModalProps {
   isOpen: boolean;
@@ -23,37 +24,20 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
   editingOwner,
   onSubmitOwner,
 }) => {
-  const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [equityPercentage, setEquityPercentage] = useState('');
-  const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
+  const { draft, setField } = useOwnerFormDraft(editingOwner, isOpen);
   const { submitting, runAction } = useAsyncAction();
-
-  useEffect(() => {
-    if (editingOwner) {
-      setName(editingOwner.name);
-      setStartDate(editingOwner.startDate);
-      setEquityPercentage(editingOwner.equityPercentage.toString());
-      setMonthlyDrawRate(editingOwner.monthlyDrawRate.toString());
-    } else {
-      setName('');
-      setStartDate(new Date().toISOString().split('T')[0]);
-      setEquityPercentage('');
-      setMonthlyDrawRate('');
-    }
-  }, [editingOwner, isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || submitting) return;
+    if (!draft.name.trim() || submitting) return;
     await runAction({ operation: () => onSubmitOwner({
       id: editingOwner ? editingOwner.id : undefined,
-      name,
-      startDate,
-      equityPercentage: parseFloat(equityPercentage) || 0,
-      monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
+      name: draft.name,
+      startDate: draft.startDate,
+      equityPercentage: parseFloat(draft.equityPercentage) || 0,
+      monthlyDrawRate: parseFloat(draft.monthlyDrawRate) || 0,
     }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onClose);
   };
 
@@ -85,7 +69,7 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs font-semibold">
-          <OwnerFormFields name={name} setName={setName} startDate={startDate} setStartDate={setStartDate} equityPercentage={equityPercentage} setEquityPercentage={setEquityPercentage} monthlyDrawRate={monthlyDrawRate} setMonthlyDrawRate={setMonthlyDrawRate} />
+          <OwnerFormFields name={draft.name} setName={(value) => setField('name', value)} startDate={draft.startDate} setStartDate={(value) => setField('startDate', value)} equityPercentage={draft.equityPercentage} setEquityPercentage={(value) => setField('equityPercentage', value)} monthlyDrawRate={draft.monthlyDrawRate} setMonthlyDrawRate={(value) => setField('monthlyDrawRate', value)} />
 
           {/* Action Buttons */}
           <div className="pt-4 border-t border-[#e5dfd2] flex items-center justify-end gap-2">
