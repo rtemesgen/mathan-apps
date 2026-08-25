@@ -18,14 +18,19 @@ export function AppToast() {
   const location = useLocation();
   const [toast, setToast] = useState<VisibleToast | null>(null);
   const lastKey = useRef('');
+  const recentPersistenceAt = useRef(0);
 
   useEffect(() => {
     let timeout: number | undefined;
     const handleToast = (event: Event) => {
       const detail = (event as CustomEvent<ToastEvent>).detail;
       let next: VisibleToast | null = null;
-      if (detail?.kind === 'message') next = { message: detail.message, tone: detail.tone ?? 'success' };
+      if (detail?.kind === 'message') {
+        if (detail.tone !== 'error' && Date.now() - recentPersistenceAt.current < 1500) return;
+        next = { message: detail.message, tone: detail.tone ?? 'success' };
+      }
       if (detail?.kind === 'persistence' && detail.notice.app === appForPath(location.pathname)) {
+        if (detail.notice.state !== 'saving') recentPersistenceAt.current = Date.now();
         next = { state: detail.notice.state, message: detail.notice.message ?? persistenceLabels[detail.notice.state] };
       }
       if (!next) return;
