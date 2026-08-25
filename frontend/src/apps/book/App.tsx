@@ -7,7 +7,6 @@ import { AddBookModal } from './components/AddBookModal';
 import { TransactionModal } from './components/TransactionModal';
 import { CashBookSidebar } from './components/Sidebar';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
-import { showAppToast } from '../../lib/mobile';
 import { ImportBookModal } from './components/ImportBookModal';
 import { RenameBookModal } from './components/RenameBookModal';
 import { DeleteBookModal } from './components/DeleteBookModal';
@@ -78,7 +77,6 @@ export default function App() {
       setActiveBookId(null);
     }
     setBookToDelete(null);
-    showAppToast(`${book.name} deleted`);
   };
 
   const handleRenameBook = async (bookId: string, name: string) => {

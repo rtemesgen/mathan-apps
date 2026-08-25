@@ -61,6 +61,7 @@ assert.doesNotMatch(read('apps/truck/App.tsx'), /from ['"]\.\/truckRepository/);
 assert.match(read('apps/truck/useTruckMutations.ts'), /createTruckTransactionBatch/);
 assert.doesNotMatch(read('apps/truck/useTruckMutations.ts'), /supabase|localStore|offlineStore/);
 assert.doesNotMatch(read('apps/book/App.tsx'), /setBooks/);
+assert.doesNotMatch(read('apps/book/App.tsx'), /showAppToast/);
 assert.doesNotMatch(read('apps/payroll/App.tsx'), /setEmployees/);
 assert.doesNotMatch(read('apps/book/App.tsx'), /cashBookRepository/);
 assert.doesNotMatch(read('apps/payroll/App.tsx'), /payrollRepository/);
