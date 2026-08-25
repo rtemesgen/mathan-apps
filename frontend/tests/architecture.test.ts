@@ -47,6 +47,8 @@ assert.match(read('lib/repositories/snapshotRepository.ts'), /relevant\.length >
 assert.match(read('lib/repositories/personalDataRepository.ts'), /loadPersonalDataArchive/);
 assert.match(read('components/SettingsPage.tsx'), /loadPersonalDataArchive/);
 assert.doesNotMatch(read('components/SettingsPage.tsx'), /supabase\.from\('(app_state_snapshots|trucks|truck_owners|truck_transactions)'\)/);
+assert.doesNotMatch(read('components/CompanySelector.tsx'), /window\.confirm/);
+assert.doesNotMatch(read('components/SettingsPage.tsx'), /window\.confirm/);
 assert.match(read('hooks/useAsyncAction.ts'), /gate\.current/);
 assert.match(read('hooks/useAsyncAction.ts'), /runAction/);
 assert.match(read('hooks/useAsyncAction.ts'), /tone: 'success'/);
