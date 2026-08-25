@@ -130,6 +130,8 @@ assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /u
 assert.match(read('apps/truck/components/useTruckTransactionForm.ts'), /runAction/);
 assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /TransactionTypeTabs/);
 assert.match(read('apps/truck/components/Pages/RecordTransactionPage.tsx'), /TransactionTypeTabs/);
+assert.match(read('apps/truck/components/Modals/AddOwnerModal.tsx'), /OwnerFormFields/);
+assert.match(read('apps/truck/components/Pages/AddOwnerPage.tsx'), /OwnerFormFields/);
 for (const obsolete of [
   'apps/payroll/components/AddEmployeeModal.tsx',
   'apps/payroll/components/AddRaiseModal.tsx',
