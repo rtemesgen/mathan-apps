@@ -18,6 +18,8 @@ export function AppToast() {
   const [toast, setToast] = useState<VisibleToast | null>(null);
   const lastKey = useRef('');
   const recentPersistence = useRef<{ at: number; app: string | null }>({ at: 0, app: null });
+  const lastBackgroundPersistence = useRef<{ key: string; at: number }>({ key: '', at: 0 });
+  const lastSyncNotice = useRef<{ key: string; at: number }>({ key: '', at: 0 });
 
   useEffect(() => {
     let timeout: number | undefined;
@@ -32,6 +34,11 @@ export function AppToast() {
       if (detail?.kind === 'persistence' && detail.notice.app === appForPath(location.pathname)) {
         if (detail.notice.state !== 'saving') recentPersistence.current = { at: Date.now(), app: detail.notice.app };
         next = { state: detail.notice.state, message: detail.notice.message ?? persistenceLabels[detail.notice.state] };
+        if (detail.notice.state === 'sync pending' || detail.notice.state === 'sync conflict') {
+          const backgroundKey = `${detail.notice.app}:${detail.notice.state}:${next.message}`;
+          if (lastBackgroundPersistence.current.key === backgroundKey && Date.now() - lastBackgroundPersistence.current.at < 30000) return;
+          lastBackgroundPersistence.current = { key: backgroundKey, at: Date.now() };
+        }
       }
       if (!next) return;
       const key = `${next.state ?? 'message'}:${next.message}`;
@@ -43,11 +50,10 @@ export function AppToast() {
     };
     const handleSyncStatus = (event: Event) => {
       const status = (event as CustomEvent<{ status?: 'synced' | 'syncing' | 'offline' | 'retry' | 'conflicted' | 'error' }>).detail?.status;
-      const next = status === 'offline'
-        ? { state: 'offline saved' as PersistenceState, message: 'Offline · saved locally' }
-        : status === 'syncing'
-          ? { state: 'sync pending' as PersistenceState, message: 'Syncing…' }
-          : status === 'retry'
+      // Routine background syncing/offline checks are represented by the
+      // connectivity banner and per-save persistence notice. Toast only when
+      // the user may need to know that synchronization needs attention.
+      const next = status === 'retry'
             ? { state: 'sync pending' as PersistenceState, message: 'Sync pending · will retry automatically' }
             : status === 'conflicted'
               ? { state: 'sync conflict' as PersistenceState, message: 'Sync conflict · local data retained' }
@@ -56,6 +62,8 @@ export function AppToast() {
                 : null;
       if (!next) return;
       const key = `${next.state ?? 'message'}:${next.message}`;
+      if (lastSyncNotice.current.key === key && Date.now() - lastSyncNotice.current.at < 30000) return;
+      lastSyncNotice.current = { key, at: Date.now() };
       if (key === lastKey.current) return;
       lastKey.current = key;
       setToast(next);

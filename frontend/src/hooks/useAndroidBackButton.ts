@@ -1,23 +1,31 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DependencyList } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
-import { Toast } from '@capacitor/toast';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 const ANDROID_BACK_EVENT = 'mathan:android-back';
-const DOUBLE_BACK_WINDOW_MS = 1800;
 
 export function useAndroidBackButton() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false);
+  const exitOpenRef = useRef(false);
+
+  const setExitOpen = (open: boolean) => {
+    exitOpenRef.current = open;
+    setExitConfirmationOpen(open);
+  };
 
   useEffect(() => {
     if (Capacitor.getPlatform() !== 'android') return;
 
     let active = true;
-    let lastRootBackAt = 0;
     const listener = CapacitorApp.addListener('backButton', async () => {
+      if (exitOpenRef.current) {
+        setExitOpen(false);
+        return;
+      }
       const event = new CustomEvent(ANDROID_BACK_EVENT, { cancelable: true });
       document.dispatchEvent(event);
       if (event.defaultPrevented || !active) return;
@@ -27,17 +35,7 @@ export function useAndroidBackButton() {
         return;
       }
 
-      const now = Date.now();
-      if (now - lastRootBackAt > DOUBLE_BACK_WINDOW_MS) {
-        lastRootBackAt = now;
-        void Toast.show({ text: 'Press back again to exit Mathan ERP', duration: 'short' });
-        return;
-      }
-      if (!window.confirm('Are you sure you want to exit Mathan ERP?')) {
-        lastRootBackAt = 0;
-        return;
-      }
-      await CapacitorApp.exitApp();
+      setExitOpen(true);
     });
 
     return () => {
@@ -45,6 +43,12 @@ export function useAndroidBackButton() {
       void listener.then((handle) => handle.remove());
     };
   }, [location.pathname, navigate]);
+
+  return {
+    exitConfirmationOpen,
+    cancelExit: () => setExitOpen(false),
+    confirmExit: async () => { setExitOpen(false); await CapacitorApp.exitApp(); },
+  };
 }
 
 export function useAndroidBackHandler(handler: () => boolean, deps: DependencyList) {

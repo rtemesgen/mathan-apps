@@ -4,6 +4,7 @@ import { addEmployee, addRaise, removeEmployee, saveEmployee, savePayrollTransac
 import type { Book, Transaction as BookTransaction } from '../src/apps/book/types';
 import type { Employee, SalaryChange, Transaction as PayrollTransaction } from '../src/apps/payroll/types';
 import { persistBeforeQueue } from '../src/lib/repositories/mutationLifecycle';
+import { shouldApplyRemoteSnapshot } from '../src/lib/repositories/snapshotRepository';
 
 const book: Book = { id: 'b1', name: 'Test', currency: 'USD', createdAt: '2026-01-01', updatedAt: '2026-01-01' };
 const bookTx: BookTransaction = { id: 'bt1', bookId: 'b1', type: 'in', amount: 10, remark: 'sale', createdAt: '2026-01-01', dateTime: '2026-01-01T00:00' };
@@ -28,6 +29,9 @@ assert.deepEqual(removeBook('b1', [book], [bookTx]).data, { books: [], transacti
 assert.equal(addEmployee(employee, []).data[0].id, 'e1');
 assert.equal(addRaise('e1', raise, [employee]).data[0].salaryHistory[0].newMonthlySalary, 1100);
 assert.deepEqual(removeEmployee('e1', [employee], [payrollTx]).data, { employees: [], transactions: [] });
+assert.equal(shouldApplyRemoteSnapshot(2, 1, false), true);
+assert.equal(shouldApplyRemoteSnapshot(1, 1, false), false);
+assert.equal(shouldApplyRemoteSnapshot(3, 1, true), false);
 
 const persistedBooks: Book[][] = [];
 const persistBooks = async (next: Book[]) => { persistedBooks.push(next); return 'saved locally' as const; };

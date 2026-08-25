@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { offlineStore } from './localStore';
-import { hasPendingMutationsForWorkspace } from './syncQueue';
+import { getQueuedMutations, hasPendingMutationsForWorkspace } from './syncQueue';
+import { shouldApplyRemoteSnapshot, withSnapshotStorageLock } from './repositories/snapshotRepository';
 
 type SnapshotRow = { domain: string; payload: unknown; revision: number };
 
@@ -16,8 +17,20 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
       const key = row.domain.slice(separator + 1);
       if (domain === 'cash_book' || domain === 'payroll') {
         const storageKey = `${userId}:${workspaceId}:${domain}:${key}`;
-        await offlineStore.write(storageKey, row.payload);
-        await offlineStore.write(`${storageKey}:revision`, row.revision);
+        await withSnapshotStorageLock(storageKey, async () => {
+          // App resume can prefetch while a local save is still being queued.
+          // The lock makes the queue visible before this cloud response is
+          // considered, and the checks below prevent an older cloud snapshot
+          // from replacing the user's durable local state.
+          const queued = await getQueuedMutations();
+          const pending = queued.some((mutation) => mutation.companyId === workspaceId
+            && mutation.table === 'app_state_snapshots'
+            && mutation.entityId === row.domain);
+          const localRevision = (await offlineStore.read<number>(`${storageKey}:revision`)) ?? 0;
+          if (!shouldApplyRemoteSnapshot(row.revision, localRevision, pending)) return;
+          await offlineStore.write(storageKey, row.payload);
+          await offlineStore.write(`${storageKey}:revision`, row.revision);
+        });
       }
     }
   }
