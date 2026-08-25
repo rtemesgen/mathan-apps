@@ -17,6 +17,9 @@ import { GuestSettingsPage, InviteAcceptance, SettingsPage } from './components/
 import { CompanySelector } from './components/CompanySelector';
 import { useAuth, type AppId } from './auth/AuthProvider';
 import { AdminPage } from './admin/AdminPage';
+import { AppDialog } from './components/AppDialog';
+import { AppButton } from './components/AppButton';
+import { LogOut } from 'lucide-react';
 
 function InviteRoute() {
   const { token = '' } = useParams();
@@ -39,8 +42,10 @@ function SystemAdminGate({ children }: { children: React.ReactNode }) {
 }
 
 function AndroidNavigationBridge() {
-  useAndroidBackButton();
-  return null;
+  const { exitConfirmationOpen, cancelExit, confirmExit } = useAndroidBackButton();
+  return <AppDialog open={exitConfirmationOpen} title="Exit Mathan ERP?" onClose={cancelExit} footer={<><AppButton type="button" onClick={cancelExit}>Stay</AppButton><AppButton type="button" variant="primary" onClick={() => void confirmExit()}><LogOut className="h-4 w-4" />Exit app</AppButton></>}>
+    <p className="text-sm leading-6 text-[#5f5d58]">Your saved records will stay on this device. Do you want to close the app?</p>
+  </AppDialog>;
 }
 
 function SettingsRoute() {

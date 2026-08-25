@@ -101,6 +101,7 @@ export async function deleteNativeRecord(key: string) { return deleteTable('reco
 export async function listNativeRecords() { return listTable('records'); }
 export async function readNativeMetadata<T>(key: string) { return readTable<T>('metadata', key); }
 export async function writeNativeMetadata(key: string, value: unknown) { return writeTable('metadata', key, value); }
+export async function isNativeMigrationComplete() { return (await readNativeMetadata<boolean>(MIGRATION_KEY)) === true; }
 
 export async function verifyMigratedEntries(
   records: LegacyEntry[],
