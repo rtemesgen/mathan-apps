@@ -6,13 +6,7 @@ import { Sidebar, ActiveTab } from './components/Sidebar';
 import { TopNavbar } from './components/TopNavbar';
 import { EmployeeDetailModal } from './components/EmployeeDetailModal';
 
-import { DashboardView } from './views/DashboardView';
-import { AddEmployeeView } from './views/AddEmployeeView';
-import { PaySalaryView } from './views/PaySalaryView';
-import { AddRaiseView } from './views/AddRaiseView';
-import { ReportsView } from './views/ReportsView';
-import { TransactionsView } from './views/TransactionsView';
-import { ManageEmployeesView } from './views/ManageEmployeesView';
+import { PayrollViewContent } from './components/PayrollViewContent';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { useAuth } from '../../auth/AuthProvider';
 import { usePayrollRepository } from './payrollRepository';
@@ -201,80 +195,23 @@ export default function App() {
           toggleButtonRef={toggleBtnRef}
         />
 
-        <main className="mobile-content-safe flex-1 max-w-7xl w-full mx-auto p-2 pb-16 sm:p-3 sm:pb-6">
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              employees={employees}
-              transactions={transactions}
-              stats={stats}
-              asOfDate={asOfDate}
-              onSelectEmployee={(emp) => setSelectedDetailEmp(emp)}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-              onRecordWithdrawal={(emp) => {
-                setSelectedPayEmployeeId(emp.id);
-                setActiveTab('pay-salary');
-              }}
-              onAddRaise={(emp) => {
-                setActiveTab('add-raise');
-              }}
-            />
-          )}
-
-          {activeTab === 'add-employee' && (
-            <AddEmployeeView
-              onAddEmployee={handleAddEmployee}
-              asOfDate={asOfDate}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
-
-          {activeTab === 'manage-employees' && (
-            <ManageEmployeesView
-              employees={employees}
-              onSaveEmployee={handleSaveEmployee}
-              onDeleteEmployee={handleDeleteEmployee}
-            />
-          )}
-
-          {activeTab === 'pay-salary' && (
-            <PaySalaryView
-              employees={employees}
-              transactions={transactions}
-              asOfDate={asOfDate}
-              initialEmployeeId={selectedPayEmployeeId}
-              onRecordWithdrawal={handleRecordWithdrawal}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
-
-          {activeTab === 'add-raise' && (
-            <AddRaiseView
-              employees={employees}
-              asOfDate={asOfDate}
-              onSaveRaise={handleSaveRaise}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
-
-          {activeTab === 'reports' && (
-            <ReportsView
-              employees={employees}
-              transactions={transactions}
-              asOfDate={asOfDate}
-              onSelectEmployee={setSelectedDetailEmp}
-            />
-          )}
-
-          {activeTab === 'transactions' && (
-            <TransactionsView
-              transactions={transactions}
-              employees={employees}
-              onDeleteTransaction={handleDeleteTransaction}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
-
-        </main>
+        <PayrollViewContent
+          activeTab={activeTab}
+          employees={employees}
+          transactions={transactions}
+          stats={stats}
+          asOfDate={asOfDate}
+          selectedPayEmployeeId={selectedPayEmployeeId}
+          onSelectEmployee={setSelectedDetailEmp}
+          onNavigateTab={setActiveTab}
+          onRequestPay={(employee) => { setSelectedPayEmployeeId(employee.id); setActiveTab('pay-salary'); }}
+          onAddEmployee={handleAddEmployee}
+          onSaveEmployee={handleSaveEmployee}
+          onDeleteEmployee={handleDeleteEmployee}
+          onSaveRaise={handleSaveRaise}
+          onRecordWithdrawal={handleRecordWithdrawal}
+          onDeleteTransaction={handleDeleteTransaction}
+        />
       </div>
 
       {/* Employee Detail Inspector Sheet */}
