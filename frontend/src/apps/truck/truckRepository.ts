@@ -109,6 +109,12 @@ export async function refreshTruckDataFromCloud(workspaceId: string) {
   });
 }
 
+/** Synchronize queued Truck mutations, then refresh only when the repository can safely replace local data. */
+export async function synchronizeTruckData(workspaceId: string) {
+  await syncQueue(workspaceId);
+  return refreshTruckDataFromCloud(workspaceId);
+}
+
 export async function createTruck(workspaceId: string, v: Omit<Truck, 'id'>, localOnly = false) {
   const row = { id: crypto.randomUUID(), workspace_id: workspaceId, name: v.name.trim(), unit_number: v.unitNumber.trim(), make_model: v.makeModel.trim(), vin: v.vin.trim(), cash_on_hand: v.cashOnHand, license_plate: v.licensePlate.trim() };
   const truck = truckFromDb(row);

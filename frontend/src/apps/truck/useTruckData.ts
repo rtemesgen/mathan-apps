@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { loadTruckData, loadTruckWorkspaceMembers, refreshTruckDataFromCloud } from './truckRepository';
-import { syncQueue } from '../../lib/offlineSync';
+import { loadTruckData, loadTruckWorkspaceMembers, synchronizeTruckData } from './truckRepository';
 import type { Owner, Transaction, Truck } from './types';
 
 export function useTruckData(workspaceId: string | undefined, isGuest: boolean) {
@@ -28,8 +27,7 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean) 
       setLoading(false);
     }
     if (!isGuest && navigator.onLine) {
-      void syncQueue(workspaceId)
-        .then(() => refreshTruckDataFromCloud(workspaceId))
+      void synchronizeTruckData(workspaceId)
         .then((data) => { setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); })
         .catch(() => undefined);
     }
