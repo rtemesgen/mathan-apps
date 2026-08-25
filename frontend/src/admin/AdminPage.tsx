@@ -2,7 +2,7 @@ import { createContext, FormEvent, useCallback, useContext, useEffect, useRef, u
 import { Activity, ArchiveRestore, Ban, Building2, ChevronDown, ChevronRight, Database, Download, HardDriveDownload, LoaderCircle, RefreshCw, Search, ShieldCheck, Trash2, UserCheck, UserMinus, Users, X } from 'lucide-react';
 import { useAuth, type AppPermission } from '../auth/AuthProvider';
 import { adminRequest, type AdminAuditEvent, type AdminOverview, type AdminUser, type AdminWorkspace } from './adminApi';
-import { backupCompletedToday, clearAutomaticBackupStarted, configureDeviceBackupKey, createEncryptedAdminBackup, decryptAdminBackup, downloadBackup, downloadLatestBackup, hasDeviceBackupKey, markAutomaticBackupStarted, restoreAdminArchive, type AdminArchive, type BackupProgress } from './adminBackup';
+import { backupCompletedToday, backupRunningToday, clearAutomaticBackupStarted, configureDeviceBackupKey, createEncryptedAdminBackup, decryptAdminBackup, downloadBackup, downloadLatestBackup, hasDeviceBackupKey, markAutomaticBackupStarted, restoreAdminArchive, type AdminArchive, type BackupProgress } from './adminBackup';
 import { AppSelect } from '../components/AppSelect';
 import { AppButton } from '../components/AppButton';
 import { AppDialog } from '../components/AppDialog';
@@ -90,7 +90,7 @@ function useBackupController(): BackupController {
   const [progress, setProgress] = useState<BackupProgress | null>(null); const [running, setRunning] = useState(false); const [message, setMessage] = useState(''); const [error, setError] = useState(''); const [needsKey, setNeedsKey] = useState(false); const controller = useRef<AbortController | null>(null); const started = useRef(false);
   const run = async (kind: 'automatic' | 'manual') => { if (running) return; setRunning(true); setError(''); setMessage(''); controller.current = new AbortController(); try { const result = await createEncryptedAdminBackup(kind, setProgress, controller.current.signal); await downloadBackup(result.filename, result.content); setMessage('Encrypted backup verified and saved locally.'); } catch (reason) { if (kind === 'automatic') clearAutomaticBackupStarted(); if ((reason as Error)?.name !== 'AbortError') setError(reason instanceof Error ? reason.message : 'Backup failed.'); else setMessage('Backup cancelled.'); } finally { setRunning(false); controller.current = null; } };
   const configure = async (passphrase: string) => { await configureDeviceBackupKey(passphrase); setNeedsKey(false); markAutomaticBackupStarted(); await run('automatic'); };
-  useEffect(() => { if (started.current) return; started.current = true; void hasDeviceBackupKey().then((hasKey) => { if (!hasKey) setNeedsKey(true); else if (!backupCompletedToday()) { markAutomaticBackupStarted(); void run('automatic'); } }); }, []);
+  useEffect(() => { if (started.current) return; started.current = true; void hasDeviceBackupKey().then((hasKey) => { if (!hasKey) setNeedsKey(true); else if (!backupCompletedToday() && !backupRunningToday()) { markAutomaticBackupStarted(); void run('automatic'); } }); }, []);
   return { progress, running, message, error, needsKey, run, cancel: () => controller.current?.abort(), configure, clearError: () => setError('') };
 }
 

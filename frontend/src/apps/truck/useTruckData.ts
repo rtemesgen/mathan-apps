@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { loadTruckData, loadTruckWorkspaceMembers, synchronizeTruckData } from './truckRepository';
 import type { Customer, Owner, Transaction, Truck } from './types';
 
-export function useTruckData(workspaceId: string | undefined, isGuest: boolean) {
+export function useTruckData(workspaceId: string | undefined, isGuest: boolean, userId?: string) {
   const [trucks, setTrucks] = useState<Truck[]>([]);
   const [owners, setOwners] = useState<Owner[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -24,7 +24,7 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean) 
     if (!workspaceId) return;
     setLoading(true);
     try {
-      const data = await loadTruckData(workspaceId, true);
+      const data = await loadTruckData(workspaceId, true, userId);
       applyData(data);
       setDataError('');
     } catch (reason) {
@@ -32,12 +32,12 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean) 
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, applyData]);
+  }, [workspaceId, userId, applyData]);
 
   const synchronize = useCallback(() => {
     if (!workspaceId || isGuest || !navigator.onLine) return;
-    void synchronizeTruckData(workspaceId).then(applyData).catch(() => undefined);
-  }, [workspaceId, isGuest, applyData]);
+    void synchronizeTruckData(workspaceId, userId).then(applyData).catch(() => undefined);
+  }, [workspaceId, userId, isGuest, applyData]);
 
   useEffect(() => {
     void refresh();

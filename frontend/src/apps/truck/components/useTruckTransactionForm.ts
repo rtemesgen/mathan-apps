@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { CounterpartyType, Owner, Transaction, TransactionType, Truck } from '../types';
+import { CounterpartyType, Customer, Owner, Transaction, TransactionType, Truck } from '../types';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 export type TruckTransactionInput = {
@@ -18,6 +18,7 @@ export type TruckTransactionInput = {
 
 type Options = {
   owners: Owner[];
+  customers: Customer[];
   trucks: Truck[];
   currentTruckId: string;
   defaultOwnerId?: string;
@@ -40,7 +41,7 @@ const categoryForType = (type: TransactionType) => {
   return 'Quarterly Profit Share Dividend';
 };
 
-export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaultOwnerId, defaultType, editingTransaction, active, onSubmit, onComplete }: Options) {
+export function useTruckTransactionForm({ owners, customers, trucks, currentTruckId, defaultOwnerId, defaultType, editingTransaction, active, onSubmit, onComplete }: Options) {
   const [truckId, setTruckId] = useState(currentTruckId || (trucks[0]?.id ?? ''));
   const [type, setType] = useState<TransactionType>(defaultType);
   const [ownerId, setOwnerId] = useState(defaultOwnerId || (owners[0]?.id ?? ''));
@@ -55,6 +56,7 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
   const { submitting, runAction } = useAsyncAction();
   const truckOptionsKey = trucks.map((truck) => truck.id).join(',');
   const ownerOptionsKey = owners.map((owner) => owner.id).join(',');
+  const customerOptionsKey = customers.map((customer) => customer.id).join(',');
 
   useEffect(() => {
     if (!active) return;
@@ -83,7 +85,7 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
     setCounterpartyName('');
     setCustomerId('');
     setDate(new Date().toISOString().split('T')[0]);
-  }, [active, editingTransaction?.id, currentTruckId, defaultOwnerId, defaultType, truckOptionsKey, ownerOptionsKey]);
+  }, [active, editingTransaction?.id, currentTruckId, defaultOwnerId, defaultType, truckOptionsKey, ownerOptionsKey, customerOptionsKey]);
 
   const handleTypeChange = (newType: TransactionType) => {
     setType(newType);
@@ -108,7 +110,7 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
         description: description.trim(),
         referenceNo,
         counterpartyType: ['RECEIVABLE', 'PAYABLE', 'RECEIVABLE_SETTLEMENT', 'PAYABLE_SETTLEMENT'].includes(type) ? counterpartyType : undefined,
-        customerId: customerId || undefined,
+        customerId: counterpartyType === 'CUSTOMER' ? customerId || undefined : undefined,
         counterpartyName: ['RECEIVABLE', 'PAYABLE', 'RECEIVABLE_SETTLEMENT', 'PAYABLE_SETTLEMENT'].includes(type) ? counterpartyName.trim() : undefined,
       }),
       successMessage: editingTransaction ? 'Truck transaction updated successfully.' : 'Truck transaction saved successfully.',

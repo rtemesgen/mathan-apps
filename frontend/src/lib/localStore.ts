@@ -8,7 +8,7 @@ const DB_VERSION = 2;
 const memoryCache = new Map<string, unknown>();
 const fallbackKey = (key: string) => `mathan_erp_offline_${key}`;
 let nativeStoreReady: Promise<boolean> | null = null;
-let writeTail: Promise<void> = Promise.resolve();
+const writeTails = new Map<string, Promise<void>>();
 
 function readFallback<T>(key: string): T | null {
   try {
@@ -23,10 +23,15 @@ function removeFallback(key: string) {
   try { localStorage.removeItem(fallbackKey(key)); } catch { /* localStorage may be disabled */ }
 }
 
-function queueWrite<T>(operation: () => Promise<T>) {
-  const result = writeTail.then(operation, operation);
-  writeTail = result.then(() => undefined, () => undefined);
-  return result;
+function queueWrite<T>(keys: string[], operation: () => Promise<T>) {
+  // Writes for unrelated companies/apps should not wait behind one another,
+  // but a snapshot and its queue record must still share one ordered lock.
+  const uniqueKeys = [...new Set(keys)].sort();
+  const previous = Promise.all(uniqueKeys.map((key) => writeTails.get(key) ?? Promise.resolve()));
+  const result = previous.then(operation, operation);
+  const tail = result.then(() => undefined, () => undefined);
+  uniqueKeys.forEach((key) => writeTails.set(key, tail));
+  return result.finally(() => uniqueKeys.forEach((key) => { if (writeTails.get(key) === tail) writeTails.delete(key); }));
 }
 
 function getDatabase() {
@@ -158,7 +163,7 @@ export async function readOffline<T>(key: string): Promise<T | null> {
 
 export async function writeOffline<T>(key: string, value: T): Promise<void> {
   memoryCache.set(key, value);
-  return queueWrite(async () => {
+  return queueWrite([key], async () => {
     try {
       if (isJsonSerializable(value) && await getNativeStoreReady()) {
         await writeNativeRecord(key, value);
@@ -185,7 +190,7 @@ export async function writeOffline<T>(key: string, value: T): Promise<void> {
 
 export async function deleteOffline(key: string): Promise<void> {
   memoryCache.delete(key);
-  return queueWrite(async () => {
+  return queueWrite([key], async () => {
     removeFallback(key);
     try { if (await getNativeStoreReady()) await deleteNativeRecord(key); } catch { /* continue with legacy stores */ }
     try { await deleteIndexedDb(key); } catch { /* fallback was already removed */ }
@@ -211,7 +216,7 @@ export async function listOfflineKeys(): Promise<string[]> {
 /** Atomically persist related cache records (for example an entity and its queue entry). */
 export async function writeOfflineAtomic(entries: Array<{ key: string; value: unknown }>): Promise<void> {
   entries.forEach(({ key, value }) => memoryCache.set(key, value));
-  return queueWrite(async () => {
+  return queueWrite(entries.map(({ key }) => key), async () => {
     try {
       if (entries.every(({ value }) => isJsonSerializable(value)) && await getNativeStoreReady()) {
         await writeNativeRecordsAtomic(entries);
@@ -275,15 +280,17 @@ export async function readOfflineMetadata<T>(key: string): Promise<T | null> {
 }
 
 export async function writeOfflineMetadata<T>(key: string, value: T): Promise<void> {
-  try { if (isJsonSerializable(value) && await getNativeStoreReady()) { await writeNativeMetadata(key, value); return; } } catch { /* continue with IndexedDB */ }
-  try {
-    const store = await getStore('readwrite', META_STORE_NAME);
-    await new Promise<void>((resolve, reject) => {
-      const request = store.put(value, key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  } catch { /* metadata is best effort */ }
+  await queueWrite([`metadata:${key}`], async () => {
+    try { if (isJsonSerializable(value) && await getNativeStoreReady()) { await writeNativeMetadata(key, value); return; } } catch { /* continue with IndexedDB */ }
+    try {
+      const store = await getStore('readwrite', META_STORE_NAME);
+      await new Promise<void>((resolve, reject) => {
+        const request = store.put(value, key);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    } catch { /* metadata is best effort */ }
+  });
 }
 
 export async function getOfflineStorageEstimate() {

@@ -58,7 +58,15 @@ export async function configureDeviceBackupKey(passphrase: string) {
 }
 /** A day is complete only after the encrypted archive and server run finish. */
 export function backupCompletedToday() { const today = new Date().toISOString().slice(0, 10); return localStorage.getItem(DAILY_MARKER) === today; }
-export function markAutomaticBackupStarted() { localStorage.setItem(DAILY_RUNNING_MARKER, new Date().toISOString().slice(0, 10)); }
+export function backupRunningToday() {
+  try {
+    const started = localStorage.getItem(DAILY_RUNNING_MARKER);
+    if (!started) return false;
+    const timestamp = new Date(started).getTime();
+    return Number.isFinite(timestamp) && Date.now() - timestamp < 30 * 60 * 1000;
+  } catch { return false; }
+}
+export function markAutomaticBackupStarted() { localStorage.setItem(DAILY_RUNNING_MARKER, new Date().toISOString()); }
 export function clearAutomaticBackupStarted() { localStorage.removeItem(DAILY_RUNNING_MARKER); }
 
 async function fetchAttachment(url: string, signal?: AbortSignal) {

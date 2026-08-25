@@ -25,12 +25,16 @@ export async function cancelWorkspaceDeletion(workspaceId: string) { const { dat
 export async function getWorkspaceDeletionStatus(workspaceId: string) { const { data, error } = await supabase.rpc('get_workspace_deletion_status', { target_workspace: workspaceId }); if (error) throw error; return ((data as WorkspaceDeletionStatus[] | null)?.[0] ?? { status: 'active', scheduled_for: null, days_remaining: null }) as WorkspaceDeletionStatus; }
 export type WorkspaceAuditEvent = { id: string; actor_id: string | null; record_type: string; record_id: string | null; action: string; previous_data: Record<string, unknown> | null; next_data: Record<string, unknown> | null; created_at: string; actor_name?: string };
 export async function listWorkspaceAuditEvents(workspaceId: string, limit = 100) {
-  const queued = (await getQueuedMutations()).filter((mutation) => mutation.companyId === workspaceId && mutation.table === 'app_state_snapshots' && /^(cash_book|payroll):/.test(String(mutation.payload.domain ?? '')));
+  const queued = (await getQueuedMutations()).filter((mutation) => {
+    if (mutation.companyId !== workspaceId) return false;
+    if (mutation.table === 'app_state_snapshots') return /^(cash_book|payroll):/.test(String(mutation.payload.domain ?? ''));
+    return ['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'].includes(mutation.table);
+  });
   const localEvents: WorkspaceAuditEvent[] = queued.map((mutation) => ({
     id: `offline:${mutation.mutationId}`,
     actor_id: mutation.userId,
-    record_type: String(mutation.payload.domain ?? 'app_state_snapshot').split(':')[0],
-    record_id: String(mutation.payload.domain ?? ''),
+    record_type: mutation.table === 'app_state_snapshots' ? String(mutation.payload.domain ?? 'app_state_snapshot').split(':')[0] : mutation.table,
+    record_id: String(mutation.payload.domain ?? mutation.entityId ?? ''),
     action: 'saved_offline_pending_sync',
     previous_data: null,
     next_data: { sync_status: mutation.syncStatus, retry_count: mutation.retryCount },

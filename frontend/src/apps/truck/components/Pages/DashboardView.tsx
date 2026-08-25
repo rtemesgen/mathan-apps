@@ -176,7 +176,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {formatCurrency(fleetTotals.totalNetProfit, false)}
           </div>
           <div className="text-[7.5px] text-[#a3683a] font-bold truncate">
-            Debt: {formatCurrency(fleetTotals.totalLoansOwed, false)}
+            Owner owed: {formatCurrency(fleetTotals.totalLoansOwed, false)}
           </div>
         </div>
       </div>
@@ -274,7 +274,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <div className={`px-2 py-1 rounded text-[11px] ${
                     isSelected ? 'bg-[#fff8e1]' : 'bg-[#f7f4ed]'
                   }`}>
-                    <span className="text-[8px] uppercase font-bold text-[#787672] block leading-tight">Debt</span>
+                    <span className="text-[8px] uppercase font-bold text-[#787672] block leading-tight">Owner owed</span>
                     <span className="font-mono font-bold text-xs sm:text-sm text-[#a3683a]">
                       {formatCurrency(item.debtOwed, false)}
                     </span>
