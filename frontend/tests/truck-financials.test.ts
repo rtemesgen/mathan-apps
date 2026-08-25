@@ -26,11 +26,26 @@ const creditTransactions: Transaction[] = [
 ];
 const creditResult = calculateTruckFinancials(truck, [owner], creditTransactions, '2026-01-04');
 assert.equal(creditResult.totalReceivable, 300);
-assert.equal(creditResult.totalPayable, 100);
+assert.equal(creditResult.totalPayable, 0);
 assert.equal(creditResult.netProfit, 380);
 assert.equal(creditResult.cashOnHand, 280);
 assert.deepEqual(creditResult.counterpartyBalances.map(({ type, name, amount }) => ({ type, name, amount })), [
   { type: 'receivable', name: 'ABC Customer', amount: 300 },
   { type: 'payable', name: 'Partner', amount: 100 },
 ]);
+const offsetResult = calculateTruckFinancials(truck, [owner], [
+  { id: 'customer-ar', truckId: 't1', date: '2026-01-01', type: 'RECEIVABLE', category: 'Trip', amount: 6500, customerId: 'customer-1', counterpartyType: 'CUSTOMER', counterpartyName: 'Same Customer', description: '' },
+  { id: 'customer-ap', truckId: 't1', date: '2026-01-02', type: 'PAYABLE', category: 'Repair', amount: 6000, customerId: 'customer-1', counterpartyType: 'CUSTOMER', counterpartyName: 'Same Customer', description: '' },
+]);
+assert.deepEqual(offsetResult.counterpartyBalances, [{ type: 'receivable', name: 'Same Customer', customerId: 'customer-1', amount: 500 }]);
+assert.equal(offsetResult.totalCustomerReceivable, 500);
+assert.equal(offsetResult.totalCustomerPayable, 0);
+assert.equal(offsetResult.totalReceivable, 500);
+assert.equal(offsetResult.totalPayable, 0);
+const ownerOnlyResult = calculateTruckFinancials(truck, [owner], [
+  { id: 'owner-ap', truckId: 't1', date: '2026-01-01', type: 'PAYABLE', category: 'Owner balance', amount: 900, ownerId: 'o1', counterpartyType: 'OWNER', counterpartyName: 'Partner', description: '' },
+]);
+assert.equal(ownerOnlyResult.totalReceivable, 0);
+assert.equal(ownerOnlyResult.totalPayable, 0);
+assert.deepEqual(ownerOnlyResult.counterpartyBalances, [{ type: 'payable', name: 'Partner', ownerId: 'o1', counterpartyType: 'OWNER', amount: 900 }]);
 console.log('Truck financial tests passed.');

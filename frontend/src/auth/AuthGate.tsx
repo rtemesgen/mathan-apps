@@ -43,10 +43,16 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     if (!auth.user || standaloneMode || auth.isGuest) { setPhoneStatus('complete'); return () => { cancelled = true; }; }
     setPhoneStatus('checking');
+    const cacheKey = `mathan_profile_phone_verified_${auth.user.id}`;
+    try {
+      if (localStorage.getItem(cacheKey) === 'true') setPhoneStatus('complete');
+    } catch { /* storage may be unavailable */ }
     void supabase.from('workspace_profiles').select('phone').eq('user_id', auth.user.id).maybeSingle().then(({ data }) => {
       if (cancelled) return;
       const phoneValue = data?.phone ?? (auth.user?.user_metadata?.phone as string | undefined) ?? '';
-      setPhoneStatus(isValidPhone(phoneValue) ? 'complete' : 'required');
+      const valid = isValidPhone(phoneValue);
+      setPhoneStatus(valid ? 'complete' : 'required');
+      try { if (valid) localStorage.setItem(cacheKey, 'true'); else localStorage.removeItem(cacheKey); } catch { /* storage may be unavailable */ }
     });
     return () => { cancelled = true; };
   }, [auth.user?.id, auth.isGuest]);

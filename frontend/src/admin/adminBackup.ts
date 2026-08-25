@@ -1,5 +1,5 @@
 import { offlineStore } from '../lib/localStore';
-import { saveBinaryFile } from '../lib/mobile';
+import { saveWorkspaceBackupFile } from '../lib/mobile';
 import { adminRequest } from './adminApi';
 import { supabase } from '../lib/supabase';
 
@@ -56,7 +56,8 @@ export async function configureDeviceBackupKey(passphrase: string) {
   await offlineStore.write<BackupKeyMeta>(KEY_META_STORAGE, { salt: bytesToBase64(salt), verifier });
   if (!isCryptoKey(await offlineStore.read<CryptoKey>(KEY_STORAGE))) throw new Error('This browser could not store the protected device key. Check private-browsing or storage restrictions.');
 }
-export function backupCompletedToday() { const today = new Date().toISOString().slice(0, 10); return localStorage.getItem(DAILY_MARKER) === today || localStorage.getItem(DAILY_RUNNING_MARKER) === today; }
+/** A day is complete only after the encrypted archive and server run finish. */
+export function backupCompletedToday() { const today = new Date().toISOString().slice(0, 10); return localStorage.getItem(DAILY_MARKER) === today; }
 export function markAutomaticBackupStarted() { localStorage.setItem(DAILY_RUNNING_MARKER, new Date().toISOString().slice(0, 10)); }
 export function clearAutomaticBackupStarted() { localStorage.removeItem(DAILY_RUNNING_MARKER); }
 
@@ -145,7 +146,7 @@ export async function createEncryptedAdminBackup(kind: 'automatic' | 'manual', o
 }
 
 export async function downloadBackup(filename: string, content: string) {
-  await saveBinaryFile(filename, 'application/json', encoder.encode(content));
+  await saveWorkspaceBackupFile(filename, content);
 }
 export async function downloadLatestBackup() {
   const content = await offlineStore.read<string>(LATEST_BACKUP);

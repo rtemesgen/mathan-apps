@@ -5,7 +5,7 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 
 type CustomerDraft = { id?: string; truckId: string; name: string; phone?: string; address?: string; notes?: string };
-type CustomerBalance = { type: 'receivable' | 'payable'; name: string; amount: number };
+type CustomerBalance = { type: 'receivable' | 'payable'; name: string; customerId?: string; counterpartyType?: 'OWNER'; amount: number };
 
 export function CustomersPage({ truck, customers, transactions, balances, onSave, onDelete }: { truck: Truck; customers: Customer[]; transactions: Transaction[]; balances: CustomerBalance[]; onSave: (customer: CustomerDraft) => Promise<void>; onDelete: (id: string) => void }) {
   const [editing, setEditing] = useState<Customer | null>(null);
@@ -26,7 +26,7 @@ export function CustomersPage({ truck, customers, transactions, balances, onSave
   const remove = (customer: Customer) => { if (window.confirm(`Delete ${customer.name}? Existing transactions will keep their customer name.`)) onDelete(customer.id); };
 
   const balanceFor = (customer: Customer) => {
-    const matching = balances.filter((balance) => balance.name === customer.name);
+    const matching = balances.filter((balance) => balance.counterpartyType !== 'OWNER' && (balance.customerId === customer.id || (!balance.customerId && balance.name.trim().toLowerCase() === customer.name.trim().toLowerCase())));
     const receivable = matching.filter((balance) => balance.type === 'receivable').reduce((total, balance) => total + balance.amount, 0);
     const payable = matching.filter((balance) => balance.type === 'payable').reduce((total, balance) => total + balance.amount, 0);
     return { receivable, payable, net: receivable - payable };

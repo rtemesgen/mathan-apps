@@ -82,5 +82,8 @@ export interface TruckFinancialSummary {
   operatingExpenses: number;
   totalReceivable: number;
   totalPayable: number;
-  counterpartyBalances: Array<{ type: 'receivable' | 'payable'; name: string; ownerId?: string; amount: number }>;
+  /** Customer/other-party balances only; owner obligations stay in owner summaries. */
+  totalCustomerReceivable: number;
+  totalCustomerPayable: number;
+  counterpartyBalances: Array<{ type: 'receivable' | 'payable'; name: string; customerId?: string; ownerId?: string; counterpartyType?: 'OWNER'; amount: number }>;
 }

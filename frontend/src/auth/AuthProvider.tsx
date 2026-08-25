@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -34,7 +34,10 @@ async function readWorkspaceCache(userId: string): Promise<OfflineWorkspaceCache
   let legacy: WorkspaceMembership | null = null;
   try { const value = localStorage.getItem(workspaceCacheKey(userId)); legacy = value ? normalizeLegacyWorkspace(JSON.parse(value) as WorkspaceMembership) : null; } catch { /* use the IndexedDB fallback */ }
   legacy ??= normalizeLegacyWorkspace(await offlineStore.read<WorkspaceMembership>(`workspace:${userId}`));
-  return legacy ? { version: 1, memberships: [legacy], selectedWorkspaceId: legacy.id, cachedAt: new Date(0).toISOString() } : null;
+  // Legacy single-workspace caches predate the timestamp field. Treat the
+  // migrated record as a valid local cache so an offline restart can open the
+  // company immediately instead of being rejected as an expired workspace.
+  return legacy ? { version: 1, memberships: [legacy], selectedWorkspaceId: legacy.id, cachedAt: new Date().toISOString() } : null;
 }
 async function writeWorkspaceCache(userId: string, memberships: WorkspaceMembership[], selectedWorkspaceId: string | null) {
   const cache: OfflineWorkspaceCache = { version: 1, memberships, selectedWorkspaceId, cachedAt: new Date().toISOString(), permissionsLastVerifiedAt: new Date().toISOString() };
@@ -58,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [offlineAccessExpired, setOfflineAccessExpired] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
   const [appAccess, setAppAccess] = useState<Record<AppId, WorkspaceAppAccess>>(defaultAppAccess);
+  const refreshSequence = useRef(0);
   const applyWorkspace = (membership: WorkspaceMembership | null) => {
     setWorkspace(membership ? { id: membership.id, name: membership.name, accent_color: membership.accent_color } : null);
     setIsOwner(membership?.role === 'owner');
@@ -97,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
   const refreshWorkspace = async (preferredWorkspaceId?: string) => {
     if (!session) { setWorkspace(null); setWorkspaceError(null); setWorkspaceLoading(false); return null; }
+    const requestId = ++refreshSequence.current;
     const cached = await readWorkspaceCache(session.user.id);
     const restoreCached = (message: string) => {
       const memberships = cached?.memberships ?? [];
@@ -112,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setWorkspaceLoading(false);
     if (!navigator.onLine) return restoreCached('Connect to the internet once to download your companies for offline use.');
     const [{ data, error }, { data: deletionRows }] = await Promise.all([supabase.rpc('list_my_workspaces'), supabase.rpc('list_my_workspace_deletions')]);
+    if (requestId !== refreshSequence.current) return cachedSelection;
     if (error) return restoreCached(error.message);
     const memberships = ((data as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; book_enabled: boolean; book_permission: AppPermission; payroll_enabled: boolean; payroll_permission: AppPermission; truck_enabled?: boolean; truck_permission?: AppPermission }> | null) ?? []).map((row) => ({
       id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role,
@@ -120,6 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }));
     for (const row of ((deletionRows as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; deletion_status: 'scheduled'; deletion_scheduled_for: string | null }> | null) ?? [])) memberships.push({ id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role, deletionStatus: 'scheduled', deletionScheduledFor: row.deletion_scheduled_for, appAccess: defaultAppAccess() });
     const { data: truckAccess } = await supabase.rpc('list_my_truck_access');
+    if (requestId !== refreshSequence.current) return cachedSelection;
     const accessByWorkspace = new Map(((truckAccess as Array<{ workspace_id: string; truck_enabled: boolean; truck_permission: AppPermission }> | null) ?? []).map((item) => [item.workspace_id, item]));
     memberships.forEach((membership) => { const access = accessByWorkspace.get(membership.id); const cachedAccess = cached?.memberships.find((item) => item.id === membership.id)?.appAccess.truck; membership.appAccess.truck = { app_id: 'truck', enabled: access?.truck_enabled ?? cachedAccess?.enabled ?? true, permission: access?.truck_permission ?? cachedAccess?.permission ?? (membership.role === 'owner' ? 'edit' : 'none') }; });
     setWorkspaces(memberships);

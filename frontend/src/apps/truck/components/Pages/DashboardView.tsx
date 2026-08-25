@@ -45,8 +45,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       totalRevenue += summary.grossIncome;
       totalExpenses += summary.operatingExpenses;
       totalLoansOwed += summary.totalUnpaidDebtToOwners;
-      totalReceivable += summary.totalReceivable;
-      totalPayable += summary.totalPayable;
+      totalReceivable += summary.totalCustomerReceivable;
+      totalPayable += summary.totalCustomerPayable;
     });
 
     const totalNetProfit = totalRevenue - totalExpenses;
@@ -79,8 +79,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         expenses: summary.operatingExpenses,
         netProfit: summary.netProfit,
         debtOwed: summary.totalUnpaidDebtToOwners,
-        receivable: summary.totalReceivable,
-        payable: summary.totalPayable,
+        receivable: summary.totalCustomerReceivable,
+        payable: summary.totalCustomerPayable,
         partnerCount: truckOwners.length,
         totalEquity,
       };

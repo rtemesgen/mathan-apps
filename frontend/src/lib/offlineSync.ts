@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import { getQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
 import { offlineStore } from './localStore';
 import { reportPersistenceNotice } from './repositories/types';
-import { emitSyncConflict, emitSyncStatus, type SyncStatus } from './toast';
+import { emitSyncConflict, emitSyncProgress, emitSyncStatus, type SyncStatus } from './toast';
 
 export type { SyncStatus } from './toast';
 
@@ -41,11 +41,14 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
     const rank = (item: QueuedMutation) => item.entityType.includes('transaction') || item.table.includes('transaction') ? 3 : item.entityType.includes('owner') || item.entityType.includes('membership') ? 2 : 1;
     return rank(a) - rank(b) || a.queuedAt.localeCompare(b.queuedAt);
   });
+  emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed: 0, pending: ordered.length, errors: ordered.filter((item) => item.syncStatus === 'error' || item.syncStatus === 'conflicted').length, status: 'syncing' });
 
   for (const mutation of queue) {
     const workspaceId = mutation.companyId || String(mutation.payload.workspace_id ?? '');
     if (!allowed.has(workspaceId)) { remaining.push(mutation); continue; }
   }
+  let completed = 0;
+  let errors = 0;
   for (const mutation of ordered) {
     const workspaceId = mutation.companyId || String(mutation.payload.workspace_id ?? '');
     try {
@@ -57,9 +60,11 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
         ? await supabase.from(mutation.table).update(row).eq('workspace_id', workspaceId).eq('id', id)
         : await supabase.from(mutation.table).upsert({ id, workspace_id: workspaceId, ...row }, { onConflict: 'id' });
       if (result.error) {
-        if (permanentError(result.error)) { reportTruckMutationStatus('sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: result.error.message }); }
+        if (permanentError(result.error)) { errors += 1; reportTruckMutationStatus('sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: result.error.message }); }
         else { reportTruckMutationStatus('sync pending'); failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: result.error.message }); }
       }
+      completed += 1;
+      emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: ordered.length - completed, errors, status: failed ? 'retry' : 'syncing' });
       continue;
     }
     const { data, error } = await supabase.rpc('write_app_state_snapshot', {
@@ -78,7 +83,7 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
       reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict');
       emitSyncConflict({ domain: String(mutation.payload.domain ?? ''), remote: result.payload, revision: result.revision, mutationId: mutation.mutationId });
     } else if (error || !result) {
-      if (permanentError(error)) { reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: error?.message ?? 'Synchronization failed' }); }
+      if (permanentError(error)) { errors += 1; reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: error?.message ?? 'Synchronization failed' }); }
       else { reportSnapshotMutationStatus(mutation.payload.domain, 'sync pending'); failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error?.message ?? 'Synchronization failed' }); }
     } else if (result.status === 'written' && result.payload !== undefined) {
       const storageKey = `${mutation.userId}:${workspaceId}:${String(mutation.payload.domain ?? mutation.entityId)}`;
@@ -91,15 +96,18 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
       failed = true;
       remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error instanceof Error ? error.message : 'Synchronization failed' });
     }
+    completed += 1;
+    emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: ordered.length - completed, errors, status: failed ? 'retry' : 'syncing' });
   }
 
   await replaceQueue(remaining, ordered.map((mutation) => mutation.mutationId));
-  if (conflict) report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length });
-  else if (failed || remaining.some((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')))) report('retry', remaining.length);
+  if (conflict) { report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length }); emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'conflicted' }); }
+  else if (failed || remaining.some((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')))) { report('retry', remaining.length); emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'retry' }); }
   else {
     const lastSyncedAt = new Date().toISOString();
     await Promise.all([...allowed].map((companyId) => offlineStore.writeMetadata(`sync:${companyId}`, { lastSyncedAt, pendingCount: 0, conflictCount: 0 })));
     report('synced', 0, { lastSyncedAt, pendingCount: 0, conflictCount: 0 });
+    emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: 0, errors: 0, status: 'synced' });
   }
 }
 

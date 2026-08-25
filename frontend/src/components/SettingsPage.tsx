@@ -19,6 +19,9 @@ import { clearGuestWorkspaceData } from '../auth/guestWorkspaces';
 import { getOfflineStorageEstimate, resetUserOfflineCache } from '../lib/localStore';
 import { loadPersonalDataArchive } from '../lib/repositories/personalDataRepository';
 import { WorkspaceAuditCard } from './WorkspaceAuditCard';
+import { getQueuedMutations } from '../lib/syncQueue';
+import { syncNotificationsEnabled, setSyncNotificationsEnabled } from '../lib/syncPreferences';
+import type { SyncProgressDetail } from '../lib/toast';
 
 type Member = { user_id: string; email: string; role: 'owner' | 'member'; display_name: string; book_permission: AppPermission; payroll_permission: AppPermission; truck_permission: AppPermission };
 type Invitation = { id: string; email: string; status: string; expires_at: string; book_permission: AppPermission; payroll_permission: AppPermission; truck_permission: AppPermission; created_at: string };
@@ -62,13 +65,41 @@ function PermissionSelect({ value, onChange, disabled = false }: { value: AppPer
   </div>;
 }
 
-function OfflineCacheCard({ userId, online, onNotice, onError }: { userId?: string; online: boolean; onNotice: (value: string) => void; onError: (value: string) => void }) {
+function OfflineCacheCard({ userId, workspaceId, online, onNotice, onError }: { userId?: string; workspaceId?: string; online: boolean; onNotice: (value: string) => void; onError: (value: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [usage, setUsage] = useState<string>('Checking storage…');
   useEffect(() => { void getOfflineStorageEstimate().then((estimate) => { if (!estimate?.usage) { setUsage('Storage usage unavailable'); return; } setUsage(`${(estimate.usage / 1024 / 1024).toFixed(1)} MB used${estimate.quota ? ` of ${(estimate.quota / 1024 / 1024).toFixed(0)} MB` : ''}`); }); }, []);
   const reset = async () => { if (!userId) return; setBusy(true); try { const count = await resetUserOfflineCache(userId); onNotice(`${count} cached records cleared. ${online ? 'Your companies will download again in the background.' : 'Reconnect to download them again.'}`); setResetOpen(false); } catch (reason) { onError(reason instanceof Error ? reason.message : 'Could not reset offline cache.'); } finally { setBusy(false); } };
-  return <><section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-serif text-xl font-bold text-blue-950">Offline data</h2><p className="mt-1 text-xs leading-5 text-blue-900">Companies and app records are read from this device first. Cloud synchronization continues in the background when connected.</p></div><RefreshCw className="h-5 w-5 text-blue-700" /></div><p className="mt-3 text-[11px] font-semibold text-blue-800">{usage}</p><button type="button" disabled={busy} onClick={() => setResetOpen(true)} className="mt-3 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-bold text-blue-900 disabled:opacity-50">{busy ? 'Resetting…' : 'Reset and download again'}</button></section><DeleteConfirmModal isOpen={resetOpen} title="Reset offline data?" message="Clear downloaded company data from this device and download it again? Unsynchronized edits stay queued." onClose={() => setResetOpen(false)} onConfirm={reset} confirmLabel="Reset offline data" successMessage="Offline cache reset successfully." /></>;
+  return <><SyncSettingsCard workspaceId={workspaceId} /><section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-serif text-xl font-bold text-blue-950">Offline data</h2><p className="mt-1 text-xs leading-5 text-blue-900">Companies and app records are read from this device first. Cloud synchronization continues in the background when connected.</p></div><RefreshCw className="h-5 w-5 text-blue-700" /></div><p className="mt-3 text-[11px] font-semibold text-blue-800">{usage}</p><button type="button" disabled={busy} onClick={() => setResetOpen(true)} className="mt-3 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-bold text-blue-900 disabled:opacity-50">{busy ? 'Resetting…' : 'Reset and download again'}</button></section><DeleteConfirmModal isOpen={resetOpen} title="Reset offline data?" message="Clear downloaded company data from this device and download it again? Unsynchronized edits stay queued." onClose={() => setResetOpen(false)} onConfirm={reset} confirmLabel="Reset offline data" successMessage="Offline cache reset successfully." /></>;
+}
+
+function SyncSettingsCard({ workspaceId }: { workspaceId?: string }) {
+  const auth = useAuth();
+  const activeWorkspaceId = workspaceId ?? auth.workspace?.id;
+  const [notifications, setNotifications] = useState(() => syncNotificationsEnabled(auth.user?.id));
+  const [progress, setProgress] = useState<SyncProgressDetail>({ total: 0, completed: 0, pending: 0, errors: 0, status: 'synced' });
+  useEffect(() => {
+    setNotifications(syncNotificationsEnabled(auth.user?.id));
+    void getQueuedMutations().then((queue) => {
+      const relevant = queue.filter((item) => !activeWorkspaceId || item.companyId === activeWorkspaceId);
+      setProgress({ total: relevant.length, completed: 0, pending: relevant.length, errors: relevant.filter((item) => item.syncStatus === 'error' || item.syncStatus === 'conflicted').length, status: relevant.length ? 'retry' : 'synced' });
+    });
+    const onProgress = (event: Event) => {
+      const detail = (event as CustomEvent<SyncProgressDetail>).detail;
+      if (detail.workspaceId && activeWorkspaceId && detail.workspaceId !== activeWorkspaceId) return;
+      setProgress(detail);
+    };
+    const onPreference = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled: boolean; userId?: string }>).detail;
+      if (detail?.userId === auth.user?.id) setNotifications(Boolean(detail.enabled));
+    };
+    window.addEventListener('mathan:sync-progress', onProgress);
+    window.addEventListener('mathan:sync-preferences', onPreference);
+    return () => { window.removeEventListener('mathan:sync-progress', onProgress); window.removeEventListener('mathan:sync-preferences', onPreference); };
+  }, [activeWorkspaceId, auth.user?.id]);
+  const percent = progress.total ? Math.min(100, Math.round((progress.completed / progress.total) * 100)) : progress.status === 'synced' ? 100 : 0;
+  return <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-serif text-xl font-bold text-blue-950">Sync and notifications</h2><p className="mt-1 text-xs leading-5 text-blue-900">Records save on this device first. Cloud sync continues in the background.</p></div><label className="flex items-center gap-2 text-[11px] font-bold text-blue-950"><span>Show sync popups</span><input type="checkbox" checked={notifications} onChange={(event) => { setNotifications(event.target.checked); setSyncNotificationsEnabled(event.target.checked, auth.user?.id); }} /></label></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="rounded-xl bg-white p-3"><p className="text-[10px] font-bold uppercase text-zinc-500">Pending</p><p className="mt-1 text-lg font-bold text-blue-950">{progress.pending}</p></div><div className="rounded-xl bg-white p-3"><p className="text-[10px] font-bold uppercase text-zinc-500">Errors</p><p className="mt-1 text-lg font-bold text-red-700">{progress.errors}</p></div><div className="col-span-2 rounded-xl bg-white p-3"><div className="flex justify-between text-[10px] font-bold text-zinc-500"><span>{progress.status === 'syncing' ? 'Syncing…' : progress.status === 'synced' ? 'Up to date' : 'Needs attention'}</span><span>{percent}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-blue-700 transition-all" style={{ width: `${percent}%` }} /></div></div></div></section>;
 }
 
 function AppToggle({ enabled, onChange }: { enabled: boolean; onChange: () => void }) {
