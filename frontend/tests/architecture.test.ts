@@ -81,6 +81,8 @@ assert.match(read('apps/payroll/payrollRepository.ts'), /useSnapshotRepository/)
 assert.match(read('apps/book/cashBookStore.ts'), /Compatibility entry point/);
 assert.match(read('apps/payroll/payrollStore.ts'), /Compatibility entry point/);
 assert.match(read('apps/truck/components/Pages/CashReportView.tsx'), /DeleteConfirmModal/);
+assert.match(read('apps/truck/components/Pages/PartnersPage.tsx'), /OwnerCard/);
+assert.doesNotMatch(read('apps/truck/App.tsx'), /<OwnerCard/);
 assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /useAsyncAction/);
 assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /submitting/);
 assert.match(read('apps/book/components/BookDetailView.tsx'), /await onDeleteTransaction/);

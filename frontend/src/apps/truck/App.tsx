@@ -4,7 +4,6 @@ import { useAuth } from '../../auth/AuthProvider';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
-import { OwnerCard } from './components/OwnerCard';
 import { ReportsView } from './components/ReportsView';
 import { LedgerHistoryView } from './components/LedgerHistoryView';
 import { IncomePage } from './components/Pages/IncomePage';
@@ -13,16 +12,15 @@ import { ManageTrucksPage } from './components/Pages/ManageTrucksPage';
 import { ExportPage } from './components/Pages/ExportPage';
 import { CashReportView } from './components/Pages/CashReportView';
 import { DashboardView } from './components/Pages/DashboardView';
+import { PartnersPage } from './components/Pages/PartnersPage';
 import { AddPartnerModal } from './components/AddPartnerModal';
 import { RecordTransactionModal } from './components/Modals/RecordTransactionModal';
 import { DeleteConfirmModal } from '../../components/DeleteConfirmModal';
-import { TruckSelect } from './components/TruckSelect';
 import { useTruckData } from './useTruckData';
 import { useTruckMutations, type TruckDeleteRequest } from './useTruckMutations';
 import { useTruckFinancials } from './useTruckFinancials';
 import { useTruckPreferences } from './useTruckPreferences';
 import { useDeleteConfirmation } from '../../hooks/useDeleteConfirmation';
-import { UserPlus, Plus, Users, ArrowUpDown } from 'lucide-react';
 import './index.css';
 
 export default function App() {
@@ -110,97 +108,20 @@ export default function App() {
           )}
 
           {currentView === 'partners' && (
-            <div className="p-3 sm:p-5 max-w-3xl mx-auto space-y-3">
-              {/* Header with truck indicator & Add Partner button */}
-              <div className="flex items-center justify-between pb-1.5 border-b border-[#e5dfd2] flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-[#1c1d1f] text-white flex items-center justify-center shadow-2xs">
-                    <Users className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h1 className="text-sm sm:text-base font-bold text-[#1c1d1f] uppercase tracking-tight">
-                      Partners & Loans • {activeTruck.name}
-                    </h1>
-                    <p className="text-[10px] text-[#787672]">
-                      Unit {activeTruck.unitNumber} • Equity percentages, draw rates & loan balances
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {/* Sort Filter Selector */}
-                  <div className="flex items-center gap-1 bg-white border border-[#d8d0be] rounded-lg px-2 py-1 text-xs">
-                    <ArrowUpDown className="w-3 h-3 text-[#787672]" />
-                    <span className="text-[10px] uppercase font-bold text-[#787672]">Sort:</span>
-                    <TruckSelect value={sortBy} onChange={setSortBy} options={[{ value: 'balance', label: 'Highest Debt' }, { value: 'rate', label: 'Draw Rate' }, { value: 'equity', label: 'Equity %' }, { value: 'name', label: 'Name A-Z' }]} className="min-w-32" />
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setEditingOwner(null);
-                      setIsAddPartnerModalOpen(true);
-                    }}
-                    className="bg-[#3f4d34] hover:bg-[#323e29] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Partner</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Partner Cards List or Empty State */}
-              {sortedOwnerSummaries.length === 0 ? (
-                <div className="bg-white border border-[#e5dfd2] rounded-2xl p-8 text-center shadow-xs space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-[#f3efe6] flex items-center justify-center mx-auto text-[#787672]">
-                    <UserPlus className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-[#1c1d1f]">
-                      No partners added for {activeTruck.name}
-                    </h3>
-                    <p className="text-xs text-[#787672] max-w-sm mx-auto mt-1">
-                      Partners and loans are tracked separately for each truck. Add partners to configure equity percentages and track capital loans.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setEditingOwner(null);
-                      setIsAddPartnerModalOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 bg-[#3f4d34] hover:bg-[#323e29] text-white text-xs font-bold px-4 py-2 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Add Partner to Unit {activeTruck.unitNumber}</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {sortedOwnerSummaries.map((summary) => (
-                    <OwnerCard
-                      key={summary.owner.id}
-                      summary={summary}
-                      transactions={transactions.filter((t) => t.truckId === activeTruck.id)}
-                      onPayOwner={(ownerId) => {
-                        setSelectedPayOwnerId(ownerId);
-                        setExpensesTab('pay-owner');
-                        setCurrentView('expenses');
-                      }}
-                      onInjectCapital={(ownerId) => {
-                        setSelectedPayOwnerId(ownerId);
-                        setCurrentView('income');
-                      }}
-                      onEditOwner={(owner) => {
-                        setEditingOwner(owner);
-                        setIsAddPartnerModalOpen(true);
-                      }}
-                      onDeleteOwner={handleDeleteOwner}
-                      onDeleteTransaction={handleDeleteTransaction}
-                      onEditTransaction={setEditingTransaction}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+            <PartnersPage
+              activeTruck={activeTruck}
+              transactions={transactions}
+              sortedOwnerSummaries={sortedOwnerSummaries}
+              sortBy={sortBy}
+              onSortByChange={setSortBy}
+              onAddPartner={() => { setEditingOwner(null); setIsAddPartnerModalOpen(true); }}
+              onPayOwner={(ownerId) => { setSelectedPayOwnerId(ownerId); setExpensesTab('pay-owner'); setCurrentView('expenses'); }}
+              onInjectCapital={(ownerId) => { setSelectedPayOwnerId(ownerId); setCurrentView('income'); }}
+              onEditOwner={(owner) => { setEditingOwner(owner); setIsAddPartnerModalOpen(true); }}
+              onDeleteOwner={handleDeleteOwner}
+              onDeleteTransaction={handleDeleteTransaction}
+              onEditTransaction={setEditingTransaction}
+            />
           )}
 
           {currentView === 'cash-report' && (
