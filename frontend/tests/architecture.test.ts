@@ -13,6 +13,9 @@ assert.match(read('lib/repositories/useSnapshotRepository.ts'), /persistSnapshot
 assert.match(read('lib/repositories/mutationLifecycle.ts'), /persistBeforeQueue/);
 assert.match(read('components/AppToast.tsx'), /mathan:toast/);
 assert.match(read('components/AppToast.tsx'), /lastKey/);
+assert.match(read('components/AppToast.tsx'), /mathan:sync-status/);
+assert.match(read('components/AppToast.tsx'), /mathan:sync-conflict/);
+assert.doesNotMatch(read('components/AppNotificationCenter.tsx'), /mathan:sync-status|mathan:sync-conflict/);
 assert.doesNotMatch(read('lib/offlineSync.ts'), /mathan:truck-storage-status/);
 assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /mathan:truck-storage-status/);
 assert.match(read('components/AppToast.tsx'), /toast\.tone/);
@@ -21,6 +24,7 @@ assert.match(read('components/DeleteConfirmModal.tsx'), /successMessage/);
 assert.match(read('components/DeleteConfirmModal.tsx'), /tone: 'error'/);
 assert.match(read('hooks/useDeleteConfirmation.ts'), /close only after the operation succeeds/);
 assert.match(read('hooks/useDeleteConfirmation.ts'), /await request\.onConfirm/);
+assert.match(read('apps/truck/useTruckMutations.ts'), /DeleteConfirmationRequest/);
 assert.match(read('apps/book/components/DeleteBookModal.tsx'), /successMessage/);
 assert.match(read('apps/truck/App.tsx'), /useDeleteConfirmation/);
 assert.match(read('components/AppConnectivityBanner.tsx'), /useOnlineStatus/);

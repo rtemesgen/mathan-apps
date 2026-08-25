@@ -2,14 +2,10 @@ import type { Dispatch, SetStateAction } from 'react';
 import { createTruck, createTruckOwner, createTruckTransaction, createTruckTransactionBatch, deleteTruck, deleteTruckOwner, softDeleteTruckTransaction, updateTruck, updateTruckOwner, updateTruckTransaction } from './truckRepository';
 import type { Owner, Transaction, TransactionType, Truck } from './types';
 import { formatCurrency, formatDate } from './utils/formatters';
+import type { DeleteConfirmationRequest } from '../../hooks/useDeleteConfirmation';
 
-export type TruckDeleteRequest = {
-  title: string;
-  message: string;
-  itemName?: string;
-  itemDetails?: string;
-  onConfirm: () => void | Promise<void>;
-};
+/** Compatibility name for callers; the shared confirmation contract is canonical. */
+export type TruckDeleteRequest = DeleteConfirmationRequest;
 
 type TruckMutationArgs = {
   workspaceId?: string;
