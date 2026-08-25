@@ -53,6 +53,7 @@ assert.match(read('components/ExportDialog.tsx'), /context\.reportName/);
 assert.doesNotMatch(read('apps/book/components/Header.tsx'), /ExportButton/);
 assert.doesNotMatch(read('apps/payroll/components/TopNavbar.tsx'), /ExportButton/);
 assert.doesNotMatch(read('apps/truck/components/TopHeader.tsx'), /ExportButton/);
+assert.doesNotMatch(read('apps/payroll/components/Header.tsx'), /Export Payroll|ExportButton|onOpenExportModal/);
 assert.match(read('apps/book/components/BookDetailView.tsx'), /ExportButton/);
 assert.match(read('apps/payroll/views/ReportsView.tsx'), /ExportButton/);
 assert.match(read('apps/payroll/views/TransactionsView.tsx'), /ExportButton/);
