@@ -42,7 +42,7 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
   const truckOptionsKey = trucks.map((truck) => truck.id).join(',');
   const ownerOptionsKey = owners.map((owner) => owner.id).join(',');
 
@@ -78,16 +78,19 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
     event.preventDefault();
     const numAmount = parseFloat(amount);
     if (!Number.isFinite(numAmount) || numAmount <= 0 || submitting) return;
-    await run(() => onSubmit({
-      truckId,
-      date,
-      type,
-      category,
-      amount: numAmount,
-      ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
-      description: description || `${category} entry`,
-      referenceNo,
-    }));
+    await runAction({
+      operation: () => onSubmit({
+        truckId,
+        date,
+        type,
+        category,
+        amount: numAmount,
+        ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
+        description: description || `${category} entry`,
+        referenceNo,
+      }),
+      errorMessage: 'Could not save the Truck transaction. Your entries were kept.',
+    });
     onComplete();
   };
 

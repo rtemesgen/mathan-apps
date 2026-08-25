@@ -92,12 +92,15 @@ assert.ok(snapshotSource.indexOf('relevant.length > 0') < snapshotSource.indexOf
 const snapshotHookSource = read('lib/repositories/useSnapshotRepository.ts');
 assert.ok(snapshotHookSource.indexOf('await persistSnapshot(context, nextValue') < snapshotHookSource.indexOf('setValue(nextValue)'), 'snapshot state must update after durable persistence');
 assert.match(read('apps/book/components/AddBookModal.tsx'), /useAsyncAction/);
+assert.match(read('apps/book/components/AddBookModal.tsx'), /runAction/);
 assert.match(read('apps/book/components/ImportBookModal.tsx'), /useAsyncAction/);
 assert.match(read('apps/book/components/AddMembersModal.tsx'), /useAsyncAction/);
 assert.match(read('apps/payroll/views/PaySalaryView.tsx'), /useAsyncAction/);
+assert.match(read('apps/payroll/views/AddEmployeeView.tsx'), /runAction/);
 assert.match(read('apps/truck/components/AddPartnerModal.tsx'), /useAsyncAction/);
 assert.match(read('apps/truck/components/Pages/RecordTransactionPage.tsx'), /useTruckTransactionForm/);
 assert.match(read('apps/truck/components/Modals/RecordTransactionModal.tsx'), /useTruckTransactionForm/);
+assert.match(read('apps/truck/components/useTruckTransactionForm.ts'), /runAction/);
 for (const obsolete of [
   'apps/payroll/components/AddEmployeeModal.tsx',
   'apps/payroll/components/AddRaiseModal.tsx',

@@ -28,7 +28,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
   const [initialSalary, setInitialSalary] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdEmpName, setCreatedEmpName] = useState('');
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
 
   const monthlySalaryNum = parseFloat(initialSalary) || 0;
   const daysWorked = startDate ? Math.max(0, calculateDaysBetween(startDate, asOfDate)) : 0;
@@ -49,7 +49,10 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    await run(() => onAddEmployee(newEmp));
+    await runAction({
+      operation: () => onAddEmployee(newEmp),
+      errorMessage: 'Could not save the employee. Your entries were kept.',
+    });
     setCreatedEmpName(name.trim());
     setIsSuccess(true);
   };

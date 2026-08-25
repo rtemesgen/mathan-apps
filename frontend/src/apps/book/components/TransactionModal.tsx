@@ -44,7 +44,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [attachmentName, setAttachmentName] = useState<string>('');
   const [error, setError] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
 
   const isCashIn = type === 'in';
 
@@ -106,15 +106,18 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     const numAmount = validate();
     if (numAmount === null) return;
 
-    await run(() => onSave({
-      amount: numAmount,
-      remark: remark.trim(),
-      category: category || (isCashIn ? 'General Income' : 'General Expense'),
-      paymentMode,
-      dateTime: dateTime || getCurrentLocalDateTimeString(),
-      attachmentUrl: attachmentUrl || undefined,
-      attachmentName: attachmentName || undefined,
-    }));
+    await runAction({
+      operation: () => onSave({
+        amount: numAmount,
+        remark: remark.trim(),
+        category: category || (isCashIn ? 'General Income' : 'General Expense'),
+        paymentMode,
+        dateTime: dateTime || getCurrentLocalDateTimeString(),
+        attachmentUrl: attachmentUrl || undefined,
+        attachmentName: attachmentName || undefined,
+      }),
+      errorMessage: 'Could not save the Cash Book transaction. Your entries were kept.',
+    });
 
     onClose();
   };
@@ -124,15 +127,18 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     const numAmount = validate();
     if (numAmount === null) return;
 
-    await run(() => onSave({
-      amount: numAmount,
-      remark: remark.trim(),
-      category: category || (isCashIn ? 'General Income' : 'General Expense'),
-      paymentMode,
-      dateTime: dateTime || getCurrentLocalDateTimeString(),
-      attachmentUrl: attachmentUrl || undefined,
-      attachmentName: attachmentName || undefined,
-    }));
+    await runAction({
+      operation: () => onSave({
+        amount: numAmount,
+        remark: remark.trim(),
+        category: category || (isCashIn ? 'General Income' : 'General Expense'),
+        paymentMode,
+        dateTime: dateTime || getCurrentLocalDateTimeString(),
+        attachmentUrl: attachmentUrl || undefined,
+        attachmentName: attachmentName || undefined,
+      }),
+      errorMessage: 'Could not save the Cash Book transaction. Your entries were kept.',
+    });
 
     // Clear form inputs but keep current Date/Time
     setAmount('');

@@ -20,7 +20,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const [currency, setCurrency] = useState('$');
   const [category, setCategory] = useState('Business');
   const [error, setError] = useState('');
-  const { submitting, run } = useAsyncAction();
+  const { submitting, runAction } = useAsyncAction();
 
   if (!isOpen) return null;
 
@@ -31,12 +31,15 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
       return;
     }
 
-    await run(() => onSave({
-      name: name.trim(),
-      description: description.trim(),
-      currency: currency.trim() || '$',
-      category: category.trim(),
-    }));
+    await runAction({
+      operation: () => onSave({
+        name: name.trim(),
+        description: description.trim(),
+        currency: currency.trim() || '$',
+        category: category.trim(),
+      }),
+      errorMessage: 'Could not save the Cash Book. Your entries were kept.',
+    });
 
     // Reset form
     setName('');
