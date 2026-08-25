@@ -49,7 +49,7 @@ export function useAsyncAction() {
   }, []);
 
   const runAction = useCallback(async <T,>(config: AsyncActionConfig<T>) => {
-    const successMessage = (value: T) => typeof config.successMessage === 'function' ? config.successMessage(value) : config.successMessage;
+    const successMessage = (value: T) => typeof config.successMessage === 'function' ? config.successMessage(value) : config.successMessage ?? 'Saved successfully.';
     const errorMessage = (error: unknown) => typeof config.errorMessage === 'function' ? config.errorMessage(error) : config.errorMessage;
     return run(config.operation, {
       onSuccess: async (value) => {

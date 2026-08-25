@@ -60,7 +60,7 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
       startDate,
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
-      }), errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onBack);
+      }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onBack);
   };
 
   return (

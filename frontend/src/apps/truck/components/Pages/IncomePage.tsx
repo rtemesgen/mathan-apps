@@ -75,7 +75,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
         });
       }
       resetForm();
-    }, errorMessage: 'Could not save the Truck income. Your entries were kept.' });
+    }, successMessage: 'Truck income saved successfully.', errorMessage: 'Could not save the Truck income. Your entries were kept.' });
   };
 
   return (

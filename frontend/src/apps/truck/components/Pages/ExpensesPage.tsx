@@ -111,7 +111,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       amount: num,
       description: expenseDesc || (expenseVendor ? `${expenseVendor} - ${expenseCategory.trim()}` : expenseCategory.trim()),
       referenceNo: expenseRef || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
-    }), errorMessage: 'Could not save the Truck expense. Your entries were kept.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); });
+    }), successMessage: 'Truck expense saved successfully.', errorMessage: 'Could not save the Truck expense. Your entries were kept.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); });
   };
 
   const handlePayOwnerSubmit = async (e: React.FormEvent) => {
@@ -119,7 +119,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     const num = parseFloat(payAmount);
     if (isNaN(num) || num <= 0 || !currentPaySummary || submitting) return;
 
-    await runAction({ operation: () => onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo), errorMessage: 'Could not save the owner payment. Your entry was kept.' }).then(() => setPayAmount(''));
+    await runAction({ operation: () => onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo), successMessage: 'Owner payment saved successfully.', errorMessage: 'Could not save the owner payment. Your entry was kept.' }).then(() => setPayAmount(''));
   };
 
   const handleProfitDividendSubmit = async (e: React.FormEvent) => {
@@ -132,7 +132,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       amount: Number(((pool * o.equityPercentage) / 100).toFixed(2)),
     }));
 
-    await runAction({ operation: () => onExecuteProfitDistribution(allocations), errorMessage: 'Could not save the profit distribution. Your entries were kept.' }).then(() => setDividendPool('0'));
+    await runAction({ operation: () => onExecuteProfitDistribution(allocations), successMessage: 'Profit distribution saved successfully.', errorMessage: 'Could not save the profit distribution. Your entries were kept.' }).then(() => setDividendPool('0'));
   };
 
   const poolAmount = parseFloat(dividendPool) || 0;

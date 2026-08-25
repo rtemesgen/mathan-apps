@@ -54,7 +54,7 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
       startDate,
       equityPercentage: parseFloat(equityPercentage) || 0,
       monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
-    }), errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onClose);
+    }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onClose);
   };
 
   return (

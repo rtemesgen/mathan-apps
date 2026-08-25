@@ -89,6 +89,7 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
         description: description || `${category} entry`,
         referenceNo,
       }),
+      successMessage: editingTransaction ? 'Truck transaction updated successfully.' : 'Truck transaction saved successfully.',
       errorMessage: 'Could not save the Truck transaction. Your entries were kept.',
     });
     onComplete();

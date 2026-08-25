@@ -38,6 +38,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
         currency: currency.trim() || '$',
         category: category.trim(),
       }),
+      successMessage: 'Cash Book saved successfully.',
       errorMessage: 'Could not save the Cash Book. Your entries were kept.',
     });
 

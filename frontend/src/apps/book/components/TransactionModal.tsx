@@ -116,6 +116,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         attachmentUrl: attachmentUrl || undefined,
         attachmentName: attachmentName || undefined,
       }),
+      successMessage: 'Cash Book transaction saved successfully.',
       errorMessage: 'Could not save the Cash Book transaction. Your entries were kept.',
     });
 
@@ -137,6 +138,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         attachmentUrl: attachmentUrl || undefined,
         attachmentName: attachmentName || undefined,
       }),
+      successMessage: 'Cash Book transaction saved successfully.',
       errorMessage: 'Could not save the Cash Book transaction. Your entries were kept.',
     });
 

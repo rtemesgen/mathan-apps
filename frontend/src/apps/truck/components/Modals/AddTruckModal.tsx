@@ -49,7 +49,7 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
       vin,
       cashOnHand: parseFloat(cashOnHand) || 0,
       licensePlate: licensePlate || 'TRK-NEW',
-    }), errorMessage: 'Could not save the Truck. Your entries were kept.' }).then(() => { setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setCashOnHand(''); setLicensePlate(''); });
+    }), successMessage: 'Truck saved successfully.', errorMessage: 'Could not save the Truck. Your entries were kept.' }).then(() => { setShowAddForm(false); setName(''); setUnitNumber(''); setMakeModel(''); setVin(''); setCashOnHand(''); setLicensePlate(''); });
   };
 
   return (
