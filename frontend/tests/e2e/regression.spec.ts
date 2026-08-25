@@ -41,6 +41,35 @@ test('existing Cash Book, Payroll, and Settings flows still load and save', asyn
   await expect(page.getByText('Password', { exact: true }).first()).toBeVisible();
 });
 
+test('Cash Book and Payroll snapshot saves appear in company activity', async ({ page }) => {
+  await signIn(page, 'admin');
+  await page.getByLabel('Cash Book').click();
+  await expect(page.getByText('Cash Book Overview')).toBeVisible();
+  await page.getByRole('button', { name: /Create Book|New Book/ }).first().click();
+  await page.getByPlaceholder(/Retail Shop Cashbook/).fill('Audit Regression Book');
+  await page.getByRole('button', { name: 'Save Book' }).click();
+  await expect(page.getByRole('heading', { name: 'Audit Regression Book' })).toBeVisible();
+
+  await page.goto('/payroll');
+  await expect(page.getByText('Payroll Tracker').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Add Employee', exact: true }).first().click();
+  await page.getByPlaceholder('e.g. Sarah Jenkins').fill('Audit Regression Employee');
+  await page.getByPlaceholder('Enter amount').fill('5000');
+  await page.getByRole('button', { name: 'Save Employee' }).click();
+  await expect(page.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
+
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(page.getByText('Company activity')).toBeVisible();
+  const auditCount = async (recordType: string) => {
+    await page.reload();
+    await page.getByRole('button', { name: 'Activity', exact: true }).click();
+    return page.getByText(new RegExp(recordType)).count();
+  };
+  await expect.poll(() => auditCount('Cash Book'), { timeout: 20_000 }).toBeGreaterThan(0);
+  await expect.poll(() => auditCount('Payroll'), { timeout: 20_000 }).toBeGreaterThan(0);
+});
+
 test('Cash Book records survive switching apps and an offline reload', async ({ page, context }) => {
   await signIn(page, 'member');
   await page.getByLabel('Cash Book').click();

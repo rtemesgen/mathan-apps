@@ -92,7 +92,7 @@ assert.match(read('hooks/useAsyncAction.ts'), /tone: 'error'/);
 assert.match(read('hooks/useAsyncAction.ts'), /Saved successfully/);
 assert.match(read('lib/sqliteJson.ts'), /CryptoKey/);
 assert.match(read('lib/sqliteStore.ts'), /verifyMigratedEntries/);
-assert.match(read('lib/localStore.ts'), /Capacitor\.isNativePlatform\(\)/);
+assert.match(read('lib/localStore.ts'), /Capacitor\.getPlatform\(\)\s*!==\s*['"]android['"]/);
 assert.match(read('lib/sqliteStore.ts'), /androidIsEncryption|setEncryptionSecret|createConnection\(DATABASE_NAME, true, 'secret'/);
 assert.match(read('admin/adminBackup.ts'), /saveWorkspaceBackupFile/);
 assert.match(read('admin/adminBackup.ts'), /truck_customers/);

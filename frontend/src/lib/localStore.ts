@@ -87,7 +87,10 @@ async function readLegacyLocalStorage() {
 }
 
 async function getNativeStoreReady() {
-  if (!Capacitor.isNativePlatform()) return false;
+  // SQLite is intentionally an Android-only adapter for this release. Web
+  // and any future non-Android native target continue using IndexedDB and the
+  // existing fallback path until they have their own verified adapter.
+  if (Capacitor.getPlatform() !== 'android') return false;
   nativeStoreReady ??= (async () => {
     // Reopening an already migrated Android database must not rescan every
     // legacy IndexedDB record before the first read or save.
@@ -139,6 +142,11 @@ export async function readOffline<T>(key: string): Promise<T | null> {
   if (memoryCache.has(key)) return memoryCache.get(key) as T;
   try {
     if (await getNativeStoreReady()) {
+      // A failed native write may have left the newest value in the fallback
+      // store while SQLite still contains the previous value. Prefer that
+      // recovery value before consulting SQLite.
+      const fallback = readFallback<T>(key);
+      if (fallback !== null) { memoryCache.set(key, fallback); return fallback; }
       const nativeValue = await readNativeRecord<T>(key);
       if (nativeValue !== null) { memoryCache.set(key, nativeValue); return nativeValue; }
     }
@@ -173,7 +181,12 @@ export async function writeOffline<T>(key: string, value: T): Promise<void> {
       await writeIndexedDb(key, value);
       removeFallback(key);
     } catch {
-      try { await writeIndexedDb(key, value); removeFallback(key); }
+      try {
+        await writeIndexedDb(key, value);
+        // Keep a recovery copy so a stale native record cannot win on the
+        // next read while SQLite is temporarily unavailable.
+        try { localStorage.setItem(fallbackKey(key), JSON.stringify(value)); } catch { /* IndexedDB is still durable. */ }
+      }
       catch (indexedDbError) {
         try { localStorage.setItem(fallbackKey(key), JSON.stringify(value)); }
         catch (fallbackError) {
