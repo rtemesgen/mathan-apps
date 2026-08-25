@@ -7,7 +7,7 @@ import { ExportButton } from '../../../components/ExportButton';
 interface ReportsViewProps {
   summary: TruckFinancialSummary;
   onPayOwner: (ownerId: string) => void;
-  onExport: () => void;
+  onExport: (filters?: { query?: string }) => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({ summary, onPayOwner, onExport }) => {
@@ -31,7 +31,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ summary, onPayOwner, o
           </h2>
         </div>
 
-        <ExportButton onClick={onExport} />
+        <ExportButton onClick={() => onExport({ query: searchTerm || undefined })} />
       </div>
 
       {/* 3 Metric Cards in One Single Row */}

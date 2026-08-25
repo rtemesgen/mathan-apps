@@ -26,6 +26,7 @@ const cashFlow = truckReports.find((report) => report.id === 'income-expenses')?
 assert.equal(cashFlow?.rows.length, 2);
 const partners = truckReports.find((report) => report.id === 'owner-shares-loans')?.build({ detail: 'detailed', entityId: 'truck-1', ownerId: 'owner-1' });
 assert.equal(partners?.rows[0][1], 'John');
+assert.equal(truckReports.find((report) => report.id === 'owner-shares-loans')?.build({ detail: 'detailed', entityId: 'truck-1', query: 'John' }).rows.length, 1);
 assert.equal(truckReports.find((report) => report.id === 'owner-shares-loans')?.build({ detail: 'detailed', entityId: 'truck-1', ownerId: 'owner-1', category: 'Loan' }).rows.length, 1);
 const activity = truckReports.find((report) => report.id === 'transactions-by-truck-owner')?.build({ detail: 'full', entityId: 'truck-1', ownerId: 'owner-1' });
 assert.equal(activity?.rows.length, 1);

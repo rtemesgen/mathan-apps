@@ -157,7 +157,7 @@ export function TruckViewContent({
       {currentView === 'reports' && <ReportsView
         summary={truckFinancials}
         onPayOwner={(ownerId) => { setSelectedPayOwnerId(ownerId); setExpensesTab('pay-owner'); setCurrentView('expenses'); }}
-        onExport={() => onExportReport('owner-shares-loans', 'Partner Financials')}
+        onExport={(filters) => onExportReport('owner-shares-loans', 'Partner Financials', filters)}
       />}
 
       {currentView === 'history' && <LedgerHistoryView
