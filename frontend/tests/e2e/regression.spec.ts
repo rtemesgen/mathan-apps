@@ -41,6 +41,22 @@ test('existing Cash Book, Payroll, and Settings flows still load and save', asyn
   await expect(page.getByText('Password', { exact: true }).first()).toBeVisible();
 });
 
+test('app data settings expose sync progress and the popup preference', async ({ page }) => {
+  await signIn(page, 'member');
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'App data', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Sync and notifications', exact: true })).toBeVisible();
+  await expect(page.getByText('Pending', { exact: true })).toBeVisible();
+  await expect(page.getByText('Errors', { exact: true })).toBeVisible();
+
+  const popups = page.getByLabel('Show sync popups');
+  await expect(popups).toBeChecked();
+  await popups.uncheck();
+  await expect(popups).not.toBeChecked();
+  await popups.check();
+  await expect(popups).toBeChecked();
+});
+
 test('Cash Book and Payroll snapshot saves appear in company activity', async ({ page }) => {
   await signIn(page, 'admin');
   await page.getByLabel('Cash Book').click();

@@ -42,6 +42,17 @@ assert.equal(offsetResult.totalCustomerReceivable, 500);
 assert.equal(offsetResult.totalCustomerPayable, 0);
 assert.equal(offsetResult.totalReceivable, 500);
 assert.equal(offsetResult.totalPayable, 0);
+
+// Stable customer ids keep separate customer records separate even when their
+// display names happen to match.
+const sameNameDifferentCustomers = calculateTruckFinancials(truck, [owner], [
+  { id: 'customer-a-ar', truckId: 't1', date: '2026-01-01', type: 'RECEIVABLE', category: 'Trip', amount: 125, customerId: 'customer-a', counterpartyType: 'CUSTOMER', counterpartyName: 'Same Name', description: '' },
+  { id: 'customer-b-ar', truckId: 't1', date: '2026-01-02', type: 'RECEIVABLE', category: 'Trip', amount: 75, customerId: 'customer-b', counterpartyType: 'CUSTOMER', counterpartyName: 'Same Name', description: '' },
+]);
+assert.deepEqual(sameNameDifferentCustomers.counterpartyBalances, [
+  { type: 'receivable', name: 'Same Name', customerId: 'customer-a', amount: 125 },
+  { type: 'receivable', name: 'Same Name', customerId: 'customer-b', amount: 75 },
+]);
 const ownerOnlyResult = calculateTruckFinancials(truck, [owner], [
   { id: 'owner-ap', truckId: 't1', date: '2026-01-01', type: 'PAYABLE', category: 'Owner balance', amount: 900, ownerId: 'o1', counterpartyType: 'OWNER', counterpartyName: 'Partner', description: '' },
 ]);
