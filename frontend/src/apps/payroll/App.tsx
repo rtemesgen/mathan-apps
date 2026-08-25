@@ -64,7 +64,7 @@ export default function App() {
     };
   }, [isSidebarOpen]);
 
-  const { employees: [employees], transactions: [transactions], actions } = usePayrollRepository();
+  const { employees: [employees, , employeesReady], transactions: [transactions, , transactionsReady], actions } = usePayrollRepository();
 
   // Global evaluation as-of date (defaults to today)
   const [asOfDate, setAsOfDate] = useState<string>(getTodayString());
@@ -204,6 +204,7 @@ export default function App() {
           activeTab={activeTab}
           employees={employees}
           transactions={transactions}
+          dataReady={employeesReady && transactionsReady}
           stats={stats}
           asOfDate={asOfDate}
           selectedPayEmployeeId={selectedPayEmployeeId}

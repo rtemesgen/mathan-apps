@@ -13,6 +13,7 @@ type PayrollViewContentProps = {
   activeTab: ActiveTab;
   employees: Employee[];
   transactions: Transaction[];
+  dataReady: boolean;
   stats: CompanyStats;
   asOfDate: string;
   selectedPayEmployeeId?: string;
@@ -32,6 +33,7 @@ export function PayrollViewContent({
   activeTab,
   employees,
   transactions,
+  dataReady,
   stats,
   asOfDate,
   selectedPayEmployeeId,
@@ -47,6 +49,8 @@ export function PayrollViewContent({
   onOpenExport,
 }: PayrollViewContentProps) {
   return <main className="mobile-content-safe flex-1 max-w-7xl w-full mx-auto p-2 pb-16 sm:p-3 sm:pb-6">
+    {!dataReady && <div role="status" className="rounded-xl border border-zinc-200 bg-white p-6 text-center text-sm font-semibold text-zinc-500">Loading Payroll data…</div>}
+    {dataReady && <>
     {activeTab === 'dashboard' && <DashboardView
       employees={employees}
       transactions={transactions}
@@ -76,5 +80,6 @@ export function PayrollViewContent({
     {activeTab === 'reports' && <ReportsView employees={employees} transactions={transactions} asOfDate={asOfDate} onSelectEmployee={onSelectEmployee} onOpenExport={onOpenExport} />}
 
     {activeTab === 'transactions' && <TransactionsView transactions={transactions} employees={employees} onDeleteTransaction={onDeleteTransaction} onNavigateTab={onNavigateTab} onOpenExport={onOpenExport} />}
+    </>}
   </main>;
 }

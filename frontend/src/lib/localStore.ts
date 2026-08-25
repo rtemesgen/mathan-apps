@@ -169,7 +169,16 @@ export async function writeOffline<T>(key: string, value: T): Promise<void> {
       removeFallback(key);
     } catch {
       try { await writeIndexedDb(key, value); removeFallback(key); }
-      catch { localStorage.setItem(fallbackKey(key), JSON.stringify(value)); }
+      catch (indexedDbError) {
+        try { localStorage.setItem(fallbackKey(key), JSON.stringify(value)); }
+        catch (fallbackError) {
+          // Do not leave a value in memory that the next app launch cannot
+          // recover. Callers need the rejection so the UI can report a real
+          // storage error instead of claiming that the save succeeded.
+          memoryCache.delete(key);
+          throw fallbackError instanceof Error ? fallbackError : indexedDbError;
+        }
+      }
     }
   });
 }
@@ -220,10 +229,21 @@ export async function writeOfflineAtomic(entries: Array<{ key: string; value: un
       });
       entries.forEach(({ key }) => removeFallback(key));
     } catch (primaryError) {
+      const previousFallback = entries.map(({ key }) => ({ key, value: (() => { try { return localStorage.getItem(fallbackKey(key)); } catch { return null; } })() }));
       try {
         entries.forEach(({ key, value }) => localStorage.setItem(fallbackKey(key), JSON.stringify(value)));
-      } catch {
-        throw primaryError;
+      } catch (fallbackError) {
+        // localStorage has no transaction primitive. Restore every previous
+        // value if one item fails so a snapshot and its queue entry cannot be
+        // left half-written in the fallback store.
+        previousFallback.forEach(({ key, value }) => {
+          try {
+            if (value === null) localStorage.removeItem(fallbackKey(key));
+            else localStorage.setItem(fallbackKey(key), value);
+          } catch { /* preserve the original storage error */ }
+        });
+        entries.forEach(({ key }) => memoryCache.delete(key));
+        throw fallbackError instanceof Error ? fallbackError : primaryError;
       }
     }
   });

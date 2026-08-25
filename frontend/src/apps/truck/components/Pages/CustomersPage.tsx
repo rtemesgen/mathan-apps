@@ -23,7 +23,10 @@ export function CustomersPage({ truck, customers, transactions, balances, onSave
   const startAdd = () => { reset(); setShowForm(true); };
   const edit = (customer: Customer) => { setEditing(customer); setShowForm(true); setName(customer.name); setPhone(customer.phone ?? ''); setAddress(customer.address ?? ''); setNotes(customer.notes ?? ''); };
   const submit = async (event: React.FormEvent) => { event.preventDefault(); if (!name.trim()) return; await runAction({ operation: () => onSave({ id: editing?.id, truckId: truck.id, name: name.trim(), phone, address, notes }), successMessage: editing ? 'Customer updated successfully.' : 'Customer added successfully.', errorMessage: 'Could not save the customer. Your entries were kept.' }).then(reset); };
-  const remove = (customer: Customer) => { if (window.confirm(`Delete ${customer.name}? Existing transactions will keep their customer name.`)) onDelete(customer.id); };
+  // The parent owns the shared confirmation dialog and delete lifecycle. Do
+  // not open a second browser confirmation here or the user can confirm the
+  // same deletion twice.
+  const remove = (customer: Customer) => { onDelete(customer.id); };
 
   const balanceFor = (customer: Customer) => {
     const matching = balances.filter((balance) => balance.counterpartyType !== 'OWNER' && (balance.customerId === customer.id || (!balance.customerId && balance.name.trim().toLowerCase() === customer.name.trim().toLowerCase())));

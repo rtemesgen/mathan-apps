@@ -8,7 +8,7 @@ import { emitSyncStatus } from '../toast';
 export type SnapshotPersistenceStatus = 'idle' | PersistenceState;
 
 /** React adapter for the shared snapshot repository. Domain stores consume this adapter; they do not own storage or sync policy. */
-export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>, boolean, SnapshotPersistenceStatus, (next: SetStateAction<T>) => Promise<PersistenceState>] {
+export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>, boolean, SnapshotPersistenceStatus, (next: SetStateAction<T>) => Promise<PersistenceState>, (update: (current: T) => T) => Promise<PersistenceState>] {
   const { workspace, user, isGuest, canEditApp } = useAuth();
   const appId: AppId = domain === 'cash_book' ? 'book' : 'payroll';
   const standalone = import.meta.env.VITE_STANDALONE === 'true' || isGuest;
@@ -16,6 +16,8 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
   const [ready, setReady] = useState(false);
   const [persistenceStatus, setPersistenceStatus] = useState<SnapshotPersistenceStatus>('idle');
   const hydrated = useRef(false);
+  const localMutationStarted = useRef(false);
+  const hydrationWaiter = useRef<{ promise: Promise<void>; resolve: () => void }>({ promise: Promise.resolve(), resolve: () => undefined });
   const lastHydratedValue = useRef<string | null>(null);
   const revision = useRef(0);
   const valueRef = useRef(initialValue);
@@ -25,6 +27,9 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
   useEffect(() => {
     let active = true;
     hydrated.current = false;
+    localMutationStarted.current = false;
+    let resolveHydration!: () => void;
+    hydrationWaiter.current = { promise: new Promise<void>((resolve) => { resolveHydration = resolve; }), resolve: () => resolveHydration() };
     setReady(false);
     void (async () => {
       const local = await readSnapshot(storageKey, initialValueRef.current);
@@ -33,12 +38,12 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
       lastHydratedValue.current = JSON.stringify(localValue);
       if (active) setValue(localValue);
       revision.current = local.revision;
-      if (active) { hydrated.current = true; setReady(true); }
+      if (active) { hydrated.current = true; setReady(true); resolveHydration(); }
       if (workspace && !standalone && navigator.onLine) {
         void (async () => {
           const context: SnapshotRepositoryContext = { storageKey, workspaceId: workspace.id, userId: user?.id, standalone, domain, key };
           const hydratedRemote = await hydrateSnapshot<T>(context, revision.current);
-          if (hydratedRemote.value !== undefined && active) {
+          if (hydratedRemote.value !== undefined && active && !localMutationStarted.current) {
             revision.current = hydratedRemote.revision;
             valueRef.current = hydratedRemote.value;
             lastHydratedValue.current = JSON.stringify(hydratedRemote.value);
@@ -47,7 +52,7 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
         })().catch(() => undefined);
       }
     })();
-    return () => { active = false; };
+    return () => { active = false; resolveHydration(); };
   }, [workspace?.id, storageKey, domain, key]);
 
   useEffect(() => {
@@ -71,6 +76,8 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
   }, [value, workspace?.id, domain, key, storageKey, appId, standalone, canEditApp]);
 
   const persistValue = useCallback(async (next: SetStateAction<T>) => {
+    await hydrationWaiter.current.promise;
+    localMutationStarted.current = true;
     if (!standalone && !workspace) throw new Error('A workspace is required to save this record.');
     if (!standalone && !canEditApp(appId)) throw new Error('You do not have permission to edit this app.');
     const nextValue = typeof next === 'function' ? (next as (current: T) => T)(valueRef.current) : next;
@@ -107,5 +114,5 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
     valueRef.current = typeof next === 'function' ? (next as (current: T) => T)(valueRef.current) : next;
     setValue(next);
   };
-  return [value, guardedSetValue, ready, persistenceStatus, persistValue];
+  return [value, guardedSetValue, ready, persistenceStatus, persistValue, (update) => persistValue(update)];
 }

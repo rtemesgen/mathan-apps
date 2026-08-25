@@ -28,7 +28,7 @@ test('existing Cash Book, Payroll, and Settings flows still load and save', asyn
   await signIn(page, 'member');
   await page.getByLabel('Cash Book').click();
   await expect(page.getByText('Cash Book Overview')).toBeVisible();
-  await page.getByRole('button', { name: /Create Book/ }).first().click();
+  await page.getByRole('button', { name: /Create Book|New Book/ }).first().click();
   await page.getByPlaceholder(/Retail Shop Cashbook/).fill('Playwright Regression Book');
   await page.getByRole('button', { name: 'Save Book' }).click();
   await expect(page.getByRole('heading', { name: 'Playwright Regression Book' })).toBeVisible();
@@ -45,7 +45,7 @@ test('Cash Book records survive switching apps and an offline reload', async ({ 
   await signIn(page, 'member');
   await page.getByLabel('Cash Book').click();
   await expect(page.getByText('Cash Book Overview')).toBeVisible();
-  await page.getByRole('button', { name: /Create Book/ }).first().click();
+  await page.getByRole('button', { name: /Create Book|New Book/ }).first().click();
   await page.getByPlaceholder(/Retail Shop Cashbook/).fill('Persistence Regression Book');
   await page.getByRole('button', { name: 'Save Book' }).click();
   await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
@@ -71,7 +71,6 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await page.getByPlaceholder('Enter amount').fill('5000');
   await page.getByRole('button', { name: 'Save Employee' }).click();
   await expect(page.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
-
   await page.goto('/book');
   await expect(page.getByText('Cash Book Overview')).toBeVisible();
   await page.goto('/payroll');

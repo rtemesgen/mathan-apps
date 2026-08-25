@@ -6,6 +6,7 @@ import { BookDetailView } from './BookDetailView';
 type CashBookViewContentProps = {
   books: Book[];
   transactions: Transaction[];
+  dataReady: boolean;
   activeBook: Book | null;
   onSelectBook: (bookId: string) => void;
   onBackToDashboard: () => void;
@@ -23,6 +24,7 @@ type CashBookViewContentProps = {
 export function CashBookViewContent({
   books,
   transactions,
+  dataReady,
   activeBook,
   onSelectBook,
   onBackToDashboard,
@@ -37,6 +39,8 @@ export function CashBookViewContent({
   onOpenExport,
 }: CashBookViewContentProps) {
   return <main className="mobile-content-safe flex-1 min-w-0 pb-16 sm:pb-6">
+    {!dataReady && <div role="status" className="mx-3 rounded-xl border border-[#e5dfd2] bg-white p-6 text-center text-sm font-semibold text-[#787672]">Loading Cash Book data…</div>}
+    {dataReady && <>
     {activeBook ? <BookDetailView
       book={activeBook}
       transactions={transactions}
@@ -57,5 +61,6 @@ export function CashBookViewContent({
       onAddMembers={onAddMembers}
       onOpenImportBookModal={onOpenImport}
     />}
+    </>}
   </main>;
 }
