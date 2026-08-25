@@ -8,7 +8,6 @@ import {
   TrendingUp,
   HandCoins,
   Plus,
-  FileSpreadsheet,
   Calendar,
   Receipt,
 } from 'lucide-react';
@@ -20,7 +19,6 @@ interface HeaderProps {
   asOfDate: string;
   onAsOfDateChange: (date: string) => void;
   onOpenAddEmployee: () => void;
-  onOpenExportModal: () => void;
   onOpenTransactions: () => void;
 }
 
@@ -29,7 +27,6 @@ export const Header: React.FC<HeaderProps> = ({
   asOfDate,
   onAsOfDateChange,
   onOpenAddEmployee,
-  onOpenExportModal,
   onOpenTransactions,
 }) => {
   return (
@@ -80,14 +77,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Receipt className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
               All Transactions
-            </button>
-
-            <button
-              onClick={onOpenExportModal}
-              className="inline-flex items-center px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-medium rounded-lg transition cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
-              Export Payroll
             </button>
 
           </div>

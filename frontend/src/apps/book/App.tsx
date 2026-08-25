@@ -1,22 +1,24 @@
 import React, { useState } from 'react';
 import { Book, Transaction, TransactionType } from './types';
 import { Header } from './components/Header';
-import { DashboardView } from './components/DashboardView';
-import { BookDetailView } from './components/BookDetailView';
+import { CashBookViewContent } from './components/CashBookViewContent';
 import { AddBookModal } from './components/AddBookModal';
 import { TransactionModal } from './components/TransactionModal';
 import { CashBookSidebar } from './components/Sidebar';
-import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
-import { showAppToast } from '../../lib/mobile';
 import { ImportBookModal } from './components/ImportBookModal';
 import { RenameBookModal } from './components/RenameBookModal';
 import { DeleteBookModal } from './components/DeleteBookModal';
 import { AddMembersModal } from './components/AddMembersModal';
+import { useCashBookRepository } from './cashBookRepository';
+import { ExportDialog } from '../../components/ExportDialog';
+import { buildCashBookExportReports } from './cashBookExport';
+import { useAuth } from '../../auth/AuthProvider';
 
 export default function App() {
-  const [books, setBooks] = useCloudSnapshot<Book[]>('cash_book', 'books', []);
-  const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('cash_book', 'transactions', []);
+  const { workspace } = useAuth();
+  const { books: [books], transactions: [transactions], actions } = useCashBookRepository();
+
 
   // Active Selected Book (null = Dashboard, string = Book Detail View)
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
@@ -30,6 +32,9 @@ export default function App() {
   const [transactionModalType, setTransactionModalType] = useState<TransactionType | null>(null);
   const [targetBookForTransaction, setTargetBookForTransaction] = useState<Book | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState<{ transactionType?: string; query?: string }>({});
+  const openExport = (filters: typeof exportFilters = {}) => { setExportFilters(filters); setExportOpen(true); };
 
   useAndroidBackHandler(() => {
     if (transactionModalType) {
@@ -63,48 +68,31 @@ export default function App() {
   const activeBook = books.find(b => b.id === activeBookId) || null;
 
   // Add New Book Handler
-  const handleCreateBook = (bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newBook: Book = {
-      ...bookData,
-      id: `book-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    setBooks(prev => [newBook, ...prev]);
+  const handleCreateBook = async (bookData: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const { data: newBook } = await actions.createBook(bookData);
     // Automatically select & enter the newly created book!
     setActiveBookId(newBook.id);
   };
 
   // Delete Book Handler
-  const handleDeleteBook = (bookId: string) => {
+  const handleDeleteBook = async (bookId: string) => {
     const book = books.find((item) => item.id === bookId);
     if (!book) return;
-    setBooks(prev => prev.filter(b => b.id !== bookId));
-    setTransactions(prev => prev.filter(t => t.bookId !== bookId));
+    await actions.deleteBook(bookId);
     if (activeBookId === bookId) {
       setActiveBookId(null);
     }
     setBookToDelete(null);
-    showAppToast(`${book.name} deleted`);
   };
 
-  const handleRenameBook = (bookId: string, name: string) => {
-    setBooks(prev => prev.map(book => book.id === bookId ? { ...book, name, updatedAt: new Date().toISOString() } : book));
+  const handleRenameBook = async (bookId: string, changes: { name: string; openingBalance: number }) => {
+    const book = books.find((item) => item.id === bookId);
+    if (book) await actions.updateBook(bookId, changes);
     setBookToRename(null);
   };
 
-  const handleImportBooks = (importedBooks: Array<{ book: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] }>) => {
-    const now = new Date().toISOString();
-    const newBooks = importedBooks.map(({ book }) => ({ ...book, id: `book-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, createdAt: now, updatedAt: now }));
-    const newTransactions = importedBooks.flatMap(({ transactions }, index) => transactions.map((transaction, txIndex) => ({
-      ...transaction,
-      id: `tx-import-${Date.now()}-${index}-${txIndex}`,
-      bookId: newBooks[index].id,
-      createdAt: now,
-    })));
-    setBooks(prev => [...newBooks, ...prev]);
-    setTransactions(prev => [...newTransactions, ...prev]);
+  const handleImportBooks = async (importedBooks: Array<{ book: Omit<Book, 'id' | 'createdAt' | 'updatedAt'>; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] }>) => {
+    await actions.importBooks(importedBooks);
     setIsImportBookOpen(false);
   };
 
@@ -125,7 +113,7 @@ export default function App() {
   };
 
   // Save Transaction Handler
-  const handleSaveTransaction = (data: {
+  const handleSaveTransaction = async (data: {
     amount: number;
     remark: string;
     category: string;
@@ -136,29 +124,12 @@ export default function App() {
   }) => {
     if (!targetBookForTransaction || !transactionModalType) return;
 
-    const newTx: Transaction = {
-      id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      bookId: targetBookForTransaction.id,
-      type: transactionModalType,
-      amount: data.amount,
-      remark: data.remark,
-      category: data.category,
-      paymentMode: data.paymentMode,
-      dateTime: data.dateTime,
-      attachmentUrl: data.attachmentUrl,
-      attachmentName: data.attachmentName,
-      createdAt: new Date().toISOString(),
-    };
-
-    setTransactions(prev => [newTx, ...prev]);
-
-    // Update book timestamp
-    setBooks(prev => prev.map(b => b.id === targetBookForTransaction.id ? { ...b, updatedAt: new Date().toISOString() } : b));
+    await actions.createTransaction(targetBookForTransaction.id, transactionModalType, data);
   };
 
   // Delete Transaction Handler
-  const handleDeleteTransaction = (txId: string) => {
-    setTransactions(prev => prev.filter(t => t.id !== txId));
+  const handleDeleteTransaction = async (txId: string) => {
+    await actions.deleteTransaction(txId);
   };
 
   return (
@@ -174,31 +145,22 @@ export default function App() {
       <div className="flex flex-1 min-h-0">
         {isSidebarOpen && <div className="hidden lg:block shrink-0"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div>}
         {isSidebarOpen && <div className="lg:hidden fixed inset-0 z-[100] flex"><button aria-label="Close Cash Book menu" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-0 bg-black/40" /><div className="mobile-sidebar-drawer relative z-10 h-[100dvh] max-h-[100dvh] w-72 overflow-y-auto overscroll-contain shadow-2xl"><CashBookSidebar bookCount={books.length} onClose={() => setIsSidebarOpen(false)} /></div></div>}
-        <main className="mobile-content-safe flex-1 min-w-0 pb-16 sm:pb-6">
-          {activeBookId && activeBook ? (
-            <BookDetailView
-              book={activeBook}
-              transactions={transactions}
-              onBackToDashboard={() => setActiveBookId(null)}
-              onOpenCashInModal={() => handleOpenCashInModal(activeBook)}
-              onOpenCashOutModal={() => handleOpenCashOutModal(activeBook)}
-              onDeleteTransaction={handleDeleteTransaction}
-            />
-          ) : (
-            <DashboardView
-              books={books}
-              transactions={transactions}
-              onSelectBook={(bookId) => setActiveBookId(bookId)}
-              onOpenAddBookModal={() => setIsAddBookOpen(true)}
-              onQuickCashIn={(b) => handleOpenCashInModal(b)}
-              onQuickCashOut={(b) => handleOpenCashOutModal(b)}
-              onRenameBook={setBookToRename}
-              onRequestDeleteBook={setBookToDelete}
-              onAddMembers={setBookForMembers}
-              onOpenImportBookModal={() => setIsImportBookOpen(true)}
-            />
-          )}
-        </main>
+        <CashBookViewContent
+          books={books}
+          transactions={transactions}
+          activeBook={activeBook}
+          onSelectBook={setActiveBookId}
+          onBackToDashboard={() => setActiveBookId(null)}
+          onOpenAddBook={() => setIsAddBookOpen(true)}
+          onOpenCashIn={handleOpenCashInModal}
+          onOpenCashOut={handleOpenCashOutModal}
+          onRenameBook={setBookToRename}
+          onRequestDeleteBook={setBookToDelete}
+          onAddMembers={setBookForMembers}
+          onOpenImport={() => setIsImportBookOpen(true)}
+          onDeleteTransaction={handleDeleteTransaction}
+          onOpenExport={openExport}
+        />
       </div>
 
       {/* Add New Book Modal */}
@@ -230,6 +192,7 @@ export default function App() {
         onClose={() => setIsImportBookOpen(false)}
         onImport={handleImportBooks}
       />
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Cash Book', reportName: activeBook ? `Current Book Report — ${activeBook.name}` : 'Cash Book Summary', report: buildCashBookExportReports({ books, transactions })[activeBook ? 1 : 0], selectedEntity: activeBook ? { value: activeBook.id, label: activeBook.name } : undefined, activeFilters: { ...exportFilters, ...(activeBook ? { entityId: activeBook.id } : {}) }, availableDetailLevels: activeBook ? ['condensed', 'detailed', 'full'] : ['condensed'], availableTransactionTypes: activeBook ? [{ value: '', label: 'All transactions' }, { value: 'in', label: 'Cash In only' }, { value: 'out', label: 'Cash Out only' }] : undefined, availableEntities: activeBook ? undefined : books.map(book => ({ value: book.id, label: book.name })) }} />
 
       {/* Cash In / Cash Out Transaction Modal */}
       {transactionModalType && targetBookForTransaction && (

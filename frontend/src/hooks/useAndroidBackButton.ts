@@ -33,6 +33,10 @@ export function useAndroidBackButton() {
         void Toast.show({ text: 'Press back again to exit Mathan ERP', duration: 'short' });
         return;
       }
+      if (!window.confirm('Are you sure you want to exit Mathan ERP?')) {
+        lastRootBackAt = 0;
+        return;
+      }
       await CapacitorApp.exitApp();
     });
 

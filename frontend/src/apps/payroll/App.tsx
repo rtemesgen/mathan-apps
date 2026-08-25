@@ -6,16 +6,12 @@ import { Sidebar, ActiveTab } from './components/Sidebar';
 import { TopNavbar } from './components/TopNavbar';
 import { EmployeeDetailModal } from './components/EmployeeDetailModal';
 
-import { DashboardView } from './views/DashboardView';
-import { AddEmployeeView } from './views/AddEmployeeView';
-import { PaySalaryView } from './views/PaySalaryView';
-import { AddRaiseView } from './views/AddRaiseView';
-import { ReportsView } from './views/ReportsView';
-import { TransactionsView } from './views/TransactionsView';
-import { ManageEmployeesView } from './views/ManageEmployeesView';
-import { useCloudSnapshot } from '../../hooks/useCloudSnapshot';
+import { PayrollViewContent } from './components/PayrollViewContent';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { useAuth } from '../../auth/AuthProvider';
+import { usePayrollRepository } from './payrollRepository';
+import { ExportDialog } from '../../components/ExportDialog';
+import { buildPayrollExportReports } from './payrollExport';
 
 const PAYROLL_TABS: ActiveTab[] = ['dashboard', 'add-employee', 'manage-employees', 'pay-salary', 'add-raise', 'reports', 'transactions'];
 
@@ -50,7 +46,7 @@ export default function App() {
   // Close side menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (!isSidebarOpen) return;
+      if (!isSidebarOpen || window.innerWidth >= 768) return;
 
       const target = event.target as Node;
       const isInsideDesktop = desktopSidebarRef.current?.contains(target);
@@ -68,8 +64,7 @@ export default function App() {
     };
   }, [isSidebarOpen]);
 
-  const [employees, setEmployees] = useCloudSnapshot<Employee[]>('payroll', 'employees', []);
-  const [transactions, setTransactions] = useCloudSnapshot<Transaction[]>('payroll', 'transactions', []);
+  const { employees: [employees], transactions: [transactions], actions } = usePayrollRepository();
 
   // Global evaluation as-of date (defaults to today)
   const [asOfDate, setAsOfDate] = useState<string>(getTodayString());
@@ -77,6 +72,9 @@ export default function App() {
   // Detail inspection drawer state
   const [selectedDetailEmp, setSelectedDetailEmp] = useState<Employee | null>(null);
   const [selectedPayEmployeeId, setSelectedPayEmployeeId] = useState<string | undefined>();
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState<{ entityId?: string; startDate?: string; endDate?: string; transactionType?: string; query?: string }>({});
+  const openExport = (filters: typeof exportFilters = {}) => { setExportFilters(filters); setExportOpen(true); };
 
   useAndroidBackHandler(() => {
     if (selectedDetailEmp) {
@@ -103,63 +101,45 @@ export default function App() {
   }, [employees]);
 
   // Handlers
-  const handleAddEmployee = (newEmp: Employee) => {
-    setEmployees((prev) => [newEmp, ...prev]);
+  const handleAddEmployee = async (newEmp: Employee) => {
+    await actions.saveEmployee(newEmp);
   };
 
-  const handleSaveEmployee = (updatedEmployee: Employee) => {
-    setEmployees((current) => current.map((employee) => employee.id === updatedEmployee.id ? updatedEmployee : employee));
+  const handleSaveEmployee = async (updatedEmployee: Employee) => {
+    await actions.saveEmployee(updatedEmployee);
   };
 
-  const handleDeleteEmployee = (employeeId: string) => {
-    setEmployees((current) => current.filter((employee) => employee.id !== employeeId));
-    setTransactions((current) => current.filter((transaction) => transaction.employeeId !== employeeId));
+  const handleDeleteEmployee = async (employeeId: string) => {
+    await actions.deleteEmployee(employeeId);
     if (selectedPayEmployeeId === employeeId) setSelectedPayEmployeeId(undefined);
   };
 
-  const handleSaveRaise = (employeeId: string, raise: SalaryChange) => {
-    setEmployees((prev) =>
-      prev.map((emp) => {
-        if (emp.id === employeeId) {
-          const updatedHistory = [...(emp.salaryHistory || []), raise].sort((a, b) =>
-            a.effectiveDate.localeCompare(b.effectiveDate)
-          );
-          return {
-            ...emp,
-            salaryHistory: updatedHistory,
-          };
-        }
-        return emp;
-      })
-    );
+  const handleSaveRaise = async (employeeId: string, raise: SalaryChange) => {
+    await actions.saveRaise(employeeId, raise);
   };
 
-  const handleRecordWithdrawal = (newTx: Transaction) => {
-    setTransactions((prev) => [newTx, ...prev]);
+  const handleRecordWithdrawal = async (newTx: Transaction) => {
+    await actions.saveTransaction(newTx);
   };
 
-  const handleDeleteTransaction = (txId: string) => {
-    setTransactions((prev) => prev.filter((t) => t.id !== txId));
+  const handleDeleteTransaction = async (txId: string) => {
+    await actions.deleteTransaction(txId);
   };
 
-  const handleUpdateTransaction = (updated: Transaction) => {
-    setTransactions((current) => current.map((transaction) => transaction.id === updated.id ? updated : transaction));
+  const handleUpdateTransaction = async (updated: Transaction) => {
+    await actions.saveTransaction(updated);
   };
 
-  const handleRemoveTransaction = (txId: string) => {
-    setTransactions((current) => current.filter((transaction) => transaction.id !== txId));
+  const handleRemoveTransaction = async (txId: string) => {
+    await actions.deleteTransaction(txId);
   };
 
-  const handleUpdateRaise = (employeeId: string, updatedRaise: SalaryChange) => {
-    setEmployees((current) => current.map((employee) => employee.id === employeeId
-      ? { ...employee, salaryHistory: employee.salaryHistory.map((raise) => raise.id === updatedRaise.id ? updatedRaise : raise) }
-      : employee));
+  const handleUpdateRaise = async (employeeId: string, updatedRaise: SalaryChange) => {
+    await actions.updateRaise(employeeId, updatedRaise);
   };
 
-  const handleDeleteRaise = (employeeId: string, raiseId: string) => {
-    setEmployees((current) => current.map((employee) => employee.id === employeeId
-      ? { ...employee, salaryHistory: employee.salaryHistory.filter((raise) => raise.id !== raiseId) }
-      : employee));
+  const handleDeleteRaise = async (employeeId: string, raiseId: string) => {
+    await actions.deleteRaise(employeeId, raiseId);
   };
 
   const stats = calculateCompanyStats(employees, transactions, asOfDate);
@@ -220,80 +200,24 @@ export default function App() {
           toggleButtonRef={toggleBtnRef}
         />
 
-        <main className="mobile-content-safe flex-1 max-w-7xl w-full mx-auto p-2 pb-16 sm:p-3 sm:pb-6">
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              employees={employees}
-              transactions={transactions}
-              stats={stats}
-              asOfDate={asOfDate}
-              onSelectEmployee={(emp) => setSelectedDetailEmp(emp)}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-              onRecordWithdrawal={(emp) => {
-                setSelectedPayEmployeeId(emp.id);
-                setActiveTab('pay-salary');
-              }}
-              onAddRaise={(emp) => {
-                setActiveTab('add-raise');
-              }}
-            />
-          )}
-
-          {activeTab === 'add-employee' && (
-            <AddEmployeeView
-              onAddEmployee={handleAddEmployee}
-              asOfDate={asOfDate}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
-
-          {activeTab === 'manage-employees' && (
-            <ManageEmployeesView
-              employees={employees}
-              onSaveEmployee={handleSaveEmployee}
-              onDeleteEmployee={handleDeleteEmployee}
-            />
-          )}
-
-          {activeTab === 'pay-salary' && (
-            <PaySalaryView
-              employees={employees}
-              transactions={transactions}
-              asOfDate={asOfDate}
-              initialEmployeeId={selectedPayEmployeeId}
-              onRecordWithdrawal={handleRecordWithdrawal}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
-
-          {activeTab === 'add-raise' && (
-            <AddRaiseView
-              employees={employees}
-              asOfDate={asOfDate}
-              onSaveRaise={handleSaveRaise}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
-
-          {activeTab === 'reports' && (
-            <ReportsView
-              employees={employees}
-              transactions={transactions}
-              asOfDate={asOfDate}
-              onSelectEmployee={setSelectedDetailEmp}
-            />
-          )}
-
-          {activeTab === 'transactions' && (
-            <TransactionsView
-              transactions={transactions}
-              employees={employees}
-              onDeleteTransaction={handleDeleteTransaction}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
-
-        </main>
+        <PayrollViewContent
+          activeTab={activeTab}
+          employees={employees}
+          transactions={transactions}
+          stats={stats}
+          asOfDate={asOfDate}
+          selectedPayEmployeeId={selectedPayEmployeeId}
+          onSelectEmployee={setSelectedDetailEmp}
+          onNavigateTab={setActiveTab}
+          onRequestPay={(employee) => { setSelectedPayEmployeeId(employee.id); setActiveTab('pay-salary'); }}
+          onAddEmployee={handleAddEmployee}
+          onSaveEmployee={handleSaveEmployee}
+          onDeleteEmployee={handleDeleteEmployee}
+          onSaveRaise={handleSaveRaise}
+          onRecordWithdrawal={handleRecordWithdrawal}
+          onDeleteTransaction={handleDeleteTransaction}
+          onOpenExport={openExport}
+        />
       </div>
 
       {/* Employee Detail Inspector Sheet */}
@@ -319,6 +243,7 @@ export default function App() {
           onDeleteRaise={handleDeleteRaise}
         />
       )}
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Payroll', reportName: activeTab === 'transactions' ? 'Payment History' : 'Payroll History', report: buildPayrollExportReports({ employees, transactions, asOfDate })[activeTab === 'transactions' ? 3 : 1], activeFilters: { ...exportFilters, ...(activeTab === 'reports' ? { endDate: exportFilters.endDate ?? asOfDate } : {}) }, availableDetailLevels: ['condensed', 'detailed', 'full'], availableEntities: employees.map(employee => ({ value: employee.id, label: employee.name })) }} />
     </div>
   );
 }

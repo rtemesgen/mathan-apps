@@ -10,7 +10,7 @@ import {
   Wallet
 } from 'lucide-react';
 import { Truck, Owner, Transaction } from '../../types';
-import { formatCurrency } from '../../utils/formatters';
+import { calculateTruckFinancials, formatCurrency } from '../../utils/formatters';
 
 interface DashboardViewProps {
   trucks: Truck[];
@@ -35,38 +35,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     let totalRevenue = 0;
     let totalExpenses = 0;
     let totalLoansOwed = 0;
+    let totalReceivable = 0;
+    let totalPayable = 0;
 
     trucks.forEach(truck => {
       const truckTx = allTransactions.filter(t => t.truckId === truck.id);
-      
-      let cash = truck.cashOnHand;
-      let revenue = 0;
-      let expenses = 0;
-      let loansInjected = 0;
-      let loansRepaid = 0;
-
-      truckTx.forEach(t => {
-        if (t.type === 'INCOME') {
-          cash += t.amount;
-          revenue += t.amount;
-        } else if (t.type === 'CAPITAL_INJECTION') {
-          cash += t.amount;
-          loansInjected += t.amount;
-        } else if (t.type === 'EXPENSE') {
-          cash -= t.amount;
-          expenses += t.amount;
-        } else if (t.type === 'CAPITAL_REPAYMENT') {
-          cash -= t.amount;
-          loansRepaid += t.amount;
-        } else if (t.type === 'PROFIT_DISTRIBUTION') {
-          cash -= t.amount;
-        }
-      });
-
-      totalCash += cash;
-      totalRevenue += revenue;
-      totalExpenses += expenses;
-      totalLoansOwed += Math.max(0, loansInjected - loansRepaid);
+      const summary = calculateTruckFinancials(truck, allOwners.filter((owner) => owner.truckId === truck.id || (!owner.truckId && truck.id === 'truck-1')), truckTx);
+      totalCash += summary.cashOnHand;
+      totalRevenue += summary.grossIncome;
+      totalExpenses += summary.operatingExpenses;
+      totalLoansOwed += summary.totalUnpaidDebtToOwners;
+      totalReceivable += summary.totalReceivable;
+      totalPayable += summary.totalPayable;
     });
 
     const totalNetProfit = totalRevenue - totalExpenses;
@@ -77,9 +57,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       totalExpenses,
       totalNetProfit,
       totalLoansOwed,
+      totalReceivable,
+      totalPayable,
       truckCount: trucks.length
     };
-  }, [trucks, allTransactions]);
+  }, [trucks, allOwners, allTransactions]);
 
   // Per-truck summary data for the small switcher cards
   const trucksSummaryList = useMemo(() => {
@@ -87,41 +69,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const truckTx = allTransactions.filter(t => t.truckId === truck.id);
       const truckOwners = allOwners.filter(o => o.truckId === truck.id || (!o.truckId && truck.id === 'truck-1'));
       
-      let cash = truck.cashOnHand;
-      let revenue = 0;
-      let expenses = 0;
-      let loansInjected = 0;
-      let loansRepaid = 0;
-
-      truckTx.forEach(t => {
-        if (t.type === 'INCOME') {
-          cash += t.amount;
-          revenue += t.amount;
-        } else if (t.type === 'CAPITAL_INJECTION') {
-          cash += t.amount;
-          loansInjected += t.amount;
-        } else if (t.type === 'EXPENSE') {
-          cash -= t.amount;
-          expenses += t.amount;
-        } else if (t.type === 'CAPITAL_REPAYMENT') {
-          cash -= t.amount;
-          loansRepaid += t.amount;
-        } else if (t.type === 'PROFIT_DISTRIBUTION') {
-          cash -= t.amount;
-        }
-      });
-
-      const netProfit = revenue - expenses;
-      const debtOwed = Math.max(0, loansInjected - loansRepaid);
+      const summary = calculateTruckFinancials(truck, truckOwners, truckTx);
       const totalEquity = truckOwners.reduce((sum, o) => sum + o.equityPercentage, 0);
 
       return {
         truck,
-        cash,
-        revenue,
-        expenses,
-        netProfit,
-        debtOwed,
+        cash: summary.cashOnHand,
+        revenue: summary.grossIncome,
+        expenses: summary.operatingExpenses,
+        netProfit: summary.netProfit,
+        debtOwed: summary.totalUnpaidDebtToOwners,
+        receivable: summary.totalReceivable,
+        payable: summary.totalPayable,
         partnerCount: truckOwners.length,
         totalEquity,
       };
@@ -156,7 +115,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Fleet Totals Metric Banner - Single Row, Very Compact */}
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-3 gap-2">
         <div className="bg-white border border-[#e5dfd2] rounded-lg px-2 py-1.5 shadow-2xs">
           <div className="text-[7.5px] sm:text-[8px] font-bold uppercase tracking-wider text-[#787672] flex items-center justify-between">
             <span className="truncate">Fleet Cash</span>
@@ -168,6 +127,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="text-[7.5px] text-[#8c8880] truncate">
             {fleetTotals.truckCount} Units
           </div>
+        </div>
+
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 shadow-2xs">
+          <div className="flex items-center justify-between text-[7.5px] font-bold uppercase tracking-wider text-blue-700"><span className="truncate">Receivable</span><TrendingUp className="h-2.5 w-2.5" /></div>
+          <div className="mt-0.5 truncate text-xs font-bold tracking-tight text-blue-950 sm:text-sm">{formatCurrency(fleetTotals.totalReceivable, false)}</div>
+          <div className="truncate text-[7.5px] text-blue-700">Customers owe</div>
+        </div>
+
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 shadow-2xs">
+          <div className="flex items-center justify-between text-[7.5px] font-bold uppercase tracking-wider text-rose-700"><span className="truncate">Payable</span><TrendingDown className="h-2.5 w-2.5" /></div>
+          <div className="mt-0.5 truncate text-xs font-bold tracking-tight text-rose-950 sm:text-sm">{formatCurrency(fleetTotals.totalPayable, false)}</div>
+          <div className="truncate text-[7.5px] text-rose-700">Truck owes</div>
         </div>
 
         <div className="bg-white border border-[#e5dfd2] rounded-lg px-2 py-1.5 shadow-2xs">
@@ -256,7 +227,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
 
                 {/* Main Stats in a clean horizontal strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 items-center">
+                <div className="grid grid-cols-3 gap-1.5">
                   {/* Cash */}
                   <div className={`px-2 py-1 rounded text-[11px] ${
                     isSelected ? 'bg-[#ebe4d5] text-[#1c1d1f]' : 'bg-[#eee8db] text-[#1c1d1f]'
@@ -265,6 +236,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span className="font-mono font-bold text-xs sm:text-sm text-[#1c1d1f]">
                       {formatCurrency(item.cash, false)}
                     </span>
+                  </div>
+
+                  {/* Receivable */}
+                  <div className={`rounded px-2 py-1 text-[11px] ${isSelected ? 'bg-blue-50' : 'bg-[#f7f4ed]'}`}>
+                    <span className="block text-[8px] font-bold uppercase leading-tight text-blue-700">Receivable</span>
+                    <span className="font-mono text-xs font-bold text-blue-950 sm:text-sm">{formatCurrency(item.receivable, false)}</span>
+                  </div>
+
+                  {/* Payable */}
+                  <div className={`rounded px-2 py-1 text-[11px] ${isSelected ? 'bg-rose-50' : 'bg-[#f7f4ed]'}`}>
+                    <span className="block text-[8px] font-bold uppercase leading-tight text-rose-700">Payable</span>
+                    <span className="font-mono text-xs font-bold text-rose-950 sm:text-sm">{formatCurrency(item.payable, false)}</span>
                   </div>
 
                   {/* Revenue */}

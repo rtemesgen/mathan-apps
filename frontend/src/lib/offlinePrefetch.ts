@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { writeOffline } from './localStore';
+import { offlineStore } from './localStore';
+import { hasPendingMutationsForWorkspace } from './syncQueue';
 
 type SnapshotRow = { domain: string; payload: unknown; revision: number };
 
@@ -15,21 +16,26 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
       const key = row.domain.slice(separator + 1);
       if (domain === 'cash_book' || domain === 'payroll') {
         const storageKey = `${userId}:${workspaceId}:${domain}:${key}`;
-        await writeOffline(storageKey, row.payload);
-        await writeOffline(`${storageKey}:revision`, row.revision);
+        await offlineStore.write(storageKey, row.payload);
+        await offlineStore.write(`${storageKey}:revision`, row.revision);
       }
     }
   }
 
-  const [trucks, owners, transactions] = await Promise.all([
+  const [trucks, owners, customers, transactions] = await Promise.all([
     supabase.from('trucks').select('id,name,unit_number,make_model,vin,cash_on_hand,license_plate').eq('workspace_id', workspaceId).is('deleted_at', null).order('created_at'),
     supabase.from('truck_owners').select('id,truck_id,name,start_date,equity_percentage,monthly_draw_rate,avatar_color').eq('workspace_id', workspaceId).is('deleted_at', null).order('created_at'),
-    supabase.from('truck_transactions').select('id,truck_id,owner_id,occurred_on,transaction_type,category,amount,description,reference_no').eq('workspace_id', workspaceId).is('deleted_at', null).order('occurred_on', { ascending: false }),
+    supabase.from('truck_customers').select('id,truck_id,name,phone,address,notes').eq('workspace_id', workspaceId).is('deleted_at', null).order('created_at'),
+    supabase.from('truck_transactions').select('id,truck_id,owner_id,customer_id,occurred_on,transaction_type,category,amount,description,reference_no,counterparty_type,counterparty_name,settles_transaction_id').eq('workspace_id', workspaceId).is('deleted_at', null).order('occurred_on', { ascending: false }),
   ]);
-  if (trucks.error || owners.error || transactions.error) return;
-  await writeOffline(`truck:${userId}:${workspaceId}`, {
+  if (trucks.error || owners.error || customers.error || transactions.error) return;
+  // A prefetch is allowed to warm an empty cache, but it must never replace
+  // Truck data that still has local mutations waiting for synchronization.
+  if (await hasPendingMutationsForWorkspace(workspaceId, ['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'])) return;
+  await offlineStore.write(`truck:${userId}:${workspaceId}`, {
     trucks: (trucks.data ?? []).map((row) => ({ id: row.id, name: row.name, unitNumber: row.unit_number, makeModel: row.make_model, vin: row.vin, cashOnHand: Number(row.cash_on_hand ?? 0), licensePlate: row.license_plate })),
     owners: (owners.data ?? []).map((row) => ({ id: row.id, truckId: row.truck_id, name: row.name, startDate: row.start_date, equityPercentage: Number(row.equity_percentage ?? 0), monthlyDrawRate: Number(row.monthly_draw_rate ?? 0), avatarColor: row.avatar_color })),
-    transactions: (transactions.data ?? []).map((row) => ({ id: row.id, truckId: row.truck_id, date: row.occurred_on, type: row.transaction_type, category: row.category, amount: Number(row.amount ?? 0), ownerId: row.owner_id ?? undefined, description: row.description, referenceNo: row.reference_no ?? undefined })),
+    customers: (customers.data ?? []).map((row) => ({ id: row.id, truckId: row.truck_id, name: row.name, phone: row.phone ?? undefined, address: row.address ?? undefined, notes: row.notes ?? undefined })),
+    transactions: (transactions.data ?? []).map((row) => ({ id: row.id, truckId: row.truck_id, date: row.occurred_on, type: row.transaction_type, category: row.category, amount: Number(row.amount ?? 0), ownerId: row.owner_id ?? undefined, customerId: row.customer_id ?? undefined, description: row.description, referenceNo: row.reference_no ?? undefined, counterpartyType: row.counterparty_type ?? undefined, counterpartyName: row.counterparty_name ?? undefined, settlesTransactionId: row.settles_transaction_id ?? undefined })),
   });
 }

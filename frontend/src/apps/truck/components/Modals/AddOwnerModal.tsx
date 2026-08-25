@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { X, UserPlus, PieChart, DollarSign, Calendar } from 'lucide-react';
 import { Owner } from '../../types';
-import { AppDatePicker } from '../../../../components/AppDatePicker';
+import { useAsyncAction } from '../../../../hooks/useAsyncAction';
+import { OwnerFormFields } from '../OwnerFormFields';
+import { useOwnerFormDraft } from '../useOwnerFormDraft';
 
 interface AddOwnerModalProps {
   isOpen: boolean;
@@ -13,7 +15,7 @@ interface AddOwnerModalProps {
     startDate: string;
     equityPercentage: number;
     monthlyDrawRate: number;
-  }) => void;
+  }) => Promise<void>;
 }
 
 export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
@@ -22,40 +24,21 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
   editingOwner,
   onSubmitOwner,
 }) => {
-  const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [equityPercentage, setEquityPercentage] = useState('');
-  const [monthlyDrawRate, setMonthlyDrawRate] = useState('');
-
-  useEffect(() => {
-    if (editingOwner) {
-      setName(editingOwner.name);
-      setStartDate(editingOwner.startDate);
-      setEquityPercentage(editingOwner.equityPercentage.toString());
-      setMonthlyDrawRate(editingOwner.monthlyDrawRate.toString());
-    } else {
-      setName('');
-      setStartDate(new Date().toISOString().split('T')[0]);
-      setEquityPercentage('');
-      setMonthlyDrawRate('');
-    }
-  }, [editingOwner, isOpen]);
+  const { draft, setField } = useOwnerFormDraft(editingOwner, isOpen);
+  const { submitting, runAction } = useAsyncAction();
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-
-    onSubmitOwner({
+    if (!draft.name.trim() || submitting) return;
+    await runAction({ operation: () => onSubmitOwner({
       id: editingOwner ? editingOwner.id : undefined,
-      name,
-      startDate,
-      equityPercentage: parseFloat(equityPercentage) || 0,
-      monthlyDrawRate: parseFloat(monthlyDrawRate) || 0,
-    });
-
-    onClose();
+      name: draft.name,
+      startDate: draft.startDate,
+      equityPercentage: parseFloat(draft.equityPercentage) || 0,
+      monthlyDrawRate: parseFloat(draft.monthlyDrawRate) || 0,
+    }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onClose);
   };
 
   return (
@@ -86,72 +69,7 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs font-semibold">
-          {/* Owner Full Name */}
-          <div>
-            <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-              Owner / Partner Name *
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g., Marcus Vance"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-xl px-3 py-2.5 text-xs font-bold text-[#1c1d1f] focus:ring-2 focus:ring-[#3f4d34] focus:outline-none"
-            />
-          </div>
-
-          {/* Start Date */}
-          <div>
-            <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-              Partnership Start Date *
-            </label>
-            <AppDatePicker value={startDate} onChange={setStartDate} required />
-          </div>
-
-          {/* Equity Share % & Monthly Draw Rate */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                Equity Share (%) *
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  required
-                  placeholder="20"
-                  value={equityPercentage}
-                  onChange={(e) => setEquityPercentage(e.target.value)}
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-xl pl-3 pr-7 py-2.5 text-xs font-bold text-[#1c1d1f] focus:ring-2 focus:ring-[#3f4d34] focus:outline-none"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8c8880] font-bold">
-                  %
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                Monthly Draw / Rate ($)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8c8880] font-bold">
-                  $
-                </span>
-                <input
-                  type="number"
-                  step="100"
-                  placeholder="5000"
-                  value={monthlyDrawRate}
-                  onChange={(e) => setMonthlyDrawRate(e.target.value)}
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-xl pl-7 pr-3 py-2.5 text-xs font-bold text-[#1c1d1f] focus:ring-2 focus:ring-[#3f4d34] focus:outline-none"
-                />
-              </div>
-            </div>
-          </div>
+          <OwnerFormFields name={draft.name} setName={(value) => setField('name', value)} startDate={draft.startDate} setStartDate={(value) => setField('startDate', value)} equityPercentage={draft.equityPercentage} setEquityPercentage={(value) => setField('equityPercentage', value)} monthlyDrawRate={draft.monthlyDrawRate} setMonthlyDrawRate={(value) => setField('monthlyDrawRate', value)} />
 
           {/* Action Buttons */}
           <div className="pt-4 border-t border-[#e5dfd2] flex items-center justify-end gap-2">
@@ -164,9 +82,10 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
             </button>
             <button
               type="submit"
+              disabled={submitting}
               className="px-6 py-2.5 rounded-xl bg-[#3f4d34] hover:bg-[#323e29] text-white font-bold shadow-xs transition-transform active:scale-95"
             >
-              {editingOwner ? 'Update Owner' : 'Add Owner'}
+              {submitting ? 'Saving…' : editingOwner ? 'Update Owner' : 'Add Owner'}
             </button>
           </div>
         </form>

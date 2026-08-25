@@ -3,7 +3,13 @@ export type TransactionType =
   | 'EXPENSE'            // Diesel, maintenance, repairs, insurance, driver
   | 'CAPITAL_INJECTION'  // Owner gave cash to truck (Truck owes owner)
   | 'CAPITAL_REPAYMENT'  // Truck repaid cash back to owner
-  | 'PROFIT_DISTRIBUTION'; // Truck paid net profit dividend to owner
+  | 'PROFIT_DISTRIBUTION' // Truck paid net profit dividend to owner
+  | 'RECEIVABLE'          // Income earned but still owed by a customer/owner
+  | 'PAYABLE'             // Expense incurred but still owed to a supplier/owner
+  | 'RECEIVABLE_SETTLEMENT'
+  | 'PAYABLE_SETTLEMENT';
+
+export type CounterpartyType = 'CUSTOMER' | 'OWNER' | 'OTHER';
 
 export interface Owner {
   id: string;
@@ -13,6 +19,15 @@ export interface Owner {
   equityPercentage: number; // e.g. 50 = 50%
   monthlyDrawRate: number;  // Base monthly draw/rate e.g. 4800
   avatarColor: string;
+}
+
+export interface Customer {
+  id: string;
+  truckId: string;
+  name: string;
+  phone?: string;
+  address?: string;
+  notes?: string;
 }
 
 export interface Truck {
@@ -35,6 +50,10 @@ export interface Transaction {
   ownerId?: string; // Target owner if injection, repayment, or profit payout
   description: string;
   referenceNo?: string; // Check #, Invoice #, Receipt #
+  counterpartyType?: CounterpartyType;
+  customerId?: string;
+  counterpartyName?: string;
+  settlesTransactionId?: string;
 }
 
 export interface OwnerFinancialSummary {
@@ -61,4 +80,7 @@ export interface TruckFinancialSummary {
   ownerSummaries: OwnerFinancialSummary[];
   grossIncome: number;
   operatingExpenses: number;
+  totalReceivable: number;
+  totalPayable: number;
+  counterpartyBalances: Array<{ type: 'receivable' | 'payable'; name: string; ownerId?: string; amount: number }>;
 }

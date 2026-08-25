@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Employee, SalaryChange } from '../types';
-import { calculateEmployeeAccrual, getTodayString } from '../utils/calc';
-import { showAppToast } from '../../../lib/mobile';
+import { calculateEmployeeAccrual, getSalaryCycleDailyRate, getTodayString } from '../utils/calc';
 import { AppDatePicker } from '../../../components/AppDatePicker';
 import {
   TrendingUp,
@@ -16,6 +15,7 @@ import {
   ArrowRight,
   ChevronDown
 } from 'lucide-react';
+import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface AddRaiseViewProps {
   employees: Employee[];
@@ -38,6 +38,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const [validationMessage, setValidationMessage] = useState('');
   const [savedRaise, setSavedRaise] = useState<{ employeeName: string; amount: number; effectiveDate: string } | null>(null);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const { submitting, runAction } = useAsyncAction();
   const sortedEmployees = [...employees].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   useEffect(() => {
@@ -65,7 +66,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
   const salaryDiff = numNewSalary - currentRate;
   const percentDiff = currentRate > 0 ? (salaryDiff / currentRate) * 100 : 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmp || !Number.isFinite(numNewSalary) || numNewSalary <= 0 || !effectiveDate) return;
     if (numNewSalary <= currentRate) {
@@ -81,11 +82,10 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    onSaveRaise(selectedEmp.id, raise);
+    await runAction({ operation: () => onSaveRaise(selectedEmp.id, raise), successMessage: 'Raise saved successfully.' });
     setSavedRaise({ employeeName: selectedEmp.name, amount: numNewSalary, effectiveDate });
     setNewSalary('');
     setIsSuccess(true);
-    showAppToast('Raise saved successfully');
   };
 
   const formatMoney = (val: number) =>
@@ -142,7 +142,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
                 <div className="font-serif-title text-base font-bold text-zinc-900">
                   {formatMoney(currentRate)}/mo
                 </div>
-                <span className="text-[9px] text-zinc-500 font-mono">Daily: ${(currentRate * 12 / 365.25).toFixed(2)}/day</span>
+                <span className="text-[9px] text-zinc-500 font-mono">Cycle daily: ${selectedEmp ? getSalaryCycleDailyRate(selectedEmp.startDate, effectiveDate, currentRate).toFixed(2) : '0.00'}/day</span>
               </div>
 
               <div>
@@ -164,7 +164,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
                   />
                 </div>
                 {validationMessage && <span className="mt-1 block text-[10px] font-semibold text-red-600">{validationMessage}</span>}
-                <span className="text-[9px] text-zinc-500 font-mono">Daily: ${(numNewSalary * 12 / 365.25).toFixed(2)}/day</span>
+                <span className="text-[9px] text-zinc-500 font-mono">Cycle daily: ${selectedEmp ? getSalaryCycleDailyRate(selectedEmp.startDate, effectiveDate, numNewSalary).toFixed(2) : '0.00'}/day</span>
               </div>
             </div>
 
@@ -200,10 +200,10 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={!selectedEmp || !Number.isFinite(numNewSalary) || numNewSalary <= 0}
+                disabled={!selectedEmp || !Number.isFinite(numNewSalary) || numNewSalary <= 0 || submitting}
                 className="px-3.5 py-1.5 bg-[#54623e] hover:bg-[#435031] disabled:bg-zinc-300 text-white font-bold uppercase tracking-wider rounded-lg text-xs transition shadow-2xs cursor-pointer flex items-center gap-1"
               >
-                <TrendingUp className="w-3.5 h-3.5" /> Save Raise
+                <TrendingUp className="w-3.5 h-3.5" /> {submitting ? 'Saving…' : 'Save Raise'}
               </button>
             </div>
           </form>

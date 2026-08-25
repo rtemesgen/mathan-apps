@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { Search, FileText, Download } from 'lucide-react';
+import { Search, FileText } from 'lucide-react';
 import { TruckFinancialSummary } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { ExportButton } from '../../../components/ExportButton';
 
 interface ReportsViewProps {
   summary: TruckFinancialSummary;
   onPayOwner: (ownerId: string) => void;
-  onExport: () => void;
+  onExport: (filters?: { query?: string }) => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({ summary, onPayOwner, onExport }) => {
@@ -30,13 +31,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ summary, onPayOwner, o
           </h2>
         </div>
 
-        <button
-          onClick={onExport}
-          className="bg-[#1c1d1f] hover:bg-[#2e2f33] text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-2xs"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Export / Print</span>
-        </button>
+        <ExportButton onClick={() => onExport({ query: searchTerm || undefined })} />
       </div>
 
       {/* 3 Metric Cards in One Single Row */}
@@ -76,6 +71,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ summary, onPayOwner, o
             Repaid loans & profits
           </div>
         </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-2.5"><p className="text-[9px] font-bold uppercase text-blue-700">Customers owe</p><p className="mt-1 text-sm font-bold text-blue-950">{formatCurrency(summary.totalReceivable)}</p></div>
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5"><p className="text-[9px] font-bold uppercase text-rose-700">Truck owes</p><p className="mt-1 text-sm font-bold text-rose-950">{formatCurrency(summary.totalPayable)}</p></div>
+        <div className="col-span-2 rounded-xl border border-[#e5dfd2] bg-white p-2.5"><p className="text-[9px] font-bold uppercase text-[#8c8880]">Where money is held / owed</p><p className="mt-1 text-[11px] font-semibold text-[#4a4843]">{summary.counterpartyBalances.length ? summary.counterpartyBalances.map((item) => `${item.name}: ${formatCurrency(item.amount)} ${item.type === 'receivable' ? 'owed to truck' : 'payable'}`).join(' · ') : 'No open receivables or payables.'}</p></div>
       </div>
 
       {/* Search Bar */}

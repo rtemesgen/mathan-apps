@@ -8,6 +8,7 @@ type DownloadStatus = 'idle' | 'downloading' | 'paused' | 'ready' | 'error';
 type UpdateInfo = { version: string; url: string; downloadUrl: string };
 
 interface AppUpdaterPlugin {
+  scheduleUpdateChecks(): Promise<void>;
   downloadAndInstall(options: { url: string; filename?: string }): Promise<{ downloadId?: number }>;
   installDownloaded(): Promise<void>;
   getDownloadProgress(): Promise<{ progress: number; downloaded: number; total: number; status: string }>;
@@ -88,7 +89,8 @@ function useUpdateController() {
         setDownloadProgress(0);
         setDownloadStatus(readDownloadStatus(next.version));
         setNoticeVisible(true);
-        emitAppNotification({ title: 'Mathan ERP update available', body: `Version ${next.version} is ready to download.` });
+        const notification = { title: 'Mathan ERP update available', body: `Version ${next.version} is ready to download. Tap to open Mathan ERP.`, url: '/' };
+        emitAppNotification(notification);
         return next;
       }
       setUpdate(null);
@@ -101,6 +103,16 @@ function useUpdateController() {
       return null;
     }
   }, []);
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return;
+    let active = true;
+    void AppUpdater.scheduleUpdateChecks().catch(() => undefined);
+    void checkForUpdate();
+    const resume = CapacitorApp.addListener('resume', () => { if (active) void checkForUpdate(); });
+    const timer = window.setInterval(() => { if (active) void checkForUpdate(); }, 6 * 60 * 60 * 1000);
+    return () => { active = false; void resume.then((handle) => handle.remove()); window.clearInterval(timer); };
+  }, [checkForUpdate]);
 
   const downloadUpdate = useCallback(() => {
     if (update) void startDownload(update);

@@ -1,5 +1,6 @@
 import { Employee, Transaction, EmployeeAccrualSummary, AccrualInterval, CompanyStats } from '../types';
-import { saveTextFile } from '../../../lib/mobile';
+import { createCsv, downloadTextFile } from '../../../lib/fileExport';
+import { formatExportNumber } from '../../../lib/exports/numberFormatting';
 
 /**
  * Format currency to USD or standard localized format
@@ -72,6 +73,48 @@ export function addDays(dateStr: string, days: number): string {
   return `${y}-${m}-${d}`;
 }
 
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+function anniversaryDate(year: number, month: number, dayOfMonth: number): string {
+  const day = Math.min(dayOfMonth, daysInMonth(year, month));
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * Return the salary cycle containing a date. A cycle starts on the employee's
+ * start day each month and ends the day before the next anniversary. Month-end
+ * start dates are clamped to the last day of shorter months.
+ */
+function salaryCycleForDate(startDateStr: string, dateStr: string): { start: string; end: string; days: number } {
+  const startDay = Number(startDateStr.split('-')[2]);
+  const [year, month] = dateStr.split('-').map(Number);
+  let cycleYear = year;
+  let cycleMonth = month - 1;
+  let cycleStart = anniversaryDate(cycleYear, cycleMonth, startDay);
+
+  if (cycleStart > dateStr) {
+    cycleMonth -= 1;
+    if (cycleMonth < 0) {
+      cycleMonth = 11;
+      cycleYear -= 1;
+    }
+    cycleStart = anniversaryDate(cycleYear, cycleMonth, startDay);
+  }
+
+  const nextMonth = cycleMonth === 11 ? 0 : cycleMonth + 1;
+  const nextYear = cycleMonth === 11 ? cycleYear + 1 : cycleYear;
+  const nextStart = anniversaryDate(nextYear, nextMonth, startDay);
+  const cycleEnd = addDays(nextStart, -1);
+
+  return { start: cycleStart, end: cycleEnd, days: calculateDaysBetween(cycleStart, cycleEnd) };
+}
+
+export function getSalaryCycleDailyRate(startDateStr: string, dateStr: string, monthlySalary: number): number {
+  return (Number(monthlySalary) || 0) / salaryCycleForDate(startDateStr, dateStr).days;
+}
+
 /**
  * Core Calculation Engine for Employee Salary Accrual
  * Calculates cumulative earnings from employee start date up to asOfDate
@@ -113,6 +156,13 @@ export function calculateEmployeeAccrual(
     };
   }
 
+  // Treat an anniversary date as the completed-cycle boundary. The new cycle
+  // starts the following day for accrual purposes, so Jan 17 → Feb 17 is
+  // exactly one monthly salary rather than one salary plus a new-cycle day.
+  const calculationEndDate = asOfDateStr > startDate && salaryCycleForDate(startDate, asOfDateStr).start === asOfDateStr
+    ? addDays(earningsEndDate, -1)
+    : earningsEndDate;
+
   // Sort salary history changes chronologically by effective date
   const sortedSalaryHistory = [...salaryChanges].sort((a, b) =>
     a.effectiveDate.localeCompare(b.effectiveDate)
@@ -126,8 +176,8 @@ export function calculateEmployeeAccrual(
     }
   }
 
-  // Build timeline intervals
-  // We identify key rate change dates that fall between startDate and asOfDate
+  // Build timeline intervals. Anniversary boundaries ensure every completed
+  // salary cycle is exactly one monthly salary, regardless of month length.
   interface RateMilestone {
     date: string;
     rate: number;
@@ -146,20 +196,42 @@ export function calculateEmployeeAccrual(
     startNote = `Base Rate set by ${lastPrior.reason}`;
   }
 
-  const milestones: RateMilestone[] = [
-    { date: startDate, rate: baseRateAtStart, reasonNote: startNote },
-  ];
+  const milestoneDates = new Set<string>([startDate]);
 
   // Add changes that happen after startDate and on or before asOfDate
   for (const change of sortedSalaryHistory) {
-    if (change.effectiveDate > startDate && change.effectiveDate <= earningsEndDate) {
-      milestones.push({
-        date: change.effectiveDate,
-        rate: change.newMonthlySalary,
-        reasonNote: change.reason,
-      });
+    if (change.effectiveDate > startDate && change.effectiveDate <= calculationEndDate) {
+      milestoneDates.add(change.effectiveDate);
     }
   }
+
+  // Add each monthly anniversary through the requested date. The next cycle
+  // boundary is not needed because the last interval is capped at asOfDate.
+  const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+  const [endYear, endMonth] = calculationEndDate.split('-').map(Number);
+  let cursorYear = startYear;
+  let cursorMonth = startMonth - 1;
+  while (cursorYear < endYear || (cursorYear === endYear && cursorMonth <= endMonth)) {
+    const cycleStart = anniversaryDate(cursorYear, cursorMonth, startDay);
+    if (cycleStart > startDate && cycleStart <= calculationEndDate) milestoneDates.add(cycleStart);
+    cursorMonth += 1;
+    if (cursorMonth === 12) {
+      cursorMonth = 0;
+      cursorYear += 1;
+    }
+  }
+
+  const milestones: RateMilestone[] = [...milestoneDates].map((date) => {
+    let rate = baseRateAtStart;
+    let reasonNote = startNote;
+    for (const change of sortedSalaryHistory) {
+      if (change.effectiveDate <= date) {
+        rate = change.newMonthlySalary;
+        reasonNote = change.effectiveDate === date ? change.reason : reasonNote;
+      }
+    }
+    return { date, rate, reasonNote };
+  });
 
   // Sort milestones chronologically
   milestones.sort((a, b) => a.date.localeCompare(b.date));
@@ -177,21 +249,22 @@ export function calculateEmployeeAccrual(
       const nextDate = milestones[i + 1].date;
       intervalEnd = addDays(nextDate, -1);
     } else {
-      intervalEnd = earningsEndDate;
+      intervalEnd = calculationEndDate;
     }
 
     if (intervalEnd >= intervalStart) {
       const daysInInterval = calculateDaysBetween(intervalStart, intervalEnd);
       const leaveStart = employee.leaveStartDate || '';
-      const leaveEnd = employee.leaveEndDate || earningsEndDate;
+      const leaveEnd = employee.leaveEndDate || calculationEndDate;
       const leaveDays = leaveStart && leaveStart <= intervalEnd && leaveEnd >= intervalStart
         ? calculateDaysBetween(leaveStart > intervalStart ? leaveStart : intervalStart, leaveEnd < intervalEnd ? leaveEnd : intervalEnd)
         : 0;
       const days = Math.max(0, daysInInterval - leaveDays);
       if (days === 0) continue;
-      // Daily rate based on 365.25 days per year (standard financial daily rate = monthly * 12 / 365.25)
-      const dailyRate = (currentMs.rate * 12) / 365.25;
-      const accruedAmount = days * dailyRate;
+      const dailyRate = getSalaryCycleDailyRate(startDate, intervalStart, currentMs.rate);
+      // A partial cycle is prorated; the cap prevents rounding or unusual
+      // month-end calendars from ever exceeding its monthly salary.
+      const accruedAmount = Math.min(currentMs.rate, days * dailyRate);
 
       totalAccruedWages += accruedAmount;
 
@@ -281,19 +354,19 @@ export function exportPayrollCSV(
   const rows = employees.map((emp) => {
     const summary = calculateEmployeeAccrual(emp, transactions, asOfDateStr);
     return [
-      `"${emp.id}"`,
-      `"${emp.name}"`,
-      `"${emp.startDate}"`,
-      summary.currentMonthlySalary.toFixed(2),
-      summary.totalAccruedWages.toFixed(2),
-      summary.totalWithdrawn.toFixed(2),
-      summary.remainingBalance.toFixed(2),
-      `"${emp.status}"`,
-      `"${summary.lastPayoutDate || 'None'}"`,
+      emp.id,
+      emp.name,
+      emp.startDate,
+      formatExportNumber(summary.currentMonthlySalary),
+      formatExportNumber(summary.totalAccruedWages),
+      formatExportNumber(summary.totalWithdrawn),
+      formatExportNumber(summary.remainingBalance),
+      emp.status,
+      summary.lastPayoutDate || 'None',
     ];
   });
 
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  return createCsv(headers, rows);
 }
 
 /**
@@ -318,24 +391,24 @@ export function exportTransactionsCSV(
   const rows = transactions.map((t) => {
     const empName = employeesMap[t.employeeId]?.name || t.employeeName || 'Unknown';
     return [
-      `"${t.id}"`,
-      `"${t.date}"`,
-      `"${empName}"`,
-      `"${t.employeeId}"`,
-      `"${t.type}"`,
-      t.amount.toFixed(2),
-      `"${t.paymentMethod}"`,
-      `"${t.referenceNo || ''}"`,
-      `"${(t.notes || '').replace(/"/g, '""')}"`,
+      t.id,
+      t.date,
+      empName,
+      t.employeeId,
+      t.type,
+      formatExportNumber(t.amount),
+      t.paymentMethod,
+      t.referenceNo || '',
+      t.notes || '',
     ];
   });
 
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  return createCsv(headers, rows);
 }
 
 /**
  * Trigger browser file download for a text string (CSV, JSON, etc.)
  */
 export function downloadFile(filename: string, content: string, type = 'text/csv;charset=utf-8;') {
-  void saveTextFile(filename, content, type);
+  void downloadTextFile(filename, content, type);
 }

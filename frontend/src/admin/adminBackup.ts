@@ -1,4 +1,4 @@
-import { readOffline, writeOffline } from '../lib/localStore';
+import { offlineStore } from '../lib/localStore';
 import { saveBinaryFile } from '../lib/mobile';
 import { adminRequest } from './adminApi';
 import { supabase } from '../lib/supabase';
@@ -47,14 +47,14 @@ async function deriveKey(passphrase: string, salt: Uint8Array) {
 }
 
 function isCryptoKey(value: unknown): value is CryptoKey { return Boolean(value && typeof value === 'object' && 'type' in value && (value as CryptoKey).type === 'secret'); }
-export async function hasDeviceBackupKey() { return isCryptoKey(await readOffline<CryptoKey>(KEY_STORAGE)); }
+export async function hasDeviceBackupKey() { return isCryptoKey(await offlineStore.read<CryptoKey>(KEY_STORAGE)); }
 export async function configureDeviceBackupKey(passphrase: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await deriveKey(passphrase, salt);
   const verifier = await digest({ salt: bytesToBase64(salt), purpose: 'mathan-admin-backup' });
-  await writeOffline(KEY_STORAGE, key);
-  await writeOffline<BackupKeyMeta>(KEY_META_STORAGE, { salt: bytesToBase64(salt), verifier });
-  if (!isCryptoKey(await readOffline<CryptoKey>(KEY_STORAGE))) throw new Error('This browser could not store the protected device key. Check private-browsing or storage restrictions.');
+  await offlineStore.write(KEY_STORAGE, key);
+  await offlineStore.write<BackupKeyMeta>(KEY_META_STORAGE, { salt: bytesToBase64(salt), verifier });
+  if (!isCryptoKey(await offlineStore.read<CryptoKey>(KEY_STORAGE))) throw new Error('This browser could not store the protected device key. Check private-browsing or storage restrictions.');
 }
 export function backupCompletedToday() { const today = new Date().toISOString().slice(0, 10); return localStorage.getItem(DAILY_MARKER) === today || localStorage.getItem(DAILY_RUNNING_MARKER) === today; }
 export function markAutomaticBackupStarted() { localStorage.setItem(DAILY_RUNNING_MARKER, new Date().toISOString().slice(0, 10)); }
@@ -88,8 +88,8 @@ async function retry<T>(operation: () => Promise<T>, signal?: AbortSignal) {
 }
 
 export async function createEncryptedAdminBackup(kind: 'automatic' | 'manual', onProgress: (progress: BackupProgress) => void, signal?: AbortSignal) {
-  const key = await readOffline<CryptoKey>(KEY_STORAGE);
-  const keyMeta = await readOffline<BackupKeyMeta>(KEY_META_STORAGE);
+  const key = await offlineStore.read<CryptoKey>(KEY_STORAGE);
+  const keyMeta = await offlineStore.read<BackupKeyMeta>(KEY_META_STORAGE);
   if (!isCryptoKey(key) || !keyMeta) throw new Error('Set the recovery passphrase on this device first.');
   const started = await adminRequest<{ run: { id: string }; counts: Record<string, number>; resources: string[]; schema_version: '2' }>('start-backup', { kind });
   const total = Object.values(started.counts).reduce((sum, count) => sum + count, 0);
@@ -131,7 +131,7 @@ export async function createEncryptedAdminBackup(kind: 'automatic' | 'manual', o
       cipher: { name: 'AES-GCM', iv: bytesToBase64(iv), data: bytesToBase64(encrypted) },
     };
     const content = JSON.stringify(container);
-    await writeOffline(LATEST_BACKUP, content);
+    await offlineStore.write(LATEST_BACKUP, content);
     await adminRequest('finish-backup', { run_id: started.run.id, status: 'completed', record_count: completed, attachment_count: started.counts.attachments ?? 0, size_bytes: content.length, checksum });
     localStorage.setItem(DAILY_MARKER, new Date().toISOString().slice(0, 10));
     clearAutomaticBackupStarted();
@@ -148,7 +148,7 @@ export async function downloadBackup(filename: string, content: string) {
   await saveBinaryFile(filename, 'application/json', encoder.encode(content));
 }
 export async function downloadLatestBackup() {
-  const content = await readOffline<string>(LATEST_BACKUP);
+  const content = await offlineStore.read<string>(LATEST_BACKUP);
   if (!content) throw new Error('No local administrator backup is available on this device.');
   await downloadBackup(`mathan-system-backup-latest.meb.json`, content);
 }

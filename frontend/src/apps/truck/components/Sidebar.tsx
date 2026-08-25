@@ -6,13 +6,12 @@ import {
   ArrowUpRight, 
   FileText, 
   History, 
-  Truck as TruckIcon,
   ChevronRight,
   X,
   DollarSign,
   LayoutDashboard,
 } from 'lucide-react';
-import { Truck, TruckFinancialSummary } from '../types';
+import { TruckFinancialSummary } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { AppSidebarFooter } from '../../../components/AppSidebarFooter';
 import { AppBrand } from '../../../components/AppBrand';
@@ -25,16 +24,13 @@ interface SidebarProps {
   currentView: string;
   setCurrentView: (view: string) => void;
   summary: TruckFinancialSummary;
-  trucks: Truck[];
-  currentTruckId: string;
-  onSelectTruck: (truckId: string) => void;
   calculationDate: string;
   setCalculationDate: (date: string) => void;
   onResetDemoData: () => void;
   onOpenAddOwner: () => void;
+  onOpenCustomers: () => void;
   onOpenIncome: () => void;
   onOpenExpenses: () => void;
-  onOpenAddTruck: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -43,19 +39,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   setCurrentView,
   summary,
-  trucks,
-  currentTruckId,
   onResetDemoData,
   onOpenAddOwner,
+  onOpenCustomers,
   onOpenIncome,
   onOpenExpenses,
-  onOpenAddTruck,
   
 }) => {
   const { workspace, signOut, isGuest } = useAuth();
   if (!isOpen) return null;
-
-  const selectedTruck = trucks.find(t => t.id === currentTruckId) || trucks[0];
 
   const menuItems = [
     { 
@@ -73,6 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       onClickView: 'partners',
       hasArrow: true
     },
+    { id: 'customers', label: 'Customers', icon: Users, onClickView: 'customers', hasArrow: true },
     { 
       id: 'income', 
       label: 'Income (Trips)', 
@@ -145,15 +138,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span>Cash: <strong className="text-[#3f4d34]">{formatCurrency(summary.cashOnHand, false)}</strong></span>
             <span>Paid: <strong className="text-[#2e7d32]">{formatCurrency(summary.totalOwnerRepayments + summary.totalProfitDistributed, false)}</strong></span>
           </div>
-        </div>
-
-        <div className="mx-3 mb-1 bg-[#ffffff] border border-[#e5dfd2] rounded-lg p-0.5 flex items-center justify-between shadow-2xs">
-          <div className="flex min-w-0 items-center gap-0.5">
-            <TruckIcon className="h-2.5 w-2.5 shrink-0 text-[#3f4d34]" />
-            <span className="truncate text-[8px] font-bold text-[#1c1d1f]">{selectedTruck?.name || 'No truck selected'}</span>
-            {selectedTruck?.unitNumber && <span className="shrink-0 text-[7px] text-[#787672]">Unit {selectedTruck.unitNumber}</span>}
-          </div>
-          <button onClick={() => { onOpenAddTruck(); onClose(); }} className="sidebar-compact-action shrink-0 rounded-[7px] border border-[#c8e6c9] bg-[#eef5eb] px-1 py-0.5 text-[7px] font-bold leading-none text-[#2e7d32] hover:bg-[#dcedc8]">Fleet</button>
         </div>
 
         {/* Navigation Menu */}

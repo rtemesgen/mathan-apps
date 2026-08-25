@@ -1,0 +1,62 @@
+import type { CsvValue } from '../fileExport';
+
+export type ExportFormat = 'pdf' | 'xlsx' | 'csv' | 'print';
+export type ExportDetail = 'condensed' | 'detailed' | 'full';
+export type ExportDatePreset = 'all' | 'daily' | 'weekly' | 'monthly' | 'custom';
+
+export type ExportBuildOptions = {
+  detail: ExportDetail;
+  entityId?: string;
+  ownerId?: string;
+  query?: string;
+  category?: string;
+  startDate?: string;
+  endDate?: string;
+  transactionType?: string;
+  status?: string;
+};
+
+export type ExportMetadata = {
+  companyName: string;
+  entityName?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export type ExportSummaryItem = { label: string; value: string; tone?: 'neutral' | 'positive' | 'negative' };
+
+export type ExportReport = {
+  title: string;
+  filename: string;
+  headers: string[];
+  rows: CsvValue[][];
+  lines?: string[];
+  metadata?: ExportMetadata;
+  summary?: ExportSummaryItem[];
+  dateRange?: { startDate?: string; endDate?: string };
+};
+
+export type ExportReportDefinition = {
+  id: string;
+  label: string;
+  description: string;
+  build: (options: ExportBuildOptions) => ExportReport;
+};
+
+export type ExportEntityOption = { value: string; label: string };
+export type ExportFilterOption = { value: string; label: string };
+
+export type ExportContext = {
+  companyName: string;
+  appName: string;
+  reportName: string;
+  report: ExportReportDefinition;
+  selectedEntity?: ExportEntityOption;
+  activeFilters?: Pick<ExportBuildOptions, 'entityId' | 'ownerId' | 'query' | 'category' | 'startDate' | 'endDate' | 'transactionType' | 'status'>;
+  availableFormats?: ExportFormat[];
+  availableDetailLevels?: ExportDetail[];
+  availableEntities?: ExportEntityOption[];
+  availableTransactionTypes?: ExportFilterOption[];
+  availableOwners?: ExportEntityOption[];
+  availableCategories?: ExportFilterOption[];
+};

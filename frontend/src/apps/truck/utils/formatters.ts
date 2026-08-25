@@ -21,6 +21,17 @@ export const formatDate = (dateString: string): string => {
   });
 };
 
+/** Returns only the user-entered transaction detail, not the category label. */
+export const transactionDetails = (transaction: Pick<Transaction, 'description' | 'category'>): string => {
+  const description = transaction.description?.trim() ?? '';
+  const category = transaction.category?.trim() ?? '';
+  if (!description || description === category || (category && description === `${category} entry`)) return '';
+  const categorySuffix = category ? ` - ${category}` : '';
+  return categorySuffix && description.endsWith(categorySuffix)
+    ? description.slice(0, -categorySuffix.length).trim()
+    : description;
+};
+
 /**
  * Calculates complete financial metrics for a truck given its owners and transactions
  */
@@ -40,23 +51,42 @@ export const calculateTruckFinancials = (
   let totalOwnerInjections = 0;
   let totalOwnerRepayments = 0;
   let totalProfitDistributed = 0;
+  let cashIncome = 0;
+  let cashExpenses = 0;
 
   filteredTx.forEach((tx) => {
     switch (tx.type) {
       case 'INCOME':
         totalIncome += tx.amount;
+        cashIncome += tx.amount;
         break;
       case 'EXPENSE':
         totalExpenses += tx.amount;
+        cashExpenses += tx.amount;
+        break;
+      case 'RECEIVABLE':
+        totalIncome += tx.amount;
+        break;
+      case 'PAYABLE':
+        totalExpenses += tx.amount;
+        break;
+      case 'RECEIVABLE_SETTLEMENT':
+        cashIncome += tx.amount;
+        break;
+      case 'PAYABLE_SETTLEMENT':
+        cashExpenses += tx.amount;
         break;
       case 'CAPITAL_INJECTION':
         totalOwnerInjections += tx.amount;
+        cashIncome += tx.amount;
         break;
       case 'CAPITAL_REPAYMENT':
         totalOwnerRepayments += tx.amount;
+        cashExpenses += tx.amount;
         break;
       case 'PROFIT_DISTRIBUTION':
         totalProfitDistributed += tx.amount;
+        cashExpenses += tx.amount;
         break;
     }
   });
@@ -64,7 +94,34 @@ export const calculateTruckFinancials = (
   const netProfit = totalIncome - totalExpenses;
   
   // Cash on hand = Initial cash + Income - Expenses + Injections - Repayments - Profit Distributed
-  const computedCashOnHand = truck.cashOnHand + totalIncome - totalExpenses + totalOwnerInjections - totalOwnerRepayments - totalProfitDistributed;
+  const computedCashOnHand = truck.cashOnHand + cashIncome - cashExpenses;
+
+  const outstanding = new Map<string, { type: 'receivable' | 'payable'; amount: number; name: string; ownerId?: string }>();
+  filteredTx.forEach((tx) => {
+    if (tx.type === 'RECEIVABLE' || tx.type === 'PAYABLE') {
+      outstanding.set(tx.id, { type: tx.type === 'RECEIVABLE' ? 'receivable' : 'payable', amount: tx.amount, name: tx.counterpartyName || 'Unassigned', ownerId: tx.ownerId });
+    }
+  });
+  filteredTx.forEach((tx) => {
+    if ((tx.type === 'RECEIVABLE_SETTLEMENT' || tx.type === 'PAYABLE_SETTLEMENT') && tx.settlesTransactionId) {
+      const item = outstanding.get(tx.settlesTransactionId);
+      if (item) item.amount = Math.max(0, item.amount - tx.amount);
+    } else if (tx.type === 'RECEIVABLE_SETTLEMENT' || tx.type === 'PAYABLE_SETTLEMENT') {
+      const expectedType = tx.type === 'RECEIVABLE_SETTLEMENT' ? 'receivable' : 'payable';
+      let remaining = tx.amount;
+      for (const item of outstanding.values()) {
+        if (remaining <= 0) break;
+        if (item.type === expectedType && item.name.toLowerCase() === (tx.counterpartyName || '').trim().toLowerCase()) {
+          const applied = Math.min(item.amount, remaining);
+          item.amount -= applied;
+          remaining -= applied;
+        }
+      }
+    }
+  });
+  const counterpartyBalances = [...outstanding.values()].filter((item) => item.amount > 0).map((item) => ({ type: item.type, name: item.name, ownerId: item.ownerId, amount: item.amount }));
+  const totalReceivable = counterpartyBalances.filter((item) => item.type === 'receivable').reduce((sum, item) => sum + item.amount, 0);
+  const totalPayable = counterpartyBalances.filter((item) => item.type === 'payable').reduce((sum, item) => sum + item.amount, 0);
 
   // Calculate per-owner metrics
   const ownerSummaries: OwnerFinancialSummary[] = owners.map((owner) => {
@@ -123,5 +180,8 @@ export const calculateTruckFinancials = (
     ownerSummaries,
     grossIncome: totalIncome,
     operatingExpenses: totalExpenses,
+    totalReceivable,
+    totalPayable,
+    counterpartyBalances,
   };
 };
