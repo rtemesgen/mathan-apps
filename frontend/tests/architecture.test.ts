@@ -44,6 +44,9 @@ assert.match(read('apps/truck/components/Pages/ExportPage.tsx'), /downloadCsvFil
 assert.match(read('components/CompanySelector.tsx'), /useAsyncAction/);
 assert.match(read('lib/repositories/snapshotRepository.ts'), /snapshotTails/);
 assert.match(read('lib/repositories/snapshotRepository.ts'), /relevant\.length > 0/);
+assert.match(read('lib/repositories/personalDataRepository.ts'), /loadPersonalDataArchive/);
+assert.match(read('components/SettingsPage.tsx'), /loadPersonalDataArchive/);
+assert.doesNotMatch(read('components/SettingsPage.tsx'), /supabase\.from\('(app_state_snapshots|trucks|truck_owners|truck_transactions)'\)/);
 assert.match(read('hooks/useAsyncAction.ts'), /gate\.current/);
 assert.match(read('hooks/useAsyncAction.ts'), /runAction/);
 assert.match(read('hooks/useAsyncAction.ts'), /tone: 'success'/);
