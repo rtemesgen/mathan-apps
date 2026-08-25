@@ -6,6 +6,10 @@ const options: Array<{ value: TransactionType; label: string; active: string }> 
   { value: 'CAPITAL_INJECTION', label: 'Owner Cash Loan', active: 'bg-[#e65100] text-white shadow-xs' },
   { value: 'CAPITAL_REPAYMENT', label: 'Truck Repays Loan', active: 'bg-[#3f4d34] text-white shadow-xs' },
   { value: 'PROFIT_DISTRIBUTION', label: 'Distribute Profit Dividend', active: 'bg-[#6a1b9a] text-white shadow-xs' },
+  { value: 'RECEIVABLE', label: 'Money Owed to Truck', active: 'bg-[#1565c0] text-white shadow-xs' },
+  { value: 'PAYABLE', label: 'Money Truck Owes', active: 'bg-[#ad1457] text-white shadow-xs' },
+  { value: 'RECEIVABLE_SETTLEMENT', label: 'Receive Owed Money', active: 'bg-[#0277bd] text-white shadow-xs' },
+  { value: 'PAYABLE_SETTLEMENT', label: 'Pay Owed Money', active: 'bg-[#8e244d] text-white shadow-xs' },
 ];
 
 export function TransactionTypeTabs({ value, onChange, label = 'Entry Type', compact = false }: { value: TransactionType; onChange: (value: TransactionType) => void; label?: string; compact?: boolean }) {

@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { createTruck, createTruckOwner, createTruckTransaction, createTruckTransactionBatch, deleteTruck, deleteTruckOwner, softDeleteTruckTransaction, updateTruck, updateTruckOwner, updateTruckTransaction } from './truckRepository';
-import type { Owner, Transaction, TransactionType, Truck } from './types';
+import { createTruck, createTruckCustomer, createTruckOwner, createTruckTransaction, createTruckTransactionBatch, deleteTruck, deleteTruckCustomer, deleteTruckOwner, softDeleteTruckTransaction, updateTruck, updateTruckCustomer, updateTruckOwner, updateTruckTransaction } from './truckRepository';
+import type { Customer, Owner, Transaction, TransactionType, Truck } from './types';
 import { formatCurrency, formatDate } from './utils/formatters';
 import type { DeleteConfirmationRequest } from '../../hooks/useDeleteConfirmation';
 
@@ -13,6 +13,7 @@ type TruckMutationArgs = {
   editable: boolean;
   trucks: Truck[];
   owners: Owner[];
+  customers: Customer[];
   transactions: Transaction[];
   activeTruck: Truck;
   editingTransaction: Transaction | null;
@@ -24,7 +25,7 @@ type TruckMutationArgs = {
   openDelete: (request: TruckDeleteRequest) => void;
 };
 
-export function useTruckMutations({ workspaceId, isGuest, editable, trucks, owners, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete }: TruckMutationArgs) {
+export function useTruckMutations({ workspaceId, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete }: TruckMutationArgs) {
   const handleAddTransaction = async (txData: {
     truckId: string;
     date: string;
@@ -34,6 +35,9 @@ export function useTruckMutations({ workspaceId, isGuest, editable, trucks, owne
     ownerId?: string;
     description: string;
     referenceNo?: string;
+    counterpartyType?: 'CUSTOMER' | 'OWNER' | 'OTHER';
+    customerId?: string;
+    counterpartyName?: string;
   }) => {
     if (!workspaceId || !editable) throw new Error('You do not have permission to edit Truck data.');
     try { await createTruckTransaction(workspaceId, txData, isGuest); await refresh(); setError(''); }
@@ -77,6 +81,17 @@ export function useTruckMutations({ workspaceId, isGuest, editable, trucks, owne
     }
   };
 
+  const handleAddOrUpdateCustomer = async (customerData: { id?: string; truckId: string; name: string; phone?: string; address?: string; notes?: string }) => {
+    if (!workspaceId || !editable) throw new Error('You do not have permission to edit Truck data.');
+    try {
+      if (customerData.id) {
+        const existing = customers.find((customer) => customer.id === customerData.id);
+        if (existing) await updateTruckCustomer(workspaceId, { ...existing, ...customerData, id: customerData.id }, isGuest);
+      } else await createTruckCustomer(workspaceId, { ...customerData, truckId: customerData.truckId || activeTruck.id }, isGuest);
+      await refresh(); setError('');
+    } catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not save customer.'; setError(message); throw reason; }
+  };
+
   const handleAddTruckSubmit = async (truckData: Omit<Truck, 'id'>) => {
     if (!workspaceId || !editable) throw new Error('You do not have permission to edit Truck data.');
     try { const newTruck = await createTruck(workspaceId, truckData, isGuest); setCurrentTruckId(newTruck.id); await refresh(); setError(''); }
@@ -116,5 +131,14 @@ export function useTruckMutations({ workspaceId, isGuest, editable, trucks, owne
     } });
   };
 
-  return { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner };
+  const handleDeleteCustomer = (customerId: string) => {
+    const customer = customers.find((item) => item.id === customerId);
+    openDelete({ title: 'Delete customer', message: 'Remove this customer from the Truck customer list? Existing transactions remain unchanged.', itemName: customer?.name ?? 'Customer', onConfirm: async () => {
+      if (!workspaceId || !editable) return;
+      try { await deleteTruckCustomer(workspaceId, customerId, isGuest); await refresh(); setError(''); }
+      catch (reason) { const error = reason instanceof Error ? reason : new Error('Could not delete customer.'); setError(error.message); throw error; }
+    } });
+  };
+
+  return { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddOrUpdateCustomer, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner, handleDeleteCustomer };
 }

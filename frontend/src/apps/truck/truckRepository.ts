@@ -4,10 +4,10 @@ import { enqueueMutation, getWorkspaceMutationStatus } from '../../lib/syncQueue
 import { syncQueue } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import { persistBeforeQueue } from '../../lib/repositories/mutationLifecycle';
-import type { Owner, Transaction, Truck } from './types';
+import type { Customer, Owner, Transaction, Truck } from './types';
 
 export type TruckPersistenceStatus = 'saving' | 'saved locally' | 'offline saved' | 'sync pending' | 'storage error' | 'sync conflict';
-const TRUCK_TABLES = ['trucks', 'truck_owners', 'truck_transactions'];
+const TRUCK_TABLES = ['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'];
 
 function reportTruckStatus(status: TruckPersistenceStatus) {
   reportPersistenceNotice({ app: 'truck', state: status as PersistenceState });
@@ -20,11 +20,12 @@ function explain(error: { message?: string; code?: string }) {
 
 const truckFromDb = (r: Record<string, unknown>): Truck => ({ id: String(r.id), name: String(r.name ?? ''), unitNumber: String(r.unit_number ?? ''), makeModel: String(r.make_model ?? ''), vin: String(r.vin ?? ''), cashOnHand: Number(r.cash_on_hand ?? 0), licensePlate: String(r.license_plate ?? '') });
 const ownerFromDb = (r: Record<string, unknown>): Owner => ({ id: String(r.id), truckId: String(r.truck_id), name: String(r.name ?? ''), startDate: String(r.start_date ?? ''), equityPercentage: Number(r.equity_percentage ?? 0), monthlyDrawRate: Number(r.monthly_draw_rate ?? 0), avatarColor: String(r.avatar_color ?? 'bg-slate-800 text-white') });
-const transactionFromDb = (r: Record<string, unknown>): Transaction => ({ id: String(r.id), truckId: String(r.truck_id), date: String(r.occurred_on), type: r.transaction_type as Transaction['type'], category: String(r.category ?? ''), amount: Number(r.amount ?? 0), ownerId: r.owner_id ? String(r.owner_id) : undefined, description: String(r.description ?? ''), referenceNo: r.reference_no ? String(r.reference_no) : undefined });
+const customerFromDb = (r: Record<string, unknown>): Customer => ({ id: String(r.id), truckId: String(r.truck_id), name: String(r.name ?? ''), phone: r.phone ? String(r.phone) : undefined, address: r.address ? String(r.address) : undefined, notes: r.notes ? String(r.notes) : undefined });
+const transactionFromDb = (r: Record<string, unknown>): Transaction => ({ id: String(r.id), truckId: String(r.truck_id), date: String(r.occurred_on), type: r.transaction_type as Transaction['type'], category: String(r.category ?? ''), amount: Number(r.amount ?? 0), ownerId: r.owner_id ? String(r.owner_id) : undefined, customerId: r.customer_id ? String(r.customer_id) : undefined, description: String(r.description ?? ''), referenceNo: r.reference_no ? String(r.reference_no) : undefined, counterpartyType: r.counterparty_type as Transaction['counterpartyType'] | undefined, counterpartyName: r.counterparty_name ? String(r.counterparty_name) : undefined, settlesTransactionId: r.settles_transaction_id ? String(r.settles_transaction_id) : undefined });
 
-export type TruckCache = { trucks: Truck[]; owners: Owner[]; transactions: Transaction[] };
+export type TruckCache = { trucks: Truck[]; owners: Owner[]; customers: Customer[]; transactions: Transaction[] };
 const cacheKey = async (workspaceId: string) => { const { data } = await supabase.auth.getSession(); return `truck:${data.session?.user.id ?? 'guest'}:${workspaceId}`; };
-const emptyCache = (): TruckCache => ({ trucks: [], owners: [], transactions: [] });
+const emptyCache = (): TruckCache => ({ trucks: [], owners: [], customers: [], transactions: [] });
 const cacheTails = new Map<string, Promise<void>>();
 
 function withCacheLock<T>(workspaceId: string, operation: () => Promise<T>) {
@@ -35,7 +36,7 @@ function withCacheLock<T>(workspaceId: string, operation: () => Promise<T>) {
   return result.finally(() => { if (cacheTails.get(workspaceId) === tail) cacheTails.delete(workspaceId); });
 }
 
-async function getCache(workspaceId: string) { return (await offlineStore.read<TruckCache>(await cacheKey(workspaceId))) ?? emptyCache(); }
+async function getCache(workspaceId: string) { const cached = await offlineStore.read<TruckCache>(await cacheKey(workspaceId)); return cached ? { ...emptyCache(), ...cached, customers: cached.customers ?? [] } : emptyCache(); }
 
 async function saveCache(workspaceId: string, value: TruckCache) {
   reportTruckStatus('saving');
@@ -72,16 +73,18 @@ async function queueRow(table: string, workspaceId: string, payload: Record<stri
 }
 
 async function fetchTruckData(workspaceId: string) {
-  const [trucks, owners, transactions] = await Promise.all([
+  const [trucks, owners, customers, transactions] = await Promise.all([
     supabase.from('trucks').select('*').eq('workspace_id', workspaceId).is('deleted_at', null).order('created_at'),
     supabase.from('truck_owners').select('*').eq('workspace_id', workspaceId).is('deleted_at', null).order('created_at'),
+    supabase.from('truck_customers').select('*').eq('workspace_id', workspaceId).is('deleted_at', null).order('created_at'),
     supabase.from('truck_transactions').select('*').eq('workspace_id', workspaceId).is('deleted_at', null).order('occurred_on', { ascending: false }),
   ]);
-  const error = trucks.error ?? owners.error ?? transactions.error;
+  const error = trucks.error ?? owners.error ?? customers.error ?? transactions.error;
   if (error) throw explain(error);
   return {
     trucks: (trucks.data ?? []).map((r) => truckFromDb(r as Record<string, unknown>)),
     owners: (owners.data ?? []).map((r) => ownerFromDb(r as Record<string, unknown>)),
+    customers: (customers.data ?? []).map((r) => customerFromDb(r as Record<string, unknown>)),
     transactions: (transactions.data ?? []).map((r) => transactionFromDb(r as Record<string, unknown>)),
   };
 }
@@ -135,6 +138,34 @@ export async function createTruckOwner(workspaceId: string, v: Omit<Owner, 'id'>
   return owner;
 }
 
+export async function createTruckCustomer(workspaceId: string, v: Omit<Customer, 'id'>, localOnly = false) {
+  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, name: v.name.trim(), phone: v.phone?.trim() || null, address: v.address?.trim() || null, notes: v.notes?.trim() || null };
+  const customer = customerFromDb(row);
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, customers: [...cache.customers.filter((item) => item.id !== customer.id), customer] })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_customers', workspaceId, row),
+  );
+  return customer;
+}
+
+export async function updateTruckCustomer(workspaceId: string, v: Customer, localOnly = false) {
+  const row = { id: v.id, workspace_id: workspaceId, truck_id: v.truckId, name: v.name.trim(), phone: v.phone?.trim() || null, address: v.address?.trim() || null, notes: v.notes?.trim() || null, updated_at: new Date().toISOString() };
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, customers: cache.customers.map((item) => item.id === v.id ? v : item) })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_customers', workspaceId, row),
+  );
+  return v;
+}
+
+export async function deleteTruckCustomer(workspaceId: string, id: string, localOnly = false) {
+  const deletedAt = new Date().toISOString();
+  const row = { id, deleted_at: deletedAt, updated_at: deletedAt };
+  await persistBeforeQueue(
+    () => updateCache(workspaceId, (cache) => ({ ...cache, customers: cache.customers.filter((item) => item.id !== id) })),
+    () => localOnly ? Promise.resolve() : queueRow('truck_customers', workspaceId, row),
+  );
+}
+
 export async function updateTruckOwner(workspaceId: string, v: Owner, localOnly = false) {
   const row = { id: v.id, workspace_id: workspaceId, truck_id: v.truckId, name: v.name, start_date: v.startDate, equity_percentage: v.equityPercentage, monthly_draw_rate: v.monthlyDrawRate, avatar_color: v.avatarColor, updated_at: new Date().toISOString() };
   await persistBeforeQueue(
@@ -163,7 +194,7 @@ export async function deleteTruck(workspaceId: string, id: string, localOnly = f
 }
 
 export async function createTruckTransaction(workspaceId: string, v: Omit<Transaction, 'id'>, localOnly = false) {
-  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null };
+  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null };
   const transaction = transactionFromDb(row);
   await persistBeforeQueue(
     () => updateCache(workspaceId, (cache) => ({ ...cache, transactions: [...cache.transactions.filter((item) => item.id !== transaction.id), transaction] })),
@@ -174,7 +205,7 @@ export async function createTruckTransaction(workspaceId: string, v: Omit<Transa
 
 export async function createTruckTransactionBatch(workspaceId: string, values: Omit<Transaction, 'id'>[], localOnly = false) {
   if (!values.length) return [];
-  const rows = values.map((v) => ({ id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null }));
+  const rows = values.map((v) => ({ id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null }));
   const transactions = rows.map((row) => transactionFromDb(row));
   await persistBeforeQueue(
     () => withCacheLock(workspaceId, async () => {
@@ -187,7 +218,7 @@ export async function createTruckTransactionBatch(workspaceId: string, values: O
 }
 
 export async function updateTruckTransaction(workspaceId: string, v: Transaction, localOnly = false) {
-  const row = { id: v.id, workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, updated_at: new Date().toISOString() };
+  const row = { id: v.id, workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null, updated_at: new Date().toISOString() };
   await persistBeforeQueue(
     () => updateCache(workspaceId, (cache) => ({ ...cache, transactions: cache.transactions.map((item) => item.id === v.id ? v : item) })),
     () => localOnly ? Promise.resolve() : queueRow('truck_transactions', workspaceId, row),

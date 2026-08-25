@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Employee } from '../types';
-import { calculateDaysBetween } from '../utils/calc';
+import { calculateDaysBetween, calculateEmployeeAccrual, getSalaryCycleDailyRate } from '../utils/calc';
 import { AppDatePicker } from '../../../components/AppDatePicker';
 import {
   UserPlus,
@@ -32,8 +32,18 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
 
   const monthlySalaryNum = parseFloat(initialSalary) || 0;
   const daysWorked = startDate ? Math.max(0, calculateDaysBetween(startDate, asOfDate)) : 0;
-  const estimatedDailyRate = (monthlySalaryNum * 12) / 365.25;
-  const estimatedInitialEarned = daysWorked * estimatedDailyRate;
+  const estimatedInitialEarned = calculateEmployeeAccrual({
+    id: 'preview',
+    name: name || 'Preview',
+    startDate,
+    initialSalary: monthlySalaryNum,
+    salaryHistory: [],
+    status: 'active',
+    createdAt: '',
+  }, [], asOfDate).totalAccruedWages;
+  const estimatedDailyRate = startDate && monthlySalaryNum > 0
+    ? getSalaryCycleDailyRate(startDate, asOfDate >= startDate ? asOfDate : startDate, monthlySalaryNum)
+    : 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +170,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
                     className="w-full pl-6 pr-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-800 font-mono text-xs text-zinc-900 font-bold"
                   />
                 </div>
-                <p className="text-[9px] text-zinc-500 mt-0.5">Converted to daily rate (Monthly × 12 / 365.25)</p>
+                <p className="text-[9px] text-zinc-500 mt-0.5">Accrues by monthly start-date cycles</p>
               </div>
             </div>
 

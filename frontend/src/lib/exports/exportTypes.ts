@@ -2,6 +2,7 @@ import type { CsvValue } from '../fileExport';
 
 export type ExportFormat = 'pdf' | 'xlsx' | 'csv' | 'print';
 export type ExportDetail = 'condensed' | 'detailed' | 'full';
+export type ExportDatePreset = 'all' | 'daily' | 'weekly' | 'monthly' | 'custom';
 
 export type ExportBuildOptions = {
   detail: ExportDetail;
@@ -17,14 +18,12 @@ export type ExportBuildOptions = {
 
 export type ExportMetadata = {
   companyName: string;
-  appName: string;
-  reportName: string;
   entityName?: string;
   startDate?: string;
   endDate?: string;
-  detailLabel?: string;
-  generatedAt?: string;
 };
+
+export type ExportSummaryItem = { label: string; value: string; tone?: 'neutral' | 'positive' | 'negative' };
 
 export type ExportReport = {
   title: string;
@@ -33,6 +32,8 @@ export type ExportReport = {
   rows: CsvValue[][];
   lines?: string[];
   metadata?: ExportMetadata;
+  summary?: ExportSummaryItem[];
+  dateRange?: { startDate?: string; endDate?: string };
 };
 
 export type ExportReportDefinition = {

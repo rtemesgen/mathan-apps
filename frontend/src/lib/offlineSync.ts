@@ -50,7 +50,7 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
     const workspaceId = mutation.companyId || String(mutation.payload.workspace_id ?? '');
     try {
     if (mutation.table !== 'app_state_snapshots') {
-      if (!['trucks', 'truck_owners', 'truck_transactions'].includes(mutation.table)) { remaining.push(mutation); continue; }
+      if (!['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'].includes(mutation.table)) { remaining.push(mutation); continue; }
       const row = { ...mutation.payload }; delete row.workspace_id;
       const id = String(row.id ?? ''); delete row.id;
       const result = row.deleted_at

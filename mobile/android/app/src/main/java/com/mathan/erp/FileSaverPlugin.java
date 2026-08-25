@@ -33,7 +33,16 @@ public class FileSaverPlugin extends Plugin {
         saveFile(call, true);
     }
 
+    @PluginMethod
+    public void saveBackup(PluginCall call) {
+        saveFile(call, false, true);
+    }
+
     private void saveFile(PluginCall call, boolean shouldOpen) {
+        saveFile(call, shouldOpen, false);
+    }
+
+    private void saveFile(PluginCall call, boolean shouldOpen, boolean isBackup) {
         String filename = call.getString("filename");
         String mimeType = call.getString("mimeType", "application/octet-stream");
         String base64Data = call.getString("data");
@@ -45,11 +54,13 @@ public class FileSaverPlugin extends Plugin {
         try {
             byte[] bytes = Base64.decode(base64Data, Base64.DEFAULT);
             String normalizedMimeType = mimeType.split(";", 2)[0].trim();
-            Uri uri = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                    ? saveToPublicDownloads(filename, normalizedMimeType, bytes)
-                    : saveToAppDownloads(filename, normalizedMimeType, bytes);
+            Uri uri = isBackup
+                    ? saveToAppMediaBackups(filename, bytes)
+                    : Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                        ? saveToPublicDownloads(filename, normalizedMimeType, bytes)
+                        : saveToAppDownloads(filename, normalizedMimeType, bytes);
             if (shouldOpen) openFile(uri, normalizedMimeType);
-            else Toast.makeText(getContext(), "Backup saved in Downloads", Toast.LENGTH_SHORT).show();
+            else Toast.makeText(getContext(), isBackup ? "Backup saved in Android/media/backups" : "File saved in Downloads", Toast.LENGTH_SHORT).show();
             call.resolve(new JSObject().put("uri", uri.toString()));
         } catch (Exception error) {
             call.reject("Could not save file", error);
@@ -77,6 +88,20 @@ public class FileSaverPlugin extends Plugin {
     private Uri saveToAppDownloads(String filename, String mimeType, byte[] bytes) throws Exception {
         File directory = getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
         if (directory == null) throw new IllegalStateException("Android storage is unavailable");
+        File file = new File(directory, filename);
+        try (FileOutputStream output = new FileOutputStream(file)) {
+            output.write(bytes);
+        }
+        return FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+    }
+
+    private Uri saveToAppMediaBackups(String filename, byte[] bytes) throws Exception {
+        File[] mediaDirectories = getContext().getExternalMediaDirs();
+        if (mediaDirectories == null || mediaDirectories.length == 0 || mediaDirectories[0] == null) {
+            throw new IllegalStateException("Android media storage is unavailable");
+        }
+        File directory = new File(mediaDirectories[0], "backups");
+        if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("Could not create the backup folder");
         File file = new File(directory, filename);
         try (FileOutputStream output = new FileOutputStream(file)) {
             output.write(bytes);

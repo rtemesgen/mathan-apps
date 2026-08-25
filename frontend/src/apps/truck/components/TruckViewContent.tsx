@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import type { Owner, Transaction, TransactionType, Truck, TruckFinancialSummary } from '../types';
+import type { Customer, Owner, Transaction, TransactionType, Truck, TruckFinancialSummary } from '../types';
 import { ReportsView } from './ReportsView';
 import { LedgerHistoryView } from './LedgerHistoryView';
 import { IncomePage } from './Pages/IncomePage';
@@ -9,6 +9,7 @@ import { ManageTrucksPage } from './Pages/ManageTrucksPage';
 import { CashReportView } from './Pages/CashReportView';
 import { DashboardView } from './Pages/DashboardView';
 import { PartnersPage } from './Pages/PartnersPage';
+import { CustomersPage } from './Pages/CustomersPage';
 
 type TruckTransactionInput = {
   truckId: string;
@@ -19,6 +20,9 @@ type TruckTransactionInput = {
   ownerId?: string;
   description: string;
   referenceNo?: string;
+  counterpartyType?: 'CUSTOMER' | 'OWNER' | 'OTHER';
+  customerId?: string;
+  counterpartyName?: string;
 };
 
 export type TruckViewContentProps = {
@@ -26,6 +30,7 @@ export type TruckViewContentProps = {
   setCurrentView: (view: string) => void;
   trucks: Truck[];
   owners: Owner[];
+  customers: Customer[];
   transactions: Transaction[];
   currentTruckId: string;
   setCurrentTruckId: Dispatch<SetStateAction<string>>;
@@ -41,6 +46,9 @@ export type TruckViewContentProps = {
   setExpensesTab: (tab: 'expense' | 'pay-owner' | 'distribute-profit') => void;
   setEditingOwner: (owner: Owner | null) => void;
   openPartnerModal: () => void;
+  onOpenCustomers: () => void;
+  onAddOrUpdateCustomer: (customer: { id?: string; truckId: string; name: string; phone?: string; address?: string; notes?: string }) => Promise<void>;
+  onDeleteCustomer: (id: string) => void;
   setEditingTransaction: (transaction: Transaction | null) => void;
   handleAddTransaction: (input: TruckTransactionInput) => Promise<void>;
   handleUpdateTransaction: (input: Omit<Transaction, 'id'>) => Promise<void>;
@@ -62,6 +70,7 @@ export function TruckViewContent({
   setCurrentView,
   trucks,
   owners,
+  customers,
   transactions,
   currentTruckId,
   setCurrentTruckId,
@@ -77,6 +86,9 @@ export function TruckViewContent({
   setExpensesTab,
   setEditingOwner,
   openPartnerModal,
+  onOpenCustomers: _onOpenCustomers,
+  onAddOrUpdateCustomer,
+  onDeleteCustomer,
   setEditingTransaction,
   handleAddTransaction,
   handleUpdateTransaction,
@@ -120,6 +132,8 @@ export function TruckViewContent({
         onEditTransaction={setEditingTransaction}
       />}
 
+      {currentView === 'customers' && <CustomersPage truck={activeTruck} customers={customers} transactions={activeTransactions} balances={truckFinancials.counterpartyBalances} onSave={onAddOrUpdateCustomer} onDelete={onDeleteCustomer} />}
+
       {currentView === 'cash-report' && <CashReportView
         truck={activeTruck}
         transactions={activeTransactions}
@@ -133,6 +147,7 @@ export function TruckViewContent({
 
       {currentView === 'income' && <IncomePage
         owners={activeTruckOwners}
+        customers={customers.filter((customer) => customer.truckId === activeTruck.id)}
         trucks={trucks}
         currentTruckId={currentTruckId}
         defaultOwnerId={selectedPayOwnerId}
@@ -144,6 +159,7 @@ export function TruckViewContent({
       {currentView === 'expenses' && <ExpensesPage
         summary={truckFinancials}
         owners={activeTruckOwners}
+        customers={customers.filter((customer) => customer.truckId === activeTruck.id)}
         trucks={trucks}
         currentTruckId={currentTruckId}
         defaultTab={expensesTab}

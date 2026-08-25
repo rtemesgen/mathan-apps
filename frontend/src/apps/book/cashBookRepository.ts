@@ -3,6 +3,7 @@ import type { PersistenceState, RepositoryResult } from '../../lib/repositories/
 import { useSnapshotRepository } from '../../lib/repositories/useSnapshotRepository';
 
 export type NewBook = Omit<Book, 'id' | 'createdAt' | 'updatedAt'>;
+export type BookUpdate = Pick<Book, 'name' | 'openingBalance'>;
 export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | 'type'>;
 type Persist<T> = (next: T) => Promise<PersistenceState>;
 export type CashBookImport = { book: NewBook; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] };
@@ -22,6 +23,10 @@ export function useCashBookRepository() {
         const book = books[0].find((item) => item.id === bookId);
         return book ? saveRenamedBook(book, name, books[0], persistBooks) : Promise.resolve(undefined);
       },
+      updateBook: (bookId: string, changes: BookUpdate) => {
+        const book = books[0].find((item) => item.id === bookId);
+        return book ? saveUpdatedBook(book, changes, books[0], persistBooks) : Promise.resolve(undefined);
+      },
       deleteBook: (bookId: string) => saveRemovedBook(bookId, books[0], transactions[0], persistBooks, persistTransactions),
       createTransaction: (bookId: string, type: Transaction['type'], input: Parameters<typeof saveNewTransactionAndTouchBook>[2]) => saveNewTransactionAndTouchBook(bookId, type, input, transactions[0], books[0], persistTransactions, persistBooks),
       deleteTransaction: (transactionId: string) => saveRemovedTransaction(transactionId, transactions[0], persistTransactions),
@@ -40,6 +45,10 @@ export function createBook(input: NewBook, timestamp = now()): RepositoryResult<
 
 export function renameBook(book: Book, name: string, timestamp = now()): RepositoryResult<Book> {
   return { data: { ...book, name, updatedAt: timestamp }, persistence: 'saving' };
+}
+
+export function updateBook(book: Book, changes: BookUpdate, timestamp = now()): RepositoryResult<Book> {
+  return { data: { ...book, ...changes, openingBalance: Number(changes.openingBalance) || 0, updatedAt: timestamp }, persistence: 'saving' };
 }
 
 export function createTransaction(bookId: string, type: Transaction['type'], input: NewTransaction, timestamp = now()): RepositoryResult<Transaction> {
@@ -62,6 +71,11 @@ export async function saveNewBook(input: NewBook, books: Book[], persistBooks: P
 
 export async function saveRenamedBook(book: Book, name: string, books: Book[], persistBooks: Persist<Book[]>) {
   const result = renameBook(book, name);
+  return { ...result, persistence: await persistBooks(books.map((item) => item.id === book.id ? result.data : item)) };
+}
+
+export async function saveUpdatedBook(book: Book, changes: BookUpdate, books: Book[], persistBooks: Persist<Book[]>) {
+  const result = updateBook(book, changes);
   return { ...result, persistence: await persistBooks(books.map((item) => item.id === book.id ? result.data : item)) };
 }
 

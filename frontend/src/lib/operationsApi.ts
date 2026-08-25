@@ -22,6 +22,17 @@ export type WorkspaceDeletionStatus = { status: 'active' | 'scheduled'; schedule
 export async function requestWorkspaceDeletion(workspaceId: string) { const { data, error } = await supabase.rpc('request_workspace_deletion', { target_workspace: workspaceId }); if (error) throw error; return String(data); }
 export async function cancelWorkspaceDeletion(workspaceId: string) { const { data, error } = await supabase.rpc('cancel_workspace_deletion', { target_workspace: workspaceId }); if (error) throw error; return data === true; }
 export async function getWorkspaceDeletionStatus(workspaceId: string) { const { data, error } = await supabase.rpc('get_workspace_deletion_status', { target_workspace: workspaceId }); if (error) throw error; return ((data as WorkspaceDeletionStatus[] | null)?.[0] ?? { status: 'active', scheduled_for: null, days_remaining: null }) as WorkspaceDeletionStatus; }
+export type WorkspaceAuditEvent = { id: string; actor_id: string | null; record_type: string; record_id: string | null; action: string; previous_data: Record<string, unknown> | null; next_data: Record<string, unknown> | null; created_at: string; actor_name?: string };
+export async function listWorkspaceAuditEvents(workspaceId: string, limit = 100) {
+  const { data, error } = await supabase.from('audit_events').select('id,actor_id,record_type,record_id,action,previous_data,next_data,created_at').eq('workspace_id', workspaceId).order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  const events = (data ?? []) as WorkspaceAuditEvent[];
+  const actorIds = [...new Set(events.map((event) => event.actor_id).filter((id): id is string => Boolean(id)))];
+  if (!actorIds.length) return events;
+  const { data: profiles } = await supabase.from('workspace_profiles').select('user_id,display_name').in('user_id', actorIds);
+  const names = new Map((profiles ?? []).map((profile) => [profile.user_id, profile.display_name || 'Company member']));
+  return events.map((event) => ({ ...event, actor_name: event.actor_id ? names.get(event.actor_id) ?? 'Company member' : 'System' }));
+}
 
 export type ReportRow = Record<string, string | number | null>;
 export function downloadCsv(filename: string, rows: ReportRow[]) {

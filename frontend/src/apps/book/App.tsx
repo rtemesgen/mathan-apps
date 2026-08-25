@@ -85,9 +85,9 @@ export default function App() {
     setBookToDelete(null);
   };
 
-  const handleRenameBook = async (bookId: string, name: string) => {
+  const handleRenameBook = async (bookId: string, changes: { name: string; openingBalance: number }) => {
     const book = books.find((item) => item.id === bookId);
-    if (book) await actions.renameBook(bookId, name);
+    if (book) await actions.updateBook(bookId, changes);
     setBookToRename(null);
   };
 

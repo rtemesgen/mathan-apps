@@ -6,7 +6,7 @@ import {
   Save, 
   DollarSign
 } from 'lucide-react';
-import { Owner, TransactionType, Truck, TruckFinancialSummary } from '../../types';
+import { Customer, Owner, TransactionType, Truck, TruckFinancialSummary } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { CategoryAutocomplete } from '../CategoryAutocomplete';
 import { TruckSelect } from '../TruckSelect';
@@ -16,6 +16,7 @@ import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 interface ExpensesPageProps {
   summary: TruckFinancialSummary;
   owners: Owner[];
+  customers: Customer[];
   trucks: Truck[];
   currentTruckId: string;
   defaultTab?: 'expense' | 'pay-owner' | 'distribute-profit';
@@ -29,6 +30,9 @@ interface ExpensesPageProps {
     ownerId?: string;
     description: string;
     referenceNo?: string;
+    counterpartyType?: 'CUSTOMER' | 'OWNER' | 'OTHER';
+    customerId?: string;
+    counterpartyName?: string;
   }) => Promise<void>;
   onSubmitPayOwner: (ownerId: string, amount: number, memo: string) => Promise<void>;
   onExecuteProfitDistribution: (allocations: { ownerId: string; amount: number }[]) => Promise<void>;
@@ -38,6 +42,7 @@ interface ExpensesPageProps {
 export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   summary,
   owners,
+  customers,
   trucks,
   currentTruckId,
   defaultTab = 'expense',
@@ -58,6 +63,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseRef, setExpenseRef] = useState('');
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expensePaymentSelection, setExpensePaymentSelection] = useState('CASH');
 
   // Tab 2: Pay Owner State
   const [payOwnerId, setPayOwnerId] = useState<string>(
@@ -72,6 +78,8 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     availableCash > 0 ? (availableCash * 0.5).toFixed(0) : '0'
   );
   const { submitting, runAction } = useAsyncAction();
+  const expenseCustomerId = expensePaymentSelection.startsWith('CUSTOMER:') ? expensePaymentSelection.slice('CUSTOMER:'.length) : '';
+  const selectedExpenseCustomer = customers.find((customer) => customer.id === expenseCustomerId);
 
   useEffect(() => {
     if (defaultTab) {
@@ -96,7 +104,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const num = parseFloat(expenseAmount);
-    if (isNaN(num) || num <= 0 || submitting) return;
+    if (isNaN(num) || num <= 0 || submitting || (expenseCustomerId && !selectedExpenseCustomer)) return;
 
     if (!expenseCategory.trim()) {
       setCategoryError(true);
@@ -106,12 +114,15 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     await runAction({ operation: () => onSubmitExpense({
       truckId,
       date: expenseDate,
-      type: 'EXPENSE',
+      type: expenseCustomerId ? 'PAYABLE' : 'EXPENSE',
       category: expenseCategory.trim(),
       amount: num,
-      description: expenseDesc || (expenseVendor ? `${expenseVendor} - ${expenseCategory.trim()}` : expenseCategory.trim()),
+      description: expenseDesc.trim(),
       referenceNo: expenseRef || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
-    }), successMessage: 'Truck expense saved successfully.', errorMessage: 'Could not save the Truck expense. Your entries were kept.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); });
+      counterpartyType: expenseCustomerId ? 'CUSTOMER' : undefined,
+      customerId: expenseCustomerId || undefined,
+      counterpartyName: expenseCustomerId ? selectedExpenseCustomer?.name : expenseVendor.trim() || undefined,
+    }), successMessage: expenseCustomerId ? 'Customer payable saved successfully.' : 'Truck expense saved successfully.', errorMessage: 'Could not save the Truck expense. Your entries were kept.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); setExpensePaymentSelection('CASH'); });
   };
 
   const handlePayOwnerSubmit = async (e: React.FormEvent) => {
@@ -209,6 +220,13 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
               </div>
             </div>
 
+            <div>
+              <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">Paid To / Store / Mechanic</label>
+              <input type="text" value={expenseVendor} onChange={(e) => setExpenseVendor(e.target.value)} placeholder="e.g. Love's, Pilot, Repair Shop" className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none" />
+            </div>
+
+            <div><label className="block text-[#787672] uppercase text-[10px] font-bold">Payment method / customer *</label><TruckSelect value={expensePaymentSelection} onChange={setExpensePaymentSelection} options={[{ value: 'CASH', label: 'Cash paid now' }, ...customers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash paid now" /></div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
@@ -256,19 +274,6 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
-                  Paid To / Store / Mechanic
-                </label>
-                <input
-                  type="text"
-                  value={expenseVendor}
-                  onChange={(e) => setExpenseVendor(e.target.value)}
-                  placeholder="e.g. Love's, Pilot, Repair Shop"
-                  className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none"
-                />
-              </div>
-
               <div>
                 <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">
                   Receipt / Invoice #

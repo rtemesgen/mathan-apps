@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Owner, Transaction, TransactionType, Truck } from '../types';
+import { CounterpartyType, Owner, Transaction, TransactionType, Truck } from '../types';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 export type TruckTransactionInput = {
@@ -11,6 +11,9 @@ export type TruckTransactionInput = {
   ownerId?: string;
   description: string;
   referenceNo?: string;
+  counterpartyType?: CounterpartyType;
+  customerId?: string;
+  counterpartyName?: string;
 };
 
 type Options = {
@@ -30,6 +33,10 @@ const categoryForType = (type: TransactionType) => {
   if (type === 'EXPENSE') return 'Diesel Fuel';
   if (type === 'CAPITAL_INJECTION') return 'Owner Emergency Repair Loan';
   if (type === 'CAPITAL_REPAYMENT') return 'Owner Debt Clearance';
+  if (type === 'RECEIVABLE') return 'Customer Receivable';
+  if (type === 'PAYABLE') return 'Supplier / Owner Payable';
+  if (type === 'RECEIVABLE_SETTLEMENT') return 'Receivable Payment Received';
+  if (type === 'PAYABLE_SETTLEMENT') return 'Payable Settled';
   return 'Quarterly Profit Share Dividend';
 };
 
@@ -41,6 +48,9 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
   const [category, setCategory] = useState('Freight Load Revenue');
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
+  const [counterpartyType, setCounterpartyType] = useState<CounterpartyType>('CUSTOMER');
+  const [counterpartyName, setCounterpartyName] = useState('');
+  const [customerId, setCustomerId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const { submitting, runAction } = useAsyncAction();
   const truckOptionsKey = trucks.map((truck) => truck.id).join(',');
@@ -56,6 +66,9 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
       setCategory(editingTransaction.category);
       setDescription(editingTransaction.description);
       setReferenceNo(editingTransaction.referenceNo ?? '');
+      setCounterpartyType(editingTransaction.counterpartyType ?? 'CUSTOMER');
+      setCounterpartyName(editingTransaction.counterpartyName ?? '');
+      setCustomerId(editingTransaction.customerId ?? '');
       setDate(editingTransaction.date);
       return;
     }
@@ -66,6 +79,9 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
     setCategory('Freight Load Revenue');
     setDescription('');
     setReferenceNo('');
+    setCounterpartyType('CUSTOMER');
+    setCounterpartyName('');
+    setCustomerId('');
     setDate(new Date().toISOString().split('T')[0]);
   }, [active, editingTransaction?.id, currentTruckId, defaultOwnerId, defaultType, truckOptionsKey, ownerOptionsKey]);
 
@@ -78,6 +94,9 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
     event.preventDefault();
     const numAmount = parseFloat(amount);
     if (!Number.isFinite(numAmount) || numAmount <= 0 || submitting) return;
+    const tracksCounterparty = ['RECEIVABLE', 'PAYABLE', 'RECEIVABLE_SETTLEMENT', 'PAYABLE_SETTLEMENT'].includes(type);
+    if (tracksCounterparty && !counterpartyName.trim()) return;
+    if (tracksCounterparty && counterpartyType === 'OWNER' && !ownerId) return;
     await runAction({
       operation: () => onSubmit({
         truckId,
@@ -85,9 +104,12 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
         type,
         category,
         amount: numAmount,
-        ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION') ? ownerId : undefined,
-        description: description || `${category} entry`,
+        ownerId: (type === 'CAPITAL_INJECTION' || type === 'CAPITAL_REPAYMENT' || type === 'PROFIT_DISTRIBUTION' || counterpartyType === 'OWNER') ? ownerId : undefined,
+        description: description.trim(),
         referenceNo,
+        counterpartyType: ['RECEIVABLE', 'PAYABLE', 'RECEIVABLE_SETTLEMENT', 'PAYABLE_SETTLEMENT'].includes(type) ? counterpartyType : undefined,
+        customerId: customerId || undefined,
+        counterpartyName: ['RECEIVABLE', 'PAYABLE', 'RECEIVABLE_SETTLEMENT', 'PAYABLE_SETTLEMENT'].includes(type) ? counterpartyName.trim() : undefined,
       }),
       successMessage: editingTransaction ? 'Truck transaction updated successfully.' : 'Truck transaction saved successfully.',
       errorMessage: 'Could not save the Truck transaction. Your entries were kept.',
@@ -95,5 +117,5 @@ export function useTruckTransactionForm({ owners, trucks, currentTruckId, defaul
     onComplete();
   };
 
-  return { truckId, setTruckId, type, ownerId, setOwnerId, amount, setAmount, category, setCategory, description, setDescription, referenceNo, setReferenceNo, date, setDate, submitting, handleTypeChange, handleSubmit };
+  return { truckId, setTruckId, type, ownerId, setOwnerId, amount, setAmount, category, setCategory, description, setDescription, referenceNo, setReferenceNo, counterpartyType, setCounterpartyType, customerId, setCustomerId, counterpartyName, setCounterpartyName, date, setDate, submitting, handleTypeChange, handleSubmit };
 }

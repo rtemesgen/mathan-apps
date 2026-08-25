@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Employee, Transaction } from '../types';
-import { calculateCompanyStats, calculateEmployeeAccrual } from '../utils/calc';
+import { calculateCompanyStats, calculateEmployeeAccrual, getSalaryCycleDailyRate } from '../utils/calc';
 import {
   Search,
   Filter,
@@ -115,7 +115,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               ) : (
                 filteredEmployees.map((emp) => {
                   const info = calculateEmployeeAccrual(emp, transactions, asOfDate);
-                  const dailyRate = (info.currentMonthlySalary * 12) / 365.25;
+                  const dailyRate = getSalaryCycleDailyRate(emp.startDate, asOfDate, info.currentMonthlySalary);
                   return (
                     <tr
                       key={emp.id}

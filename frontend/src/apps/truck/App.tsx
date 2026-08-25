@@ -19,7 +19,7 @@ import './index.css';
 
 export default function App() {
   const { workspace, canEditApp, isGuest } = useAuth();
-  const { trucks, setTrucks, owners, setOwners, transactions, setTransactions, currentTruckId, setCurrentTruckId, members, loading, dataError, refresh } = useTruckData(workspace?.id, isGuest);
+  const { trucks, setTrucks, owners, setOwners, customers, setCustomers, transactions, setTransactions, currentTruckId, setCurrentTruckId, members, loading, dataError, refresh } = useTruckData(workspace?.id, isGuest);
 
   const { currentView, setCurrentView, sortBy, setSortBy, calculationDate, setCalculationDate, isSidebarOpen, setIsSidebarOpen } = useTruckPreferences(workspace?.id, currentTruckId, setCurrentTruckId);
 
@@ -39,7 +39,7 @@ export default function App() {
 
   const deleteConfirmation = useDeleteConfirmation('Truck record deleted successfully.');
   const openDelete = (request: TruckDeleteRequest) => deleteConfirmation.open(request);
-  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner } = useTruckMutations({ workspaceId: workspace?.id, isGuest, editable, trucks, owners, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
+  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddOrUpdateCustomer, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner, handleDeleteCustomer } = useTruckMutations({ workspaceId: workspace?.id, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
 
   const handleResetDemoData = () => setError('Demo reset is unavailable for cloud workspaces.');
 
@@ -58,9 +58,6 @@ export default function App() {
         currentView={currentView}
         setCurrentView={setCurrentView}
         summary={truckFinancials}
-        trucks={trucks}
-        currentTruckId={currentTruckId}
-        onSelectTruck={setCurrentTruckId}
         calculationDate={calculationDate}
         setCalculationDate={setCalculationDate}
         onResetDemoData={handleResetDemoData}
@@ -68,6 +65,7 @@ export default function App() {
           setEditingOwner(null);
           setIsAddPartnerModalOpen(true);
         }}
+        onOpenCustomers={() => setCurrentView('customers')}
         onOpenIncome={() => {
           setSelectedPayOwnerId(undefined);
           setCurrentView('income');
@@ -77,7 +75,6 @@ export default function App() {
           setExpensesTab('expense');
           setCurrentView('expenses');
         }}
-        onOpenAddTruck={() => setCurrentView('manage-trucks')}
       />
 
       {/* Main Workspace Area */}
@@ -96,7 +93,8 @@ export default function App() {
           currentView={currentView}
           setCurrentView={setCurrentView}
           trucks={trucks}
-          owners={owners}
+        owners={owners}
+        customers={customers}
           transactions={transactions}
           currentTruckId={currentTruckId}
           setCurrentTruckId={setCurrentTruckId}
@@ -110,7 +108,10 @@ export default function App() {
           setSelectedPayOwnerId={setSelectedPayOwnerId}
           expensesTab={expensesTab}
           setExpensesTab={setExpensesTab}
-          setEditingOwner={setEditingOwner}
+        setEditingOwner={setEditingOwner}
+        onOpenCustomers={() => setCurrentView('customers')}
+        onAddOrUpdateCustomer={handleAddOrUpdateCustomer}
+        onDeleteCustomer={handleDeleteCustomer}
           openPartnerModal={() => setIsAddPartnerModalOpen(true)}
           setEditingTransaction={setEditingTransaction}
           handleAddTransaction={handleAddTransaction}
@@ -142,7 +143,7 @@ export default function App() {
           availableEntities: exportSelection.id === 'owner-shares-loans' ? (activeTruck ? [{ value: activeTruck.id, label: `${activeTruck.name} (${activeTruck.unitNumber})` }] : []) : trucks.map((truck) => ({ value: truck.id, label: `${truck.name} (${truck.unitNumber})` })),
           availableOwners: exportSelection.id === 'owner-shares-loans' ? activeTruckOwners.map((owner) => ({ value: owner.id, label: owner.name })) : undefined,
           availableCategories: exportSelection.id === 'owner-shares-loans' || exportSelection.id === 'transactions-by-truck-owner' || exportSelection.id === 'income-expenses' ? Array.from(new Set(transactions.filter((transaction) => !activeTruck || transaction.truckId === activeTruck.id).map((transaction) => transaction.category))).sort().map((category) => ({ value: category, label: category })) : undefined,
-          availableTransactionTypes: exportSelection.id === 'income-expenses' ? [{ value: '', label: 'All cash movements' }, { value: 'INFLOW', label: 'Income / inflow only' }, { value: 'OUTFLOW', label: 'Expenses / outflow only' }] : exportSelection.id === 'transactions-by-truck-owner' ? [{ value: '', label: 'All activity' }, { value: 'INCOME', label: 'Trip income' }, { value: 'EXPENSE', label: 'Expenses' }, { value: 'CAPITAL_INJECTION', label: 'Owner loans' }, { value: 'CAPITAL_REPAYMENT', label: 'Loan repayments' }, { value: 'PROFIT_DISTRIBUTION', label: 'Profit distributions' }] : undefined,
+          availableTransactionTypes: exportSelection.id === 'income-expenses' ? [{ value: '', label: 'All movements' }, { value: 'INFLOW', label: 'Cash inflow only' }, { value: 'OUTFLOW', label: 'Cash outflow only' }, { value: 'CREDIT', label: 'Credit / owed only' }] : exportSelection.id === 'transactions-by-truck-owner' ? [{ value: '', label: 'All activity' }, { value: 'INCOME', label: 'Trip income' }, { value: 'EXPENSE', label: 'Expenses' }, { value: 'RECEIVABLE', label: 'Receivables' }, { value: 'PAYABLE', label: 'Payables' }, { value: 'CAPITAL_INJECTION', label: 'Owner loans' }, { value: 'CAPITAL_REPAYMENT', label: 'Loan repayments' }, { value: 'PROFIT_DISTRIBUTION', label: 'Profit distributions' }] : undefined,
         }}
       />
 

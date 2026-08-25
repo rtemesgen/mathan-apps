@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { loadTruckData, loadTruckWorkspaceMembers, synchronizeTruckData } from './truckRepository';
-import type { Owner, Transaction, Truck } from './types';
+import type { Customer, Owner, Transaction, Truck } from './types';
 
 export function useTruckData(workspaceId: string | undefined, isGuest: boolean) {
   const [trucks, setTrucks] = useState<Truck[]>([]);
   const [owners, setOwners] = useState<Owner[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [currentTruckId, setCurrentTruckId] = useState('');
   const [members, setMembers] = useState<Array<{ user_id: string; email: string; display_name: string }>>([]);
@@ -18,6 +19,7 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean) 
       const data = await loadTruckData(workspaceId, true);
       setTrucks(data.trucks);
       setOwners(data.owners);
+      setCustomers(data.customers);
       setTransactions(data.transactions);
       setCurrentTruckId((current) => data.trucks.some((truck) => truck.id === current) ? current : (data.trucks[0]?.id ?? ''));
       setDataError('');
@@ -28,7 +30,7 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean) 
     }
     if (!isGuest && navigator.onLine) {
       void synchronizeTruckData(workspaceId)
-        .then((data) => { setTrucks(data.trucks); setOwners(data.owners); setTransactions(data.transactions); })
+        .then((data) => { setTrucks(data.trucks); setOwners(data.owners); setCustomers(data.customers); setTransactions(data.transactions); })
         .catch(() => undefined);
     }
   }, [workspaceId, isGuest]);
@@ -45,5 +47,5 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean) 
     return () => window.removeEventListener('online', handler);
   }, [workspaceId, refresh]);
 
-  return { trucks, setTrucks, owners, setOwners, transactions, setTransactions, currentTruckId, setCurrentTruckId, members, loading, dataError, refresh };
+  return { trucks, setTrucks, owners, setOwners, customers, setCustomers, transactions, setTransactions, currentTruckId, setCurrentTruckId, members, loading, dataError, refresh };
 }

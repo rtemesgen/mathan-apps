@@ -31,7 +31,7 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
   onSubmit,
 }) => {
   const form = useTruckTransactionForm({ owners, trucks, currentTruckId, defaultOwnerId, defaultType, editingTransaction, active: isOpen, onSubmit, onComplete: onClose });
-  const { truckId, setTruckId, type, ownerId, setOwnerId, amount, setAmount, category, setCategory, description, setDescription, referenceNo, setReferenceNo, date, setDate, submitting, handleTypeChange, handleSubmit } = form;
+  const { truckId, setTruckId, type, ownerId, setOwnerId, amount, setAmount, category, setCategory, description, setDescription, referenceNo, setReferenceNo, counterpartyType, setCounterpartyType, counterpartyName, setCounterpartyName, date, setDate, submitting, handleTypeChange, handleSubmit } = form;
 
   if (!isOpen) return null;
 
@@ -98,6 +98,12 @@ export const RecordTransactionModal: React.FC<RecordTransactionModalProps> = ({
               <TruckSelect value={ownerId} onChange={setOwnerId} options={owners.map((o) => ({ value: o.id, label: `${o.name} (${o.equityPercentage}% Share)` }))} />
             </div>
           )}
+
+          {(['RECEIVABLE', 'PAYABLE', 'RECEIVABLE_SETTLEMENT', 'PAYABLE_SETTLEMENT'] as TransactionType[]).includes(type) && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+            <label className="block text-[#787672] uppercase text-[10px] font-bold">Money is with / owed by<select value={counterpartyType} onChange={(event) => setCounterpartyType(event.target.value as typeof counterpartyType)} className="mt-1 w-full rounded-xl border border-[#d8d0be] bg-white px-3 py-2.5 text-xs font-bold"><option value="CUSTOMER">Customer</option><option value="OWNER">Owner</option><option value="OTHER">Other person / place</option></select></label>
+            <label className="block text-[#787672] uppercase text-[10px] font-bold">Name / location<input required value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} placeholder="e.g. ABC Customer or Owner John" className="mt-1 w-full rounded-xl border border-[#d8d0be] bg-white px-3 py-2.5 text-xs font-bold" /></label>
+            {counterpartyType === 'OWNER' && <label className="block text-[#787672] uppercase text-[10px] font-bold sm:col-span-2">Owner record<TruckSelect value={ownerId} onChange={setOwnerId} options={owners.map((o) => ({ value: o.id, label: o.name }))} /></label>}
+          </div>}
 
           {/* Category */}
           <div>

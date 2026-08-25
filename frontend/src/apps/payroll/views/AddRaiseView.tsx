@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Employee, SalaryChange } from '../types';
-import { calculateEmployeeAccrual, getTodayString } from '../utils/calc';
+import { calculateEmployeeAccrual, getSalaryCycleDailyRate, getTodayString } from '../utils/calc';
 import { AppDatePicker } from '../../../components/AppDatePicker';
 import {
   TrendingUp,
@@ -142,7 +142,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
                 <div className="font-serif-title text-base font-bold text-zinc-900">
                   {formatMoney(currentRate)}/mo
                 </div>
-                <span className="text-[9px] text-zinc-500 font-mono">Daily: ${(currentRate * 12 / 365.25).toFixed(2)}/day</span>
+                <span className="text-[9px] text-zinc-500 font-mono">Cycle daily: ${selectedEmp ? getSalaryCycleDailyRate(selectedEmp.startDate, effectiveDate, currentRate).toFixed(2) : '0.00'}/day</span>
               </div>
 
               <div>
@@ -164,7 +164,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
                   />
                 </div>
                 {validationMessage && <span className="mt-1 block text-[10px] font-semibold text-red-600">{validationMessage}</span>}
-                <span className="text-[9px] text-zinc-500 font-mono">Daily: ${(numNewSalary * 12 / 365.25).toFixed(2)}/day</span>
+                <span className="text-[9px] text-zinc-500 font-mono">Cycle daily: ${selectedEmp ? getSalaryCycleDailyRate(selectedEmp.startDate, effectiveDate, numNewSalary).toFixed(2) : '0.00'}/day</span>
               </div>
             </div>
 

@@ -25,7 +25,7 @@ export const BookCard: React.FC<BookCardProps> = ({
   onRequestDeleteBook,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const stats = calculateBookStats(transactions, book.id);
+  const stats = calculateBookStats(transactions, book.id, book.openingBalance ?? 0);
   const isNetPositive = stats.netBalance >= 0;
 
   // Calculate latest activity timestamp

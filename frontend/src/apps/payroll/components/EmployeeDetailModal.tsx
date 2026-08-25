@@ -10,7 +10,6 @@ import {
   Sparkles,
   Info,
   Clock,
-  Printer,
   Receipt,
   Plus,
   ArrowRight,
@@ -19,7 +18,6 @@ import {
   Pencil,
   Save,
 } from 'lucide-react';
-import { exportPdfFile } from '../../../lib/mobile';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppDatePicker } from '../../../components/AppDatePicker';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
@@ -65,10 +63,6 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   const empTransactions = transactions
     .filter((t) => t.employeeId === employee.id)
     .sort((a, b) => b.date.localeCompare(a.date));
-
-  const handlePrint = () => {
-    void exportPdfFile(`employee_${employee.id}_${evaluationDate}.pdf`, `${employee.name} Employee Statement`, [`As of ${evaluationDate}`, `Monthly salary: ${formatCurrency(summary.currentMonthlySalary)}`, `Total earned: ${formatCurrency(summary.totalAccruedWages)}`, `Total paid: ${formatCurrency(summary.totalWithdrawn)}`, `Remaining balance: ${formatCurrency(summary.remainingBalance)}`, '', ...empTransactions.map((tx) => `${tx.date} | ${formatCurrency(tx.amount)} | ${tx.notes || 'No notes'}`)]);
-  };
 
   return (
     <div className="fixed inset-0 z-50 bg-[#f6f5ef]">

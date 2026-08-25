@@ -51,8 +51,8 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   }, [transactions, book.id]);
 
   const stats = useMemo(() => {
-    return calculateBookStats(bookTransactions);
-  }, [bookTransactions]);
+    return calculateBookStats(bookTransactions, book.id, book.openingBalance ?? 0);
+  }, [bookTransactions, book.id, book.openingBalance]);
 
   // Compute running balance map: tx.id -> net balance after that entry
   const runningBalanceMap = useMemo(() => {
@@ -64,7 +64,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
     });
 
     const map = new Map<string, number>();
-    let currentBalance = 0;
+    let currentBalance = book.openingBalance ?? 0;
 
     for (const tx of sortedChronologically) {
       if (tx.type === 'in') {
@@ -76,7 +76,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
     }
 
     return map;
-  }, [bookTransactions]);
+  }, [bookTransactions, book.openingBalance]);
 
   // Filtered & Sorted Transactions
   const filteredTransactions = useMemo(() => {
@@ -95,10 +95,10 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
       })
       .sort((a, b) => {
         if (sortBy === 'newest') {
-          return new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime();
+          return new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime() || b.id.localeCompare(a.id);
         }
         if (sortBy === 'oldest') {
-          return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
+          return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime() || a.id.localeCompare(b.id);
         }
         if (sortBy === 'highest') {
           return b.amount - a.amount;
@@ -139,19 +139,31 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
       <div className="max-w-5xl mx-auto px-2 sm:px-3 space-y-2.5">
         {/* SUMMARY CARD VIEW AT TOP - MINIMIZED SIZE */}
         <div className="bg-[#FFFFFF] rounded-lg border border-[#E6E2D6] p-2 sm:p-3 shadow-2xs relative overflow-hidden">
-          <div className="text-center max-w-xs mx-auto mb-2">
-            <span className="text-[8px] font-extrabold tracking-widest text-[#B45309] uppercase bg-[#FEF3C7] px-2 py-0.2 rounded-full border border-[#FDE68A]">
-              NET BALANCE
-            </span>
-            <div className={`text-xl sm:text-2xl font-bold tracking-tight mt-0.5 ${
-              stats.netBalance >= 0 ? 'text-[#121212]' : 'text-[#DC2626]'
-            }`}>
-              {formatCurrency(stats.netBalance, book.currency)}
+          <div className="grid grid-cols-2 gap-1 sm:gap-1.5 mb-1.5">
+            <div className="rounded-md border border-[#D8D3C5] bg-[#FAF9F5] p-1.5 sm:p-2">
+              <span className="block text-[8px] font-extrabold tracking-widest text-[#6B7280] uppercase">
+                OPENING BALANCE
+              </span>
+              <div className="text-lg sm:text-xl font-bold tracking-tight mt-0.5 text-[#121212]">
+                {formatCurrency(book.openingBalance ?? 0, book.currency)}
+              </div>
             </div>
-            <p className="text-[9px] text-[#6B7280] mt-0.5">
-              {stats.transactionCount} entries recorded
-            </p>
+
+            <div className="rounded-md border border-[#FDE68A] bg-[#FFFBEB] p-1.5 sm:p-2">
+              <span className="inline-block text-[8px] font-extrabold tracking-widest text-[#B45309] uppercase bg-[#FEF3C7] px-2 py-0.5 rounded-full border border-[#FDE68A]">
+                NET BALANCE
+              </span>
+              <div className={`text-lg sm:text-xl font-bold tracking-tight mt-0.5 ${
+                stats.netBalance >= 0 ? 'text-[#121212]' : 'text-[#DC2626]'
+              }`}>
+                {formatCurrency(stats.netBalance, book.currency)}
+              </div>
+            </div>
           </div>
+
+          <p className="text-center text-[9px] text-[#6B7280] mb-2">
+            {stats.transactionCount} entries recorded
+          </p>
 
           {/* Sub-cards: Total Cash In (+) and Total Cash Out (-) */}
           <div className="grid grid-cols-2 gap-1.5">

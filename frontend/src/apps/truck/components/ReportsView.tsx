@@ -72,6 +72,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ summary, onPayOwner, o
           </div>
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-2.5"><p className="text-[9px] font-bold uppercase text-blue-700">Customers owe</p><p className="mt-1 text-sm font-bold text-blue-950">{formatCurrency(summary.totalReceivable)}</p></div>
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5"><p className="text-[9px] font-bold uppercase text-rose-700">Truck owes</p><p className="mt-1 text-sm font-bold text-rose-950">{formatCurrency(summary.totalPayable)}</p></div>
+        <div className="col-span-2 rounded-xl border border-[#e5dfd2] bg-white p-2.5"><p className="text-[9px] font-bold uppercase text-[#8c8880]">Where money is held / owed</p><p className="mt-1 text-[11px] font-semibold text-[#4a4843]">{summary.counterpartyBalances.length ? summary.counterpartyBalances.map((item) => `${item.name}: ${formatCurrency(item.amount)} ${item.type === 'receivable' ? 'owed to truck' : 'payable'}`).join(' · ') : 'No open receivables or payables.'}</p></div>
+      </div>
 
       {/* Search Bar */}
       <div className="bg-white border border-[#e5dfd2] rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-xs">

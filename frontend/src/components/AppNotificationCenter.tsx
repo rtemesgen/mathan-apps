@@ -2,6 +2,7 @@ import { Bell, CheckCircle2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { requestNotificationPermission, sendNativeNotification, type AppNotification } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
@@ -47,6 +48,16 @@ export function AppNotificationCenter() {
     return () => window.clearInterval(timer);
   }, [user?.id]);
   useEffect(() => { if (isGuest || !Capacitor.isNativePlatform()) return; void requestNotificationPermission().then((permission) => { if (permission !== 'granted') setPermissionMessage('Notifications are off. Enable them in Android Settings to receive invite and update alerts.'); }).catch(() => setPermissionMessage('Notifications could not be enabled. You can allow them later in Android Settings.')); }, [isGuest]);
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let active = true;
+    const listener = LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+      if (!active) return;
+      const extra = event.notification.extra as { url?: string } | undefined;
+      if (extra?.url) window.location.assign(extra.url);
+    });
+    return () => { active = false; void listener.then((handle) => handle.remove()); };
+  }, []);
   const unread = durable.filter((item) => !item.read_at).length;
   const markRead = async (item: DurableNotification) => { await supabase.rpc('mark_notification_read', { target_id: item.id }); setDurable((current) => { const next = current.map((entry) => entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: next.filter((entry) => !entry.read_at).length } })); return next; }); };
   const markAllRead = async () => { await supabase.rpc('mark_all_notifications_read'); setDurable((current) => { const next = current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: 0 } })); return next; }); };
