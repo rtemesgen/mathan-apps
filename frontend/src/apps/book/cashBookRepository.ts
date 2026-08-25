@@ -1,10 +1,34 @@
 import type { Book, Transaction } from './types';
 import type { PersistenceState, RepositoryResult } from '../../lib/repositories/types';
+import { useSnapshotRepository } from '../../lib/repositories/useSnapshotRepository';
 
 export type NewBook = Omit<Book, 'id' | 'createdAt' | 'updatedAt'>;
 export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | 'type'>;
 type Persist<T> = (next: T) => Promise<PersistenceState>;
 export type CashBookImport = { book: NewBook; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] };
+
+/** Cash Book repository adapter: domain operations and their snapshot-backed persistence stay together. */
+export function useCashBookRepository() {
+  const books = useSnapshotRepository<Book[]>('cash_book', 'books', []);
+  const transactions = useSnapshotRepository<Transaction[]>('cash_book', 'transactions', []);
+  const persistBooks = books[4];
+  const persistTransactions = transactions[4];
+  return {
+    books,
+    transactions,
+    actions: {
+      createBook: (input: Parameters<typeof saveNewBook>[0]) => saveNewBook(input, books[0], persistBooks),
+      renameBook: (bookId: string, name: string) => {
+        const book = books[0].find((item) => item.id === bookId);
+        return book ? saveRenamedBook(book, name, books[0], persistBooks) : Promise.resolve(undefined);
+      },
+      deleteBook: (bookId: string) => saveRemovedBook(bookId, books[0], transactions[0], persistBooks, persistTransactions),
+      createTransaction: (bookId: string, type: Transaction['type'], input: Parameters<typeof saveNewTransactionAndTouchBook>[2]) => saveNewTransactionAndTouchBook(bookId, type, input, transactions[0], books[0], persistTransactions, persistBooks),
+      deleteTransaction: (transactionId: string) => saveRemovedTransaction(transactionId, transactions[0], persistTransactions),
+      importBooks: (input: CashBookImport[]) => saveImportedBooks(input, books[0], transactions[0], persistBooks, persistTransactions),
+    },
+  };
+}
 
 const now = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;

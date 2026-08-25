@@ -15,7 +15,7 @@ import { TransactionsView } from './views/TransactionsView';
 import { ManageEmployeesView } from './views/ManageEmployeesView';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { useAuth } from '../../auth/AuthProvider';
-import { usePayrollRepository } from './payrollStore';
+import { usePayrollRepository } from './payrollRepository';
 
 const PAYROLL_TABS: ActiveTab[] = ['dashboard', 'add-employee', 'manage-employees', 'pay-salary', 'add-raise', 'reports', 'transactions'];
 

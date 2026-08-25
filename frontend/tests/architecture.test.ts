@@ -66,10 +66,12 @@ assert.doesNotMatch(read('apps/truck/useTruckMutations.ts'), /supabase|localStor
 assert.doesNotMatch(read('apps/book/App.tsx'), /setBooks/);
 assert.doesNotMatch(read('apps/book/App.tsx'), /showAppToast/);
 assert.doesNotMatch(read('apps/payroll/App.tsx'), /setEmployees/);
-assert.doesNotMatch(read('apps/book/App.tsx'), /cashBookRepository/);
-assert.doesNotMatch(read('apps/payroll/App.tsx'), /payrollRepository/);
-assert.match(read('apps/book/cashBookStore.ts'), /actions:/);
-assert.match(read('apps/payroll/payrollStore.ts'), /actions:/);
+assert.match(read('apps/book/App.tsx'), /cashBookRepository/);
+assert.match(read('apps/payroll/App.tsx'), /payrollRepository/);
+assert.match(read('apps/book/cashBookRepository.ts'), /useSnapshotRepository/);
+assert.match(read('apps/payroll/payrollRepository.ts'), /useSnapshotRepository/);
+assert.match(read('apps/book/cashBookStore.ts'), /Compatibility entry point/);
+assert.match(read('apps/payroll/payrollStore.ts'), /Compatibility entry point/);
 assert.match(read('apps/truck/components/Pages/CashReportView.tsx'), /DeleteConfirmModal/);
 assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /useAsyncAction/);
 assert.match(read('apps/payroll/components/EmployeeDetailModal.tsx'), /submitting/);

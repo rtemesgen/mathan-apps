@@ -11,7 +11,7 @@ import { ImportBookModal } from './components/ImportBookModal';
 import { RenameBookModal } from './components/RenameBookModal';
 import { DeleteBookModal } from './components/DeleteBookModal';
 import { AddMembersModal } from './components/AddMembersModal';
-import { useCashBookRepository } from './cashBookStore';
+import { useCashBookRepository } from './cashBookRepository';
 
 export default function App() {
   const { books: [books], transactions: [transactions], actions } = useCashBookRepository();

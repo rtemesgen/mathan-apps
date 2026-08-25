@@ -1,7 +1,29 @@
 import type { Employee, SalaryChange, Transaction } from './types';
 import type { PersistenceState, RepositoryResult } from '../../lib/repositories/types';
+import { useSnapshotRepository } from '../../lib/repositories/useSnapshotRepository';
 
 type Persist<T> = (next: T) => Promise<PersistenceState>;
+
+/** Payroll repository adapter: domain operations and their snapshot-backed persistence stay together. */
+export function usePayrollRepository() {
+  const employees = useSnapshotRepository<Employee[]>('payroll', 'employees', []);
+  const transactions = useSnapshotRepository<Transaction[]>('payroll', 'transactions', []);
+  const persistEmployees = employees[4];
+  const persistTransactions = transactions[4];
+  return {
+    employees,
+    transactions,
+    actions: {
+      saveEmployee: (employee: Employee) => saveEmployee(employee, employees[0], persistEmployees),
+      deleteEmployee: (employeeId: string) => saveRemovedEmployee(employeeId, employees[0], transactions[0], persistEmployees, persistTransactions),
+      saveRaise: (employeeId: string, raise: Parameters<typeof saveEmployeeRaise>[1]) => saveEmployeeRaise(employeeId, raise, employees[0], persistEmployees),
+      saveTransaction: (transaction: Transaction) => savePayrollTransaction(transaction, transactions[0], persistTransactions),
+      deleteTransaction: (transactionId: string) => saveRemovedPayrollTransaction(transactionId, transactions[0], persistTransactions),
+      updateRaise: (employeeId: string, raise: Parameters<typeof saveUpdatedRaise>[1]) => saveUpdatedRaise(employeeId, raise, employees[0], persistEmployees),
+      deleteRaise: (employeeId: string, raiseId: string) => saveRemovedRaise(employeeId, raiseId, employees[0], persistEmployees),
+    },
+  };
+}
 
 export function addEmployee(employee: Employee, employees: Employee[]): RepositoryResult<Employee[]> {
   return { data: [employee, ...employees], persistence: 'saving' };

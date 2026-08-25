@@ -17,7 +17,7 @@ export interface WorkspaceAppAccess { app_id: AppId; enabled: boolean; permissio
 export interface WorkspaceMembership extends Workspace { role: 'owner' | 'member'; appAccess: Record<AppId, WorkspaceAppAccess>; deletionStatus?: 'active' | 'scheduled'; deletionScheduledFor?: string | null; }
 interface AuthState { configured: boolean; loading: boolean; workspaceLoading: boolean; adminLoading: boolean; passwordRecovery: boolean; loginError: string | null; session: Session | null; user: User | null; workspace: Workspace | null; workspaces: WorkspaceMembership[]; workspaceError: string | null; isOwner: boolean; isSystemAdmin: boolean; appAccess: Record<AppId, WorkspaceAppAccess>; continueAsGuest: () => void; clearLoginError: () => void; refreshWorkspace: (preferredWorkspaceId?: string) => Promise<Workspace | null>; refreshAccess: () => Promise<void>; refreshAdmin: () => Promise<void>; switchWorkspace: (workspaceId: string) => void; createGuestWorkspace: (name: string) => void; renameGuestWorkspace: (workspaceId: string, name: string, accentColor?: string) => void; deleteGuestWorkspace: (workspaceId: string) => Promise<void>; finishPasswordRecovery: () => void; signOut: () => Promise<void>; canViewApp: (app: AppId) => boolean; canEditApp: (app: AppId) => boolean; isGuest: boolean; }
 const AuthContext = createContext<AuthState | null>(null);
-export const standaloneMode = import.meta.env.VITE_STANDALONE === 'true';
+export const standaloneMode = import.meta.env?.VITE_STANDALONE === 'true';
 const workspaceCacheKey = (userId: string) => `mathan_workspace_cache_${userId}`;
 const workspaceListCacheKey = (userId: string) => `workspaces:${userId}:v1`;
 const adminCacheKey = (userId: string) => `mathan_system_admin_${userId}`;
