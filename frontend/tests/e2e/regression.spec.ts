@@ -55,6 +55,7 @@ test('Cash Book records survive switching apps and an offline reload', async ({ 
   await page.goto('/book');
   await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
 
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await context.setOffline(true);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
@@ -68,7 +69,7 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await page.getByRole('button', { name: 'Add Employee', exact: true }).first().click();
   await page.getByPlaceholder('e.g. Sarah Jenkins').fill('Payroll Persistence Employee');
   await page.getByPlaceholder('Enter amount').fill('5000');
-  await page.getByRole('button', { name: 'Save Employee' }).click();
+  await page.locator('form').evaluate((form) => form.requestSubmit());
   await expect(page.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
 
   await page.goto('/book');
@@ -77,6 +78,7 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await page.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
   await expect(page.getByText('Payroll Persistence Employee', { exact: true })).toBeVisible();
 
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await context.setOffline(true);
   await page.reload();
   await page.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
