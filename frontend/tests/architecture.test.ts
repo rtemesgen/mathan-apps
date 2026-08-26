@@ -132,6 +132,7 @@ assert.match(read('lib/repositories/snapshotRepository.ts'), /offlineStore/);
 assert.match(read('lib/syncQueue.ts'), /offlineStore/);
 assert.match(read('lib/syncQueue.ts'), /mergeQueuedMutation/);
 assert.match(read('lib/syncQueue.ts'), /writeAtomic\(\[\.\.\.records, \{ key: KEY, value: nextQueue \}\]\)/);
+assert.match(read('lib/syncQueue.ts'), /emitSyncProgress/);
 assert.match(read('lib/offlineSync.ts'), /replaceQueue\(remaining, ordered\.map/);
 assert.match(read('apps/truck/App.tsx'), /from ['"]\.\.\/\.\.\/components\/DeleteConfirmModal/);
 assert.doesNotMatch(read('apps/truck/App.tsx'), /components\/ConfirmDeleteModal/);
