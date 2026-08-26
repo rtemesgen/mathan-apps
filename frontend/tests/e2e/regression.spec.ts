@@ -163,6 +163,40 @@ test('durable web state survives closing and reopening the browser process offli
   }
 });
 
+test('Payroll data survives closing and reopening the browser process offline', async ({}, testInfo) => {
+  const profile = testInfo.outputPath('persistent-payroll-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  try {
+    const firstPage = await persistent.newPage();
+    await signIn(firstPage, 'member');
+    await firstPage.getByLabel('Payroll').click();
+    await expect(firstPage.getByText('Payroll Tracker').first()).toBeVisible();
+    await persistent.setOffline(true);
+    await firstPage.getByRole('button', { name: 'Add Employee', exact: true }).first().click();
+    const employeeName = `Persistent payroll employee ${Date.now()}`;
+    await firstPage.getByPlaceholder('e.g. Sarah Jenkins').fill(employeeName);
+    await firstPage.getByPlaceholder('Enter amount').fill('5000');
+    await firstPage.getByRole('button', { name: 'Save Employee' }).click();
+    await expect(firstPage.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
+    await firstPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
+    await expect(firstPage.getByText(employeeName, { exact: true })).toBeVisible();
+
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    await persistent.setOffline(false);
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/payroll');
+    await persistent.setOffline(true);
+    await reopenedPage.reload();
+    await expect(reopenedPage.getByText('Loading Payroll data…')).toBeHidden({ timeout: 20_000 });
+    await reopenedPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
+    await expect(reopenedPage.getByText(employeeName, { exact: true })).toBeVisible();
+  } finally {
+    await persistent.close();
+  }
+});
+
 test('a second company member retrieves a record from the shared Supabase workspace', async ({ page, browser }) => {
   const bookName = `Shared multi-device book ${Date.now()}`;
   await signIn(page, 'admin');

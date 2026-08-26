@@ -1,4 +1,5 @@
 import { expect, test } from 'playwright/test';
+import { chromium } from 'playwright';
 import { signIn } from './helpers';
 
 test('Truck app is available through the workspace launcher and preserves data across app switches and offline reloads', async ({ page, context }) => {
@@ -69,4 +70,50 @@ test('Truck app is available through the workspace launcher and preserves data a
   await page.getByRole('button', { name: /Partners & Loans/ }).click();
   await expect(page.getByText(/Partners & Loans/).first()).toBeVisible();
   await expect(page.getByText('Reset Demo Data')).toHaveCount(0);
+});
+
+test('Truck transactions survive closing and reopening the browser process offline', async ({}, testInfo) => {
+  const profile = testInfo.outputPath('persistent-truck-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  try {
+    const firstPage = await persistent.newPage();
+    await signIn(firstPage, 'admin');
+    const launcher = firstPage.getByLabel('Truck Equity');
+    if (await launcher.count() === 0) test.skip(true, 'Truck access is not granted to this fixture workspace.');
+    await launcher.click();
+    await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await firstPage.getByRole('button', { name: /Dashboard\(Trucks\)/ }).click();
+    await firstPage.getByRole('button', { name: 'Manage Fleet' }).click();
+    await firstPage.getByRole('button', { name: '+ Add Truck' }).click();
+    const truckName = `Persistent truck ${Date.now()}`;
+    await firstPage.getByPlaceholder('e.g. Big Red').fill(truckName);
+    await firstPage.getByPlaceholder('e.g. Unit 101').fill(`P-${Date.now()}`);
+    await firstPage.getByPlaceholder('e.g. 2024 Kenworth T680').fill('Persistence test vehicle');
+    await firstPage.getByRole('button', { name: 'Save Truck' }).click();
+    await expect(firstPage.locator('main').getByText(truckName, { exact: true }).first()).toBeVisible();
+    await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await firstPage.getByRole('button', { name: 'Income (Trips)' }).click();
+
+    await persistent.setOffline(true);
+    const description = `Offline persistent income ${Date.now()}`;
+    await firstPage.locator('input[type=number]').first().fill('555');
+    await firstPage.getByPlaceholder('e.g. Trip from Dallas TX to Atlanta GA').fill(description);
+    await firstPage.getByRole('button', { name: 'Save Income' }).click();
+    await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await firstPage.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
+    await expect(firstPage.getByText(description, { exact: true })).toBeVisible();
+
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/truck');
+    await persistent.setOffline(true);
+    await reopenedPage.reload();
+    await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await reopenedPage.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
+    await expect(reopenedPage.getByText(description, { exact: true })).toBeVisible();
+  } finally {
+    await persistent.close();
+  }
 });
