@@ -40,14 +40,19 @@ async function readWorkspaceCache(userId: string): Promise<OfflineWorkspaceCache
       if (parsed?.version === 1 && Array.isArray(parsed.memberships)) return parsed;
     }
   } catch { /* continue with the durable shared store */ }
-  const cached = await offlineStore.read<OfflineWorkspaceCache>(workspaceListCacheKey(userId));
-  if (cached?.version === 1 && Array.isArray(cached.memberships)) return cached;
+  // Check the legacy single-workspace localStorage value before awaiting the
+  // shared durable store. On Android, SQLite migration/opening can still be
+  // in progress; this synchronous fallback lets a signed-in user enter the
+  // last company immediately while durable hydration continues.
   let legacy: WorkspaceMembership | null = null;
   try { const value = localStorage.getItem(workspaceCacheKey(userId)); legacy = value ? normalizeLegacyWorkspace(JSON.parse(value) as WorkspaceMembership) : null; } catch { /* use the IndexedDB fallback */ }
-  legacy ??= normalizeLegacyWorkspace(await offlineStore.read<WorkspaceMembership>(`workspace:${userId}`));
   // Legacy single-workspace caches predate the timestamp field. Treat the
   // migrated record as a valid local cache so an offline restart can open the
   // company immediately instead of being rejected as an expired workspace.
+  if (legacy) return { version: 1, memberships: [legacy], selectedWorkspaceId: legacy.id, cachedAt: new Date().toISOString() };
+  const cached = await offlineStore.read<OfflineWorkspaceCache>(workspaceListCacheKey(userId));
+  if (cached?.version === 1 && Array.isArray(cached.memberships)) return cached;
+  legacy = normalizeLegacyWorkspace(await offlineStore.read<WorkspaceMembership>(`workspace:${userId}`));
   return legacy ? { version: 1, memberships: [legacy], selectedWorkspaceId: legacy.id, cachedAt: new Date().toISOString() } : null;
 }
 async function writeWorkspaceCache(userId: string, memberships: WorkspaceMembership[], selectedWorkspaceId: string | null) {

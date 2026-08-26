@@ -128,6 +128,8 @@ assert.doesNotMatch(read('auth/guestWorkspaces.ts'), /\b(readOffline|writeOfflin
 assert.doesNotMatch(read('admin/adminBackup.ts'), /\b(readOffline|writeOffline|deleteOffline)\b/);
 assert.match(read('auth/AuthProvider.tsx'), /offlineStore\.read/);
 assert.match(read('auth/AuthProvider.tsx'), /offlineStore\.write/);
+const workspaceCacheSource = read('auth/AuthProvider.tsx').slice(read('auth/AuthProvider.tsx').indexOf('async function readWorkspaceCache'));
+assert.ok(workspaceCacheSource.indexOf('localStorage.getItem(workspaceCacheKey') < workspaceCacheSource.indexOf('offlineStore.read<OfflineWorkspaceCache>'), 'legacy workspace cache must be checked before waiting on durable storage');
 assert.match(read('lib/repositories/snapshotRepository.ts'), /offlineStore/);
 assert.match(read('lib/syncQueue.ts'), /offlineStore/);
 assert.match(read('lib/syncQueue.ts'), /mergeQueuedMutation/);
