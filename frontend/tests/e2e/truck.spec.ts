@@ -50,6 +50,7 @@ test('Truck app is available through the workspace launcher and preserves data a
   await page.getByRole('option', { name: 'E2E Customer', exact: true }).click();
   await expect(page.getByRole('button', { name: 'E2E Customer', exact: true })).toBeVisible();
   await page.locator('input[type=number]').first().fill('400');
+  await page.getByPlaceholder('Select or type category...').fill('Customer refund');
   await page.getByRole('button', { name: 'Save Expense' }).click();
   await expect(page.getByRole('status')).toContainText(/Saved on this device|Customer payable saved successfully/);
 
