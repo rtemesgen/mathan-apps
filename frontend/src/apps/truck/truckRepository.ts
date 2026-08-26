@@ -5,6 +5,7 @@ import { syncQueue, writeTruckMutationOnline } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import { isConnectivityFailure, withConnectionTimeout } from '../../lib/connectivity';
 import { diagnostic } from '../../lib/diagnostics';
+import { recordCacheRepair } from '../../lib/cacheRepair';
 import type { Customer, Owner, Transaction, Truck } from './types';
 
 export type TruckPersistenceStatus = 'saving' | 'saved' | 'saved locally' | 'offline saved' | 'sync pending' | 'storage error' | 'sync conflict';
@@ -112,7 +113,14 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
         try {
           diagnostic('online-save-attempt', { app: 'truck', workspaceId, operation: 'truck' });
           const confirmedRows = await Promise.all(writes.map(({ table, payload, operation }) => withConnectionTimeout(writeTruckMutationOnline(workspaceId, table, { ...payload, workspace_id: workspaceId }, operation, operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? ''))))));
-          await offlineStore.write(storageKey, applyConfirmedTruckRows(next, writes, confirmedRows));
+          try {
+            await offlineStore.write(storageKey, applyConfirmedTruckRows(next, writes, confirmedRows));
+          } catch (cacheError) {
+            // The relational write is already authoritative. Mark the cache
+            // for refresh instead of queuing a second business mutation.
+            await recordCacheRepair(userId, workspaceId, 'truck');
+            throw cacheError;
+          }
           diagnostic('online-save-success', { app: 'truck', workspaceId, operation: 'truck' });
         } catch (error) {
           if (!isConnectivityFailure(error)) throw error;

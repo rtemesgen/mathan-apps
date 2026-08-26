@@ -6,6 +6,7 @@ import { reportPersistenceNotice, type PersistenceState } from './types';
 import { emitSyncStatus } from '../toast';
 import { isConnectivityFailure, withConnectionTimeout } from '../connectivity';
 import { diagnostic } from '../diagnostics';
+import { recordCacheRepair } from '../cacheRepair';
 
 export type SnapshotRepositoryContext = {
   storageKey: string;
@@ -84,7 +85,14 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
           reportPersistenceNotice({ app: context.domain, state: 'sync conflict' });
           throw new Error('The online data changed before this save. Refresh and review the latest data.');
         }
-        await offlineStore.writeAtomic([{ key: context.storageKey, value }, { key: `${context.storageKey}:revision`, value: result.revision }]);
+        try {
+          await offlineStore.writeAtomic([{ key: context.storageKey, value }, { key: `${context.storageKey}:revision`, value: result.revision }]);
+        } catch (cacheError) {
+          // Supabase already accepted this mutation. Never route a cache-only
+          // failure through the offline queue, which could replay the write.
+          await recordCacheRepair(context.userId ?? context.storageKey.split(':')[0] ?? 'unknown', context.workspaceId, payload.domain);
+          throw cacheError;
+        }
         diagnostic('online-save-success', { app: context.domain, workspaceId: context.workspaceId, operation: 'snapshot' });
       } catch (error) {
         if (!isConnectivityFailure(error)) throw error;

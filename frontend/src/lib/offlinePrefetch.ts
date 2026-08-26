@@ -7,6 +7,7 @@ import { shouldApplyRemoteSnapshot, withSnapshotStorageLock } from './repositori
 import { refreshTruckDataFromCloud } from '../apps/truck/truckRepository';
 import { withConnectionTimeout } from './connectivity';
 import { diagnostic } from './diagnostics';
+import { clearCacheRepair } from './cacheRepair';
 
 type SnapshotRow = { domain: string; payload: unknown; revision: number };
 
@@ -43,7 +44,8 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
   if (!navigator.onLine) return;
   const serverRefreshAt = new Date().toISOString();
   const snapshots = await withConnectionTimeout(supabase.from('app_state_snapshots').select('domain,payload,revision').eq('workspace_id', workspaceId));
-  if (!snapshots.error) {
+  if (snapshots.error) throw snapshots.error;
+  {
     for (const row of (snapshots.data as SnapshotRow[] | null) ?? []) {
       const separator = row.domain.indexOf(':');
       if (separator < 1) continue;
@@ -79,5 +81,10 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
     companyId: workspaceId,
     lastServerRefreshAt: serverRefreshAt,
   });
+  await Promise.all([
+    clearCacheRepair(userId, workspaceId, 'cash_book'),
+    clearCacheRepair(userId, workspaceId, 'payroll'),
+    clearCacheRepair(userId, workspaceId, 'truck'),
+  ]);
   diagnostic('cache-refreshed', { workspaceId, userId });
 }
