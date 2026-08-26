@@ -240,11 +240,25 @@ export async function writeOffline<T>(key: string, value: T): Promise<void> {
 }
 
 export async function deleteOffline(key: string): Promise<void> {
-  memoryCache.delete(key);
   return queueWrite([key], async () => {
-    removeFallback(key);
-    try { if (await getNativeStoreReady()) await deleteNativeRecord(key); } catch { /* continue with legacy stores */ }
-    try { await deleteIndexedDb(key); } catch { /* fallback was already removed */ }
+    // Keep the previous value available until every backing store has been
+    // deleted. Android may have both a migrated SQLite copy and a legacy
+    // IndexedDB copy; deleting only one would otherwise resurrect a record on
+    // the next launch. If either deletion fails, restore a fallback copy and
+    // reject so the UI can report a real storage error.
+    const previous = memoryCache.has(key) ? memoryCache.get(key) : await readOffline<unknown>(key);
+    try {
+      if (await getNativeStoreReady()) await deleteNativeRecord(key);
+      await deleteIndexedDb(key);
+      removeFallback(key);
+      memoryCache.delete(key);
+    } catch (error) {
+      if (previous !== null && previous !== undefined) {
+        memoryCache.set(key, previous);
+        try { localStorage.setItem(fallbackKey(key), JSON.stringify(previous)); } catch { /* preserve the original storage error */ }
+      }
+      throw error;
+    }
   });
 }
 
