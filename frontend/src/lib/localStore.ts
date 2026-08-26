@@ -8,6 +8,11 @@ const DB_VERSION = 2;
 const memoryCache = new Map<string, unknown>();
 const fallbackKey = (key: string) => `mathan_erp_offline_${key}`;
 let nativeStoreReady: Promise<boolean> | null = null;
+// Once the marker has been verified, avoid a SQLite metadata query for every
+// local read/write during this app session. A failed check is deliberately not
+// cached so a transient native error can still fall back to IndexedDB.
+let nativeMigrationState: boolean | null = null;
+let nativeMigrationCheck: Promise<boolean> | null = null;
 const writeTails = new Map<string, Promise<void>>();
 
 function readFallback<T>(key: string): T | null {
@@ -86,6 +91,20 @@ async function readLegacyLocalStorage() {
   return entries;
 }
 
+async function readNativeMigrationState() {
+  if (nativeMigrationState !== null) return nativeMigrationState;
+  nativeMigrationCheck ??= isNativeMigrationComplete()
+    .then((complete) => {
+      nativeMigrationState = complete;
+      return complete;
+    })
+    .catch((error) => {
+      nativeMigrationCheck = null;
+      throw error;
+    });
+  return nativeMigrationCheck;
+}
+
 async function getNativeStoreReady() {
   // SQLite is intentionally an Android-only adapter for this release. Web
   // and any future non-Android native target continue using IndexedDB and the
@@ -94,7 +113,7 @@ async function getNativeStoreReady() {
   nativeStoreReady ??= (async () => {
     // Reopening an already migrated Android database must not rescan every
     // legacy IndexedDB record before the first read or save.
-    if (await isNativeMigrationComplete()) return true;
+    if (await readNativeMigrationState()) return true;
     const [records, metadata, localStorageRecords] = await Promise.all([
       readLegacyStore(STORE_NAME),
       readLegacyStore(META_STORE_NAME),
@@ -107,9 +126,11 @@ async function getNativeStoreReady() {
       // newest value and must win if both stores contain the same key.
       localStorageRecords.forEach((entry) => mergedRecords.set(entry.key, entry));
       await migrateLegacyRecords([...mergedRecords.values()], metadata);
+      nativeMigrationState = true;
       return true;
     } catch {
       // Keep IndexedDB active until a complete verified migration succeeds.
+      nativeMigrationState = false;
       return false;
     }
   })().catch(() => false);
@@ -165,7 +186,7 @@ export async function readOffline<T>(key: string): Promise<T | null> {
     if (Capacitor.getPlatform() === 'android') {
       let migrationComplete = false;
       let migrationCheckFailed = false;
-      try { migrationComplete = await isNativeMigrationComplete(); } catch { migrationCheckFailed = true; }
+      try { migrationComplete = await readNativeMigrationState(); } catch { migrationCheckFailed = true; }
       if (migrationCheckFailed || !migrationComplete) {
         if (!migrationCheckFailed) void getNativeStoreReady();
         return await readIndexedDbRecord<T>(key);
