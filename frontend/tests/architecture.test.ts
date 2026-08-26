@@ -103,6 +103,8 @@ assert.match(fileSaverSource, /new File\(mediaDirectories\[0\], "backups"\)/);
 const androidManifest = fs.readFileSync(path.resolve('../mobile/android/app/src/main/AndroidManifest.xml'), 'utf8');
 assert.doesNotMatch(androidManifest, /WRITE_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE/);
 assert.match(read('admin/adminBackup.ts'), /saveWorkspaceBackupFile/);
+assert.match(read('admin/adminBackup.ts'), /function localDayKey/);
+assert.doesNotMatch(read('admin/adminBackup.ts'), /toISOString\(\)\.slice\(0, 10\)/);
 assert.match(read('admin/adminBackup.ts'), /truck_customers/);
 const adminFunctionSource = readBackend('supabase/functions/system-admin/index.ts');
 assert.match(adminFunctionSource, /truck_customers/);

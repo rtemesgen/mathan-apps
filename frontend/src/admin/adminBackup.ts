@@ -11,6 +11,13 @@ const DAILY_RUNNING_MARKER = 'mathan_admin_backup_running_day';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+function localDayKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 type BackupKeyMeta = { salt: string; verifier: string };
 export type BackupProgress = { stage: string; percent: number; completed: number; total: number; bytes: number };
 export type AdminArchive = Record<string, unknown> & {
@@ -57,7 +64,7 @@ export async function configureDeviceBackupKey(passphrase: string) {
   if (!isCryptoKey(await offlineStore.read<CryptoKey>(KEY_STORAGE))) throw new Error('This browser could not store the protected device key. Check private-browsing or storage restrictions.');
 }
 /** A day is complete only after the encrypted archive and server run finish. */
-export function backupCompletedToday() { const today = new Date().toISOString().slice(0, 10); return localStorage.getItem(DAILY_MARKER) === today; }
+export function backupCompletedToday() { return localStorage.getItem(DAILY_MARKER) === localDayKey(); }
 export function backupRunningToday() {
   try {
     const started = localStorage.getItem(DAILY_RUNNING_MARKER);
@@ -142,7 +149,7 @@ export async function createEncryptedAdminBackup(kind: 'automatic' | 'manual', o
     const content = JSON.stringify(container);
     await offlineStore.write(LATEST_BACKUP, content);
     await adminRequest('finish-backup', { run_id: started.run.id, status: 'completed', record_count: completed, attachment_count: started.counts.attachments ?? 0, size_bytes: content.length, checksum });
-    localStorage.setItem(DAILY_MARKER, new Date().toISOString().slice(0, 10));
+    localStorage.setItem(DAILY_MARKER, localDayKey());
     clearAutomaticBackupStarted();
     onProgress({ stage: 'Backup ready', percent: 100, completed, total, bytes: content.length });
     return { content, checksum, filename: `mathan-system-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.meb.json` };
