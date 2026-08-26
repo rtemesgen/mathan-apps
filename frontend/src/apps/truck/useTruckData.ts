@@ -9,7 +9,10 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [currentTruckId, setCurrentTruckId] = useState('');
   const [members, setMembers] = useState<Array<{ user_id: string; email: string; display_name: string }>>([]);
-  const [loading, setLoading] = useState(false);
+  // Local hydration is the first render path. Starting in a loading state
+  // prevents the dashboard from briefly presenting zero balances while the
+  // durable Truck cache is being read after an offline restart.
+  const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState('');
 
   const applyData = useCallback((data: Awaited<ReturnType<typeof loadTruckData>>) => {
@@ -42,22 +45,33 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
     void synchronizeTruckData(workspaceId, userId).then(applyData).catch(() => {
       // The browser can report itself online for the first render while the
       // backend request is already unreachable. Fall back to the durable
-      // Truck cache instead of leaving the screen at its empty initial state.
-      void refresh();
+      // Truck cache without toggling the already-hydrated dashboard back into
+      // a loading state.
+      void loadTruckData(workspaceId, true, userId).then(applyData).catch(() => undefined);
     });
   }, [workspaceId, userId, isGuest, applyData]);
 
   useEffect(() => {
-    // Hydrate the durable cache immediately. The browser's first online
-    // signal can be stale during an offline reload, and waiting for a failed
-    // cloud request would otherwise leave the screen at its empty initial
-    // state. A cloud reconciliation still follows for connected sessions.
-    if (workspaceId) void loadTruckData(workspaceId, true, userId).then(applyData).catch(() => undefined);
-    if (navigator.onLine && !isGuest) void synchronize();
-    else void refresh();
+    let active = true;
+    // Hydrate the durable cache before any cloud request. The browser/WebView
+    // can still report online while the backend is unreachable; local data
+    // must therefore become visible without waiting for the network timeout.
+    if (!workspaceId) { setLoading(false); return () => { active = false; }; }
+    setLoading(true);
+    void loadTruckData(workspaceId, true, userId)
+      .then((data) => {
+        if (!active) return;
+        applyData(data);
+        setLoading(false);
+        // Do not race cloud hydration against the local read: an older cache
+        // read must never overwrite a newer cloud result on first render.
+        if (navigator.onLine && !isGuest) void synchronize();
+      })
+      .catch(() => { if (active) { setLoading(false); setDataError('Could not load local Truck data.'); } });
     if (workspaceId && !isGuest) void loadTruckWorkspaceMembers(workspaceId).then(setMembers).catch(() => undefined);
     else setMembers([]);
-  }, [workspaceId, isGuest, refresh, synchronize]);
+    return () => { active = false; };
+  }, [workspaceId, isGuest, userId, applyData, synchronize]);
 
   useEffect(() => {
     const handler = () => synchronize();

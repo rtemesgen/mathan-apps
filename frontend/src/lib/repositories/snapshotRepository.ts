@@ -1,12 +1,13 @@
 import { offlineStore } from '../localStore';
 import { supabase } from '../supabase';
-import { enqueueMutationsAtomic, getQueuedMutations } from '../syncQueue';
+import { getQueuedMutations } from '../syncQueue';
 import { syncQueue } from '../offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from './types';
 import { emitSyncStatus } from '../toast';
 import { isConnectivityFailure, withConnectionTimeout } from '../connectivity';
 import { diagnostic } from '../diagnostics';
 import { recordCacheRepair } from '../cacheRepair';
+import { saveOfflineFallback } from '../durablePersistence';
 
 export type SnapshotRepositoryContext = {
   storageKey: string;
@@ -98,11 +99,11 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
         if (!isConnectivityFailure(error)) throw error;
         const mutationId = crypto.randomUUID();
         const queueUserId = context.userId ?? context.storageKey.split(':')[0] ?? 'unknown';
-        await enqueueMutationsAtomic([{
+        await saveOfflineFallback({
           mutationId, userId: queueUserId, companyId: context.workspaceId,
           entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: durableRevision,
           table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId },
-        }], [{ key: context.storageKey, value }]);
+        }, [{ key: context.storageKey, value }]);
         reportPersistenceNotice({ app: context.domain, state: 'offline saved' });
         diagnostic('offline-fallback', { app: context.domain, workspaceId: context.workspaceId, operation: 'snapshot' });
         emitSyncStatus('offline');
@@ -117,11 +118,11 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
       // Otherwise the sync worker could write the acknowledged payload to an
       // `unknown:` key while the UI reads the real user-scoped key.
       const queueUserId = context.userId ?? context.storageKey.split(':')[0] ?? 'unknown';
-      await enqueueMutationsAtomic([{
+      await saveOfflineFallback({
         mutationId, userId: queueUserId, companyId: context.workspaceId,
         entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: durableRevision,
         table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId },
-      }], [{ key: context.storageKey, value }]);
+      }, [{ key: context.storageKey, value }]);
     }
     if (context.standalone) {
       reportPersistenceNotice({ app: context.domain, state: 'offline saved' });

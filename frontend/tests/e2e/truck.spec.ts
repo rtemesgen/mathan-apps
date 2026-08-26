@@ -112,6 +112,7 @@ test('Truck transactions survive closing and reopening the browser process offli
     await reopenedPage.goto('/truck');
     await persistent.setOffline(true);
     await reopenedPage.reload();
+    await expect(reopenedPage.getByText('Loading Truck data…')).toBeHidden();
     await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
     await reopenedPage.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
     await expect(reopenedPage.getByText(description, { exact: true })).toBeVisible();

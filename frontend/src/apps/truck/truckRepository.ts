@@ -1,11 +1,12 @@
 import { supabase } from '../../lib/supabase';
 import { offlineStore } from '../../lib/localStore';
-import { enqueueMutationsAtomic, getWorkspaceMutationStatus, type QueuedMutationInput } from '../../lib/syncQueue';
+import { getWorkspaceMutationStatus } from '../../lib/syncQueue';
 import { syncQueue, writeTruckMutationOnline } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import { isConnectivityFailure, withConnectionTimeout } from '../../lib/connectivity';
 import { diagnostic } from '../../lib/diagnostics';
 import { recordCacheRepair } from '../../lib/cacheRepair';
+import { saveOfflineFallback } from '../../lib/durablePersistence';
 import type { Customer, Owner, Transaction, Truck } from './types';
 
 export type TruckPersistenceStatus = 'saving' | 'saved' | 'saved locally' | 'offline saved' | 'sync pending' | 'storage error' | 'sync conflict';
@@ -91,12 +92,11 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
       if (localOnly || !navigator.onLine || !writes.length) {
         if (localOnly || !writes.length) await offlineStore.write(storageKey, next);
         else {
-          const mutations: QueuedMutationInput[] = writes.map(({ table, payload, operation }) => ({
+          await saveOfflineFallback(writes.map(({ table, payload, operation }) => ({
             mutationId: crypto.randomUUID(), userId, companyId: workspaceId,
             entityType: table, entityId: String(payload.id ?? ''), table,
             operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
-          }));
-          await enqueueMutationsAtomic(mutations, [{ key: storageKey, value: next }]);
+          })), [{ key: storageKey, value: next }]);
         }
       } else {
         // Online-first: write relational Truck rows to Supabase directly. The
@@ -124,12 +124,11 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
           diagnostic('online-save-success', { app: 'truck', workspaceId, operation: 'truck' });
         } catch (error) {
           if (!isConnectivityFailure(error)) throw error;
-          const mutations: QueuedMutationInput[] = writes.map(({ table, payload, operation }) => ({
-            mutationId: crypto.randomUUID(), userId, companyId: workspaceId,
-            entityType: table, entityId: String(payload.id ?? ''), table,
-            operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
-          }));
-          await enqueueMutationsAtomic(mutations, [{ key: storageKey, value: next }]);
+          await saveOfflineFallback(writes.map(({ table, payload, operation }) => ({
+              mutationId: crypto.randomUUID(), userId, companyId: workspaceId,
+              entityType: table, entityId: String(payload.id ?? ''), table,
+              operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
+            })), [{ key: storageKey, value: next }]);
           reportTruckStatus('offline saved');
           diagnostic('offline-fallback', { app: 'truck', workspaceId, operation: 'truck' });
           return next;
