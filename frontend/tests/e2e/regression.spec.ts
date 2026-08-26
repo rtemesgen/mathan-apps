@@ -1,4 +1,5 @@
 import { expect, test } from 'playwright/test';
+import { chromium } from 'playwright';
 import { signIn } from './helpers';
 import { E2E_USERS } from './globalSetup';
 
@@ -132,6 +133,34 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await page.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
   await expect(page.getByText('Payroll Persistence Employee', { exact: true })).toBeVisible();
   await context.setOffline(false);
+});
+
+test('durable web state survives closing and reopening the browser process offline', async ({}, testInfo) => {
+  const profile = testInfo.outputPath('persistent-browser-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  try {
+    const firstPage = await persistent.newPage();
+    await signIn(firstPage, 'member');
+    await firstPage.getByLabel('Cash Book').click();
+    await expect(firstPage.getByText('Cash Book Overview')).toBeVisible();
+    const bookName = `Persistent browser book ${Date.now()}`;
+    await firstPage.getByRole('button', { name: /Create Book|New Book/ }).first().click();
+    await firstPage.getByPlaceholder(/Retail Shop Cashbook/).fill(bookName);
+    await firstPage.getByRole('button', { name: 'Save Book' }).click();
+    await expect(firstPage.getByRole('heading', { name: bookName })).toBeVisible();
+
+    await persistent.setOffline(true);
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/book');
+    await persistent.setOffline(true);
+    await reopenedPage.reload();
+    await expect(reopenedPage.getByRole('heading', { name: bookName })).toBeVisible();
+  } finally {
+    await persistent.close();
+  }
 });
 
 test('a second company member retrieves a record from the shared Supabase workspace', async ({ page, browser }) => {
