@@ -24,6 +24,7 @@ assert.equal(queuedAfterStorageFailure, false, 'a storage failure must never enq
 
 const createdBook = createBook({ name: 'New', currency: 'USD' }, '2026-01-02T00:00:00.000Z').data;
 assert.equal(createdBook.createdAt, '2026-01-02T00:00:00.000Z');
+assert.match(createdBook.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, 'offline-created records use stable UUIDs');
 assert.equal(createTransaction('b1', 'out', { amount: 5, remark: 'fuel', dateTime: '2026-01-02T00:00' }).data.type, 'out');
 assert.deepEqual(removeBook('b1', [book], [bookTx]).data, { books: [], transactions: [] });
 assert.equal(addEmployee(employee, []).data[0].id, 'e1');

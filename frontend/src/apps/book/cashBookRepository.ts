@@ -39,7 +39,7 @@ export function useCashBookRepository() {
 }
 
 const now = () => new Date().toISOString();
-const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const id = (_prefix: string) => crypto.randomUUID();
 
 
 export function createBook(input: NewBook, timestamp = now()): RepositoryResult<Book> {
@@ -129,10 +129,10 @@ export async function saveRemovedTransaction(transactionId: string, transactions
 
 export async function saveImportedBooks(importedBooks: CashBookImport[], books: Book[], transactions: Transaction[], persistBooks: Persist<Book[]>, persistTransactions: Persist<Transaction[]>, updateBooks?: PersistUpdate<Book[]>, updateTransactions?: PersistUpdate<Transaction[]>) {
   const timestamp = now();
-  const newBooks = importedBooks.map(({ book }, index) => ({ ...book, id: `book-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`, createdAt: timestamp, updatedAt: timestamp }));
+  const newBooks = importedBooks.map(({ book }) => ({ ...book, id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp }));
   const newTransactions = importedBooks.flatMap(({ transactions: importedTransactions }, index) => importedTransactions.map((transaction, transactionIndex) => ({
     ...transaction,
-    id: `tx-import-${Date.now()}-${index}-${transactionIndex}-${Math.random().toString(36).slice(2, 7)}`,
+    id: crypto.randomUUID(),
     bookId: newBooks[index].id,
     createdAt: timestamp,
   })));

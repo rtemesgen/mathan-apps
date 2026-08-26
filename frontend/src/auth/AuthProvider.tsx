@@ -8,6 +8,8 @@ import { disableGuestMode, enableGuestMode, isGuestMode } from './guestMode';
 import { clearOfflineMemory, clearOfflinePrefix, offlineStore } from '../lib/localStore';
 import { prefetchWorkspaceData } from '../lib/offlinePrefetch';
 import { syncWorkspaceQueues } from '../lib/offlineSync';
+import { getQueuedMutations } from '../lib/syncQueue';
+import { withConnectionTimeout } from '../lib/connectivity';
 import { createGuestWorkspace as createLocalGuestWorkspace, deleteGuestWorkspace as deleteLocalGuestWorkspace, migrateLegacyGuestData, readGuestWorkspaceCache, renameGuestWorkspace as renameLocalGuestWorkspace, selectGuestWorkspace as selectLocalGuestWorkspace, type GuestWorkspaceCache } from './guestWorkspaces';
 
 export type AppId = 'book' | 'payroll' | 'truck';
@@ -131,34 +133,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     const cachedSelection = restoreCached('Connect to the internet once to download your companies for offline use.');
     setOfflineAccessExpired(!navigator.onLine && !!cached?.cachedAt && Date.now() - new Date(cached.cachedAt).getTime() > 30 * 86400000);
-    setWorkspaceLoading(false);
-    if (!navigator.onLine) return restoreCached('Connect to the internet once to download your companies for offline use.');
-    const [{ data, error }, { data: deletionRows }] = await Promise.all([supabase.rpc('list_my_workspaces'), supabase.rpc('list_my_workspace_deletions')]);
+    if (!navigator.onLine) { setWorkspaceLoading(false); return restoreCached('Connect to the internet once to download your companies for offline use.'); }
+    let workspaceResults: Awaited<ReturnType<typeof supabase.rpc>>[];
+    try { workspaceResults = await withConnectionTimeout(Promise.all([supabase.rpc('list_my_workspaces'), supabase.rpc('list_my_workspace_deletions')])); }
+    catch { setWorkspaceLoading(false); return restoreCached('Could not reach Supabase. Using your saved company cache until the connection returns.'); }
+    const [{ data, error }, { data: deletionRows }] = workspaceResults;
     if (requestId !== refreshSequence.current) return cachedSelection;
-    if (error) return restoreCached(error.message);
+    if (error) { setWorkspaceLoading(false); return restoreCached(error.message); }
     const memberships = ((data as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; book_enabled: boolean; book_permission: AppPermission; payroll_enabled: boolean; payroll_permission: AppPermission; truck_enabled?: boolean; truck_permission?: AppPermission }> | null) ?? []).map((row) => ({
       id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role,
       deletionStatus: 'active' as 'active' | 'scheduled', deletionScheduledFor: null,
       appAccess: { book: { app_id: 'book' as AppId, enabled: row.book_enabled, permission: row.book_permission }, payroll: { app_id: 'payroll' as AppId, enabled: row.payroll_enabled, permission: row.payroll_permission }, truck: { app_id: 'truck' as AppId, enabled: row.truck_enabled ?? true, permission: row.truck_permission ?? (row.member_role === 'owner' ? 'edit' : 'none') } },
     }));
     for (const row of ((deletionRows as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; deletion_status: 'scheduled'; deletion_scheduled_for: string | null }> | null) ?? [])) memberships.push({ id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role, deletionStatus: 'scheduled', deletionScheduledFor: row.deletion_scheduled_for, appAccess: defaultAppAccess() });
-    const { data: truckAccess } = await supabase.rpc('list_my_truck_access');
+    const { data: truckAccess } = await withConnectionTimeout(supabase.rpc('list_my_truck_access')).catch(() => ({ data: null }));
     if (requestId !== refreshSequence.current) return cachedSelection;
     const accessByWorkspace = new Map(((truckAccess as Array<{ workspace_id: string; truck_enabled: boolean; truck_permission: AppPermission }> | null) ?? []).map((item) => [item.workspace_id, item]));
     memberships.forEach((membership) => { const access = accessByWorkspace.get(membership.id); const cachedAccess = cached?.memberships.find((item) => item.id === membership.id)?.appAccess.truck; membership.appAccess.truck = { app_id: 'truck', enabled: access?.truck_enabled ?? cachedAccess?.enabled ?? true, permission: access?.truck_permission ?? cachedAccess?.permission ?? (membership.role === 'owner' ? 'edit' : 'none') }; });
     setWorkspaces(memberships);
     const current = memberships.find((item) => item.id === (preferredWorkspaceId ?? workspace?.id ?? cached?.selectedWorkspaceId));
     const preferred = current ?? memberships.find((item) => item.role === 'owner') ?? memberships[0] ?? null;
-    applyWorkspace(preferred); setWorkspaceError(null); setWorkspaceLoading(false);
+    applyWorkspace(preferred); setWorkspaceError(null);
     setOfflineAccessExpired(false);
     await writeWorkspaceCache(session.user.id, memberships, preferred?.id ?? null);
     await offlineStore.writeMetadata(`permissions:${session.user.id}`, { permissionsLastVerifiedAt: new Date().toISOString() });
     if (preferred) { localStorage.setItem(workspaceCacheKey(session.user.id), JSON.stringify(preferred)); await offlineStore.write(`workspace:${session.user.id}`, preferred); }
     const active = memberships.filter((item) => item.deletionStatus !== 'scheduled');
-    void (async () => {
-      await syncWorkspaceQueues(active.map((item) => item.id));
-      await Promise.allSettled(active.map((item) => prefetchWorkspaceData(item.id, session.user.id)));
-    })();
+    await syncWorkspaceQueues(active.map((item) => item.id)).catch(() => undefined);
+    await Promise.allSettled(active.map((item) => prefetchWorkspaceData(item.id, session.user.id)));
+    setWorkspaceLoading(false);
     return preferred ? { id: preferred.id, name: preferred.name, accent_color: preferred.accent_color } : cachedSelection;
   };
   const switchWorkspace = (workspaceId: string) => {
@@ -247,7 +250,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.history.replaceState({}, '', '/');
     }
   }, []);
-  const value = useMemo(() => ({ configured: isSupabaseConfigured && !standaloneMode, loading, workspaceLoading, adminLoading, passwordRecovery, loginError, session, user: session?.user ?? null, workspace, workspaces, workspaceError, isOwner, isSystemAdmin, appAccess, isGuest: guest, continueAsGuest, clearLoginError: () => setLoginError(null), refreshWorkspace, refreshAccess, refreshAdmin, switchWorkspace, createGuestWorkspace, renameGuestWorkspace, deleteGuestWorkspace, canViewApp: (app: AppId) => !offlineAccessExpired && appAccess[app]?.enabled === true && appAccess[app]?.permission !== 'none', canEditApp: (app: AppId) => !offlineAccessExpired && appAccess[app]?.enabled === true && appAccess[app]?.permission === 'edit', finishPasswordRecovery: () => setPasswordRecovery(false), signOut: async () => { const signedInUserId = session?.user.id; if (guest) { disableGuestMode(); setGuest(false); } else if (!standaloneMode) { await supabase.auth.signOut(); if (signedInUserId) { await clearOfflinePrefix(`${signedInUserId}:`); await offlineStore.delete(workspaceListCacheKey(signedInUserId)); await offlineStore.delete(`workspace:${signedInUserId}`); try { localStorage.removeItem(workspaceCacheKey(signedInUserId)); localStorage.removeItem(workspaceListLocalCacheKey(signedInUserId)); } catch { /* storage is unavailable */ } clearOfflineMemory(); } setSession(null); } setLoginError(null); setWorkspace(null); setWorkspaces([]); setWorkspaceError(null); setWorkspaceLoading(false); setAdminLoading(false); setIsSystemAdmin(false); } }), [guest, loading, workspaceLoading, adminLoading, passwordRecovery, loginError, session, workspace, workspaces, workspaceError, isOwner, isSystemAdmin, appAccess, offlineAccessExpired]);
+  const value = useMemo(() => ({ configured: isSupabaseConfigured && !standaloneMode, loading, workspaceLoading, adminLoading, passwordRecovery, loginError, session, user: session?.user ?? null, workspace, workspaces, workspaceError, isOwner, isSystemAdmin, appAccess, isGuest: guest, continueAsGuest, clearLoginError: () => setLoginError(null), refreshWorkspace, refreshAccess, refreshAdmin, switchWorkspace, createGuestWorkspace, renameGuestWorkspace, deleteGuestWorkspace, canViewApp: (app: AppId) => !offlineAccessExpired && appAccess[app]?.enabled === true && appAccess[app]?.permission !== 'none', canEditApp: (app: AppId) => !offlineAccessExpired && appAccess[app]?.enabled === true && appAccess[app]?.permission === 'edit', finishPasswordRecovery: () => setPasswordRecovery(false), signOut: async () => { const signedInUserId = session?.user.id; if (guest) { disableGuestMode(); setGuest(false); } else if (!standaloneMode) {
+    if (signedInUserId) {
+      // Legacy queue rows may have been created before user identity was
+      // persisted and therefore carry `unknown`. Treat every local pending
+      // mutation as protected rather than risking deletion of an unscoped
+      // financial change during logout.
+      let pending = await getQueuedMutations();
+      if (pending.length && navigator.onLine) { await syncWorkspaceQueues([...new Set(pending.map((mutation) => mutation.companyId).filter(Boolean))]); pending = await getQueuedMutations(); }
+      if (pending.length) throw new Error('Unsynchronized changes are still saved on this device. Reconnect and sync them before signing out.');
+    }
+    await supabase.auth.signOut(); if (signedInUserId) { await clearOfflinePrefix(`${signedInUserId}:`); await offlineStore.delete(workspaceListCacheKey(signedInUserId)); await offlineStore.delete(`workspace:${signedInUserId}`); try { localStorage.removeItem(workspaceCacheKey(signedInUserId)); localStorage.removeItem(workspaceListLocalCacheKey(signedInUserId)); } catch { /* storage is unavailable */ } clearOfflineMemory(); } setSession(null); } setLoginError(null); setWorkspace(null); setWorkspaces([]); setWorkspaceError(null); setWorkspaceLoading(false); setAdminLoading(false); setIsSystemAdmin(false); } }), [guest, loading, workspaceLoading, adminLoading, passwordRecovery, loginError, session, workspace, workspaces, workspaceError, isOwner, isSystemAdmin, appAccess, offlineAccessExpired]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 export function useAuth() { const value = useContext(AuthContext); if (!value) throw new Error('useAuth must be used inside AuthProvider'); return value; }

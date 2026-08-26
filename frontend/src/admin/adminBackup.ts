@@ -2,6 +2,9 @@ import { offlineStore } from '../lib/localStore';
 import { saveWorkspaceBackupFile } from '../lib/mobile';
 import { adminRequest } from './adminApi';
 import { supabase } from '../lib/supabase';
+import { getQueuedMutations } from '../lib/syncQueue';
+import { prefetchWorkspaceData } from '../lib/offlinePrefetch';
+import { diagnostic } from '../lib/diagnostics';
 
 const KEY_STORAGE = 'admin:backup-key';
 const KEY_META_STORAGE = 'admin:backup-key-meta';
@@ -185,17 +188,80 @@ export async function decryptAdminBackup(content: string, passphrase: string): P
 }
 
 export async function restoreAdminArchive(archive: AdminArchive, workspaceIds: string[], onProgress: (progress: BackupProgress) => void) {
+  diagnostic('restore-validation-started', { selectedWorkspaces: workspaceIds.length });
+  // Validate the complete selected restore set before opening a server-side
+  // restore operation. The server operation is transactional, but rejecting
+  // malformed relationships here gives the administrator a safe, useful
+  // error before any authoritative data can be staged.
+  if (archive.format !== 'mathan-system-backup' || !['1', '2'].includes(archive.schema_version) || !archive.checksum) throw new Error('Unsupported or incomplete recovery archive.');
+  const { checksum, ...unsignedArchive } = archive;
+  if (await digest(unsignedArchive) !== checksum) throw new Error('Backup checksum verification failed.');
+  for (const resource of ['users', 'workspaces', 'members', 'apps', 'permissions', 'snapshots', 'audit_events', 'invitations', 'attachments', 'trucks', 'truck_owners', 'truck_customers', 'truck_transactions']) {
+    if (!Array.isArray((archive as Record<string, unknown>)[resource])) throw new Error(`Backup is missing the ${resource} table.`);
+  }
+  const selectedIds = new Set(workspaceIds);
+  if (!selectedIds.size) throw new Error('Select at least one company to restore.');
+  const pending = (await getQueuedMutations()).filter((mutation) => selectedIds.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')));
+  if (pending.length) throw new Error('Restore is paused while this company has pending offline changes. Synchronize or resolve them before restoring so they are not silently merged into the recovery dataset.');
+  const selectedWorkspaces = archive.workspaces.filter((workspace) => selectedIds.has(String(workspace.id)));
+  if (selectedWorkspaces.length !== selectedIds.size) throw new Error('The backup does not contain every selected company.');
+  const rows = (resource: string) => (archive as Record<string, unknown>)[resource] as Array<Record<string, unknown>>;
+  const selectedRows = (resource: string) => rows(resource).filter((row) => selectedIds.has(String(row.workspace_id)));
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const idFields: Record<string, string[]> = {
+    users: ['id'], workspaces: ['id'], members: ['user_id'], apps: ['workspace_id'], permissions: ['workspace_id', 'user_id'],
+    snapshots: ['workspace_id'], audit_events: ['id', 'workspace_id'], invitations: ['id', 'workspace_id'], attachments: ['id', 'workspace_id'],
+    trucks: ['id', 'workspace_id'], truck_owners: ['id', 'workspace_id', 'truck_id'], truck_customers: ['id', 'workspace_id', 'truck_id'], truck_transactions: ['id', 'workspace_id', 'truck_id'],
+  };
+  for (const [resource, fields] of Object.entries(idFields)) {
+    const seen = new Set<string>();
+    for (const row of rows(resource)) {
+      for (const field of fields) if (row[field] != null && !uuid.test(String(row[field]))) throw new Error(`Backup contains an invalid ${resource} ${field}.`);
+      if (fields[0] === 'id' && row.id != null) { const id = String(row.id); if (seen.has(id)) throw new Error(`Backup contains duplicate ${resource} IDs.`); seen.add(id); }
+    }
+  }
+  const numericFields: Record<string, string[]> = {
+    trucks: ['cash_on_hand'], truck_owners: ['equity_percentage', 'monthly_draw_rate'], truck_transactions: ['amount'],
+  };
+  for (const [resource, fields] of Object.entries(numericFields)) for (const row of selectedRows(resource)) for (const field of fields) if (row[field] != null && (!Number.isFinite(Number(row[field])) || Number(row[field]) < 0)) throw new Error(`Backup contains an invalid numeric ${resource} field.`);
+  const dateFields: Record<string, string[]> = {
+    workspaces: ['created_at', 'updated_at'], snapshots: ['updated_at'], trucks: ['created_at', 'updated_at'], truck_owners: ['start_date', 'created_at', 'updated_at'], truck_customers: ['created_at', 'updated_at'], truck_transactions: ['occurred_on', 'created_at', 'updated_at'],
+  };
+  for (const [resource, fields] of Object.entries(dateFields)) for (const row of selectedRows(resource)) for (const field of fields) if (row[field] != null && (typeof row[field] !== 'string' || !Number.isFinite(Date.parse(row[field] as string)))) throw new Error(`Backup contains an invalid date in ${resource}.`);
+  const selectedTruckIds = new Set(selectedRows('trucks').map((row) => String(row.id)));
+  const selectedOwnerIds = new Set(selectedRows('truck_owners').map((row) => String(row.id)));
+  const selectedCustomerIds = new Set(selectedRows('truck_customers').map((row) => String(row.id)));
+  const userIds = new Set(archive.users.map((user) => String(user.id)));
+  const assertRowsBelongToSelectedWorkspace = (resource: string) => {
+    for (const row of selectedRows(resource)) if (!selectedIds.has(String(row.workspace_id))) throw new Error(`${resource} contains a row from an unselected company.`);
+  };
+  for (const resource of ['members', 'apps', 'permissions', 'snapshots', 'audit_events', 'invitations', 'trucks', 'truck_owners', 'truck_customers', 'truck_transactions']) assertRowsBelongToSelectedWorkspace(resource);
+  for (const row of selectedRows('members')) if (!userIds.has(String(row.user_id))) throw new Error('Backup contains a company member with no matching user.');
+  for (const row of selectedRows('snapshots')) if (!String(row.domain).includes(':') || !Number.isInteger(row.revision) || Number(row.revision) < 1) throw new Error('Backup contains an invalid application snapshot.');
+  for (const row of selectedRows('truck_owners')) if (!selectedTruckIds.has(String(row.truck_id))) throw new Error('Backup contains a Truck owner without its parent truck.');
+  for (const row of selectedRows('truck_customers')) if (!selectedTruckIds.has(String(row.truck_id))) throw new Error('Backup contains a Truck customer without its parent truck.');
+  for (const row of selectedRows('truck_transactions')) {
+    if (!selectedTruckIds.has(String(row.truck_id))) throw new Error('Backup contains a Truck transaction without its parent truck.');
+    if (row.owner_id != null && !selectedOwnerIds.has(String(row.owner_id))) throw new Error('Backup contains a Truck transaction with an invalid owner reference.');
+    if (row.customer_id != null && !selectedCustomerIds.has(String(row.customer_id))) throw new Error('Backup contains a Truck transaction with an invalid customer reference.');
+    if (row.settles_transaction_id != null && !selectedRows('truck_transactions').some((item) => String(item.id) === String(row.settles_transaction_id))) throw new Error('Backup contains a Truck transaction with an invalid settlement reference.');
+  }
+  const selectedAttachments = archive.attachments.filter((attachment) => selectedIds.has(String(attachment.workspace_id)));
+  for (const attachment of selectedAttachments) {
+    if (typeof attachment.data_base64 !== 'string' || !attachment.file_name) throw new Error(`Attachment ${String(attachment.id ?? attachment.file_name ?? '')} is incomplete.`);
+  }
   const operation = await adminRequest<{ operation_id: string }>('start-restore');
+  diagnostic('restore-started', { selectedWorkspaces: selectedWorkspaces.length });
   const users = archive.users;
   const emailById = new Map(users.map((user) => [String(user.id), String(user.email ?? '').toLowerCase()]));
   const resources = archive as Record<string, unknown>;
-  const selectedWorkspaces = archive.workspaces.filter((workspace) => workspaceIds.includes(String(workspace.id)));
-  const selectedAttachments = archive.attachments.filter((attachment) => workspaceIds.includes(String(attachment.workspace_id)));
+  const attachmentLinks = Array.isArray(resources.attachment_links) ? resources.attachment_links as Array<Record<string, unknown>> : [];
   const total = selectedWorkspaces.length + selectedAttachments.length;
   let completed = 0;
   const restored: Array<{ source_workspace_id: string; workspace_id: string; name: string }> = [];
   const missingUsers = new Set<string>();
   const invitations: Array<{ email: string; workspace_id: string; invite_token: string; workspace_name: string }> = [];
+  try {
   for (const workspace of selectedWorkspaces) {
     const sourceId = String(workspace.id);
     const filterRows = (name: string) => (Array.isArray(resources[name]) ? resources[name] as Array<Record<string, unknown>> : []).filter((row) => String(row.workspace_id) === sourceId);
@@ -231,10 +297,22 @@ export async function restoreAdminArchive(archive: AdminArchive, workspaceIds: s
     const prepared = await adminRequest<{ path: string; token: string }>('prepare-restore-attachment', { operation_id: operation.operation_id, source_workspace_id: attachment.workspace_id, file_name: attachment.file_name });
     const { error } = await supabase.storage.from('workspace-attachments').uploadToSignedUrl(prepared.path, prepared.token, new Blob([bytes as BlobPart], { type: String(attachment.mime_type ?? 'application/octet-stream') }));
     if (error) throw error;
-    await adminRequest('finish-restore-attachment', { operation_id: operation.operation_id, source_workspace_id: attachment.workspace_id, path: prepared.path, record_type: attachment.record_type, record_id: attachment.record_id, file_name: attachment.file_name, mime_type: attachment.mime_type, size_bytes: bytes.byteLength });
+    const links = attachmentLinks.filter((link) => String(link.attachment_id) === String(attachment.id));
+    await adminRequest('finish-restore-attachment', { operation_id: operation.operation_id, source_workspace_id: attachment.workspace_id, path: prepared.path, record_type: attachment.record_type, record_id: attachment.record_id, file_name: attachment.file_name, mime_type: attachment.mime_type, size_bytes: bytes.byteLength, links });
     completed += 1;
     onProgress({ stage: `Restored ${String(attachment.file_name)}`, percent: total ? Math.round(completed / total * 100) : 100, completed, total, bytes: bytes.byteLength });
   }
+  await adminRequest('verify-restore', { operation_id: operation.operation_id });
+  const { data: currentUser } = await supabase.auth.getUser();
+  if (!currentUser.user) throw new Error('The administrator session expired before the restored cache could be rebuilt.');
+  onProgress({ stage: 'Rebuilding local cache', percent: total ? Math.min(98, Math.round(completed / total * 100)) : 98, completed, total, bytes: 0 });
+  await Promise.all(restored.map((workspace) => prefetchWorkspaceData(workspace.workspace_id, currentUser.user.id)));
   await adminRequest('finish-restore', { operation_id: operation.operation_id, attachment_count: selectedAttachments.length });
+  diagnostic('restore-completed', { restoredWorkspaces: restored.length, attachments: selectedAttachments.length });
   return { restored, missing_users: [...missingUsers], invitations };
+  } catch (reason) {
+    diagnostic('restore-failed', { selectedWorkspaces: selectedWorkspaces.length });
+    await adminRequest('abort-restore', { operation_id: operation.operation_id, error_message: reason instanceof Error ? reason.message : 'Restore failed' }).catch(() => undefined);
+    throw reason;
+  }
 }

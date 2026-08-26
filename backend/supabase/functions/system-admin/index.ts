@@ -348,7 +348,7 @@ async function finishRestoreAttachment(actorId: string, body: Body) {
   const splitAt = path.lastIndexOf('/');
   const { data: objects, error: listError } = await admin.storage.from('workspace-attachments').list(path.slice(0, splitAt), { search: path.slice(splitAt + 1), limit: 2 });
   if (listError || !objects?.some((item) => item.name === path.slice(splitAt + 1))) throw new Error('The recovered attachment upload could not be verified.');
-  const { error } = await admin.from('record_attachments').insert({
+  const { data: attachment, error } = await admin.from('record_attachments').insert({
     workspace_id: mapping.target_workspace_id,
     record_type: text(body.record_type) || 'recovered',
     record_id: text(body.record_id) || null,
@@ -356,8 +356,15 @@ async function finishRestoreAttachment(actorId: string, body: Body) {
     file_name: text(body.file_name).slice(0, 500) || 'attachment',
     mime_type: text(body.mime_type).slice(0, 200) || null,
     size_bytes: Number(body.size_bytes ?? 0),
-  });
+  }).select('id').single();
   if (error) throw error;
+  const links = Array.isArray(body.links) ? body.links as Array<Record<string, unknown>> : [];
+  if (links.length) {
+    const { error: linkError } = await admin.from('cash_transaction_attachments').insert(
+      links.map((link) => ({ cash_transaction_id: text(link.cash_transaction_id), attachment_id: attachment.id })),
+    );
+    if (linkError) throw linkError;
+  }
   return { ok: true };
 }
 
@@ -391,6 +398,54 @@ async function finishRestore(actorId: string, body: Body) {
   await admin.from('system_backup_runs').insert({ requested_by: actorId, backup_kind: 'restore', status: 'completed', record_count: count ?? 0, attachment_count: Number(body.attachment_count ?? 0), completed_at: new Date().toISOString() });
   await audit(actorId, 'restore_completed', 'success', { next: { operation_id: operationId, workspaces: count ?? 0 } });
   return { ok: true, workspace_count: count ?? 0 };
+}
+
+async function verifyRestore(actorId: string, body: Body) {
+  const operationId = text(body.operation_id);
+  await requireRestoreOperation(actorId, operationId);
+  const { data: mappings, error: mappingError } = await admin.from('system_restore_workspaces').select('target_workspace_id').eq('operation_id', operationId);
+  if (mappingError) throw mappingError;
+  if (!mappings?.length) throw new Error('No restored workspace was found to verify.');
+  for (const mapping of mappings) {
+    const workspaceId = mapping.target_workspace_id;
+    const [{ data: workspace }, { data: trucks }, { data: owners }, { data: customers }, { data: transactions }, { data: attachments }] = await Promise.all([
+      admin.from('workspaces').select('id').eq('id', workspaceId).maybeSingle(),
+      admin.from('trucks').select('id').eq('workspace_id', workspaceId),
+      admin.from('truck_owners').select('id,truck_id').eq('workspace_id', workspaceId),
+      admin.from('truck_customers').select('id,truck_id').eq('workspace_id', workspaceId),
+      admin.from('truck_transactions').select('id,truck_id,owner_id,customer_id,settles_transaction_id').eq('workspace_id', workspaceId),
+      admin.from('record_attachments').select('id,workspace_id').eq('workspace_id', workspaceId),
+    ]);
+    if (!workspace) throw new Error('A restored workspace could not be verified.');
+    const truckIds = new Set((trucks ?? []).map((row) => row.id));
+    const ownerIds = new Set((owners ?? []).map((row) => row.id));
+    const customerIds = new Set((customers ?? []).map((row) => row.id));
+    for (const row of owners ?? []) if (!truckIds.has(row.truck_id)) throw new Error('Restore verification found an owner without its truck.');
+    for (const row of customers ?? []) if (!truckIds.has(row.truck_id)) throw new Error('Restore verification found a customer without its truck.');
+    for (const row of transactions ?? []) {
+      if (!truckIds.has(row.truck_id) || (row.owner_id && !ownerIds.has(row.owner_id)) || (row.customer_id && !customerIds.has(row.customer_id)) || (row.settles_transaction_id && !(transactions ?? []).some((item) => item.id === row.settles_transaction_id))) {
+        throw new Error('Restore verification found an invalid Truck transaction relationship.');
+      }
+    }
+    if ((attachments ?? []).some((attachment) => attachment.workspace_id !== workspaceId)) throw new Error('Restore verification found an attachment outside its workspace.');
+  }
+  return { ok: true, workspace_count: mappings.length };
+}
+
+async function abortRestore(actorId: string, body: Body) {
+  const operationId = text(body.operation_id);
+  await requireRestoreOperation(actorId, operationId);
+  const { data: mappings, error: mappingError } = await admin.from('system_restore_workspaces').select('target_workspace_id').eq('operation_id', operationId);
+  if (mappingError) throw mappingError;
+  for (const mapping of mappings ?? []) {
+    const { error } = await admin.from('workspaces').delete().eq('id', mapping.target_workspace_id);
+    if (error) throw error;
+  }
+  const { error: operationError } = await admin.from('system_restore_operations').update({ status: 'failed', completed_at: new Date().toISOString() }).eq('id', operationId).eq('status', 'started');
+  if (operationError) throw operationError;
+  await admin.from('system_backup_runs').insert({ requested_by: actorId, backup_kind: 'restore', status: 'failed', error_message: text(body.error_message).slice(0, 1000) || 'Restore aborted', completed_at: new Date().toISOString() });
+  await audit(actorId, 'restore_aborted', 'failure', { next: { operation_id: operationId, reason: text(body.error_message).slice(0, 500) || 'Restore aborted' } });
+  return { ok: true };
 }
 
 Deno.serve(async (request) => {
@@ -553,6 +608,8 @@ Deno.serve(async (request) => {
       case 'finish-restore-attachment': return json(await finishRestoreAttachment(actor.id, body));
       case 'create-recovery-invitation': return json(await createRecoveryInvitation(actor.id, body));
       case 'finish-restore': return json(await finishRestore(actor.id, body));
+      case 'verify-restore': return json(await verifyRestore(actor.id, body));
+      case 'abort-restore': return json(await abortRestore(actor.id, body));
       default: return json({ error: 'Unknown admin action.' }, 400);
     }
   } catch (reason) {

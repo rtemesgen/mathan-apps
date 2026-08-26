@@ -1,15 +1,48 @@
 import { supabase } from './supabase';
 import { offlineStore } from './localStore';
-import { getQueuedMutations } from './syncQueue';
+import { getQueuedMutations, type QueuedMutation } from './syncQueue';
+import { syncWorkspaceQueues } from './offlineSync';
+import { deleteOffline, listOfflineKeys } from './localStore';
 import { shouldApplyRemoteSnapshot, withSnapshotStorageLock } from './repositories/snapshotRepository';
 import { refreshTruckDataFromCloud } from '../apps/truck/truckRepository';
+import { withConnectionTimeout } from './connectivity';
+import { diagnostic } from './diagnostics';
 
 type SnapshotRow = { domain: string; payload: unknown; revision: number };
+
+export function cacheKeysSafeToClear(keys: string[], workspaceId: string, userId: string, pending: QueuedMutation[]) {
+  const pendingTables = new Set(pending.filter((item) => item.companyId === workspaceId).map((item) => item.table));
+  return keys.filter((key) => {
+    if (!(key.startsWith(`${userId}:${workspaceId}:cash_book:`) || key.startsWith(`${userId}:${workspaceId}:payroll:`) || key === `truck:${userId}:${workspaceId}`)) return false;
+    if (key === `truck:${userId}:${workspaceId}`) return !['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'].some((table) => pendingTables.has(table));
+    return !pendingTables.has('app_state_snapshots');
+  });
+}
+
+/** Rebuild only settled server-cache records; the durable outbox is never a
+ * cache key and is deliberately left untouched. Records with pending work are
+ * retained until reconciliation has completed so reset cannot hide edits. */
+export async function rebuildWorkspaceCache(workspaceId: string, userId: string) {
+  const queued = await getQueuedMutations();
+  const keys = (await listOfflineKeys()).filter((key) =>
+    key.startsWith(`${userId}:${workspaceId}:cash_book:`)
+    || key.startsWith(`${userId}:${workspaceId}:payroll:`)
+    || key === `truck:${userId}:${workspaceId}`,
+  );
+  const deletable = cacheKeysSafeToClear(keys, workspaceId, userId, queued);
+  await Promise.all(deletable.map((key) => deleteOffline(key)));
+  if (navigator.onLine) {
+    await syncWorkspaceQueues(workspaceId).catch(() => undefined);
+    await prefetchWorkspaceData(workspaceId, userId);
+  }
+  return { cleared: deletable.length, pendingPreserved: keys.length - deletable.length };
+}
 
 /** Warm every app cache for a workspace without requiring the user to open each app. */
 export async function prefetchWorkspaceData(workspaceId: string, userId: string) {
   if (!navigator.onLine) return;
-  const snapshots = await supabase.from('app_state_snapshots').select('domain,payload,revision').eq('workspace_id', workspaceId);
+  const serverRefreshAt = new Date().toISOString();
+  const snapshots = await withConnectionTimeout(supabase.from('app_state_snapshots').select('domain,payload,revision').eq('workspace_id', workspaceId));
   if (!snapshots.error) {
     for (const row of (snapshots.data as SnapshotRow[] | null) ?? []) {
       const separator = row.domain.indexOf(':');
@@ -40,4 +73,11 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
   // lock and pending/conflict protection. A parallel direct write could race
   // a local Truck save before its queue entry became visible.
   await refreshTruckDataFromCloud(workspaceId, userId).catch(() => undefined);
+  await offlineStore.writeMetadata(`cache:${userId}:${workspaceId}`, {
+    schemaVersion: 1,
+    userId,
+    companyId: workspaceId,
+    lastServerRefreshAt: serverRefreshAt,
+  });
+  diagnostic('cache-refreshed', { workspaceId, userId });
 }

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ArrowLeft, Check, Contact, LoaderCircle, MessageCircle, Search, Share2, UserPlus, Users } from 'lucide-react';
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
-import { supabase } from '../lib/supabase';
+import { createWorkspacePhoneInvitation, lookupWorkspaceContacts } from '../lib/repositories/workspaceRepository';
 import { useAuth } from '../auth/AuthProvider';
 import { getLatestAppDownloadUrl } from '../lib/mobile';
 
@@ -52,9 +52,8 @@ export function ContactMemberCard() {
       setContacts(unique);
       if (!workspace || unique.length === 0) { setStatuses(Object.fromEntries(unique.map((contact) => [contact.number, 'invite']))); return; }
       setStatuses(Object.fromEntries(unique.map((contact) => [contact.number, 'checking'])));
-      const { data, error } = await supabase.rpc('lookup_workspace_contacts', { target_workspace: workspace.id, target_phones: unique.map((contact) => contact.number) });
-      if (error) { setNotice('Could not check app users. You can still invite contacts.'); setStatuses(Object.fromEntries(unique.map((contact) => [contact.number, 'invite']))); return; }
-      const appUsers = new Set(((data as Array<{ phone: string }> | null) ?? []).map((item) => normalize(item.phone)));
+      let appUsers: Set<string>;
+      try { appUsers = new Set((await lookupWorkspaceContacts(workspace.id, unique.map((contact) => contact.number))).map((item) => normalize(item.phone))); } catch { setNotice('Could not check app users. You can still invite contacts.'); setStatuses(Object.fromEntries(unique.map((contact) => [contact.number, 'invite']))); return; }
       setStatuses(Object.fromEntries(unique.map((contact) => [contact.number, appUsers.has(contact.number) ? 'app' : 'invite'])));
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : '';
@@ -72,8 +71,7 @@ export function ContactMemberCard() {
   const addContact = async (contact: ContactEntry) => {
     if (!workspace) return;
     setStatuses((current) => ({ ...current, [contact.number]: 'checking' }));
-    const { data, error } = await supabase.rpc('create_workspace_phone_invitation', { target_workspace: workspace.id, target_phone: contact.number });
-    if (error || !data) { setStatuses((current) => ({ ...current, [contact.number]: 'invite' })); setNotice(error?.message || 'This contact is not registered yet.'); return; }
+    try { const data = await createWorkspacePhoneInvitation(workspace.id, contact.number); if (!data) throw new Error('This contact is not registered yet.'); } catch (reason) { setStatuses((current) => ({ ...current, [contact.number]: 'invite' })); setNotice(reason instanceof Error ? reason.message : 'This contact is not registered yet.'); return; }
     setStatuses((current) => ({ ...current, [contact.number]: 'invited' }));
     setNotice(`${contact.name} was invited. They must accept before joining your company.`);
   };

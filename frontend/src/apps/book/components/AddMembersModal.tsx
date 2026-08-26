@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Contact, Mail, MessageCircle, Phone, UserPlus, Users, X } from 'lucide-react';
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
-import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../auth/AuthProvider';
+import { createBookInvitation, grantBookAccess, listWorkspaceMembers, type WorkspaceMember } from '../../../lib/repositories/workspaceRepository';
 import { getLatestAppDownloadUrl } from '../../../lib/mobile';
 import { Book } from '../types';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
-type Member = { user_id: string; email: string; display_name: string; role: 'owner' | 'member'; book_permission: 'none' | 'view' | 'edit' };
+type Member = WorkspaceMember;
 type ContactEntry = { name?: string[]; tel?: string[]; email?: string[] };
 
 const inviteText = (bookName: string, appLink: string) => `Join ${bookName} on Mathan ERP to work together. Download the app directly here: ${appLink}`;
@@ -26,9 +26,7 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
   useEffect(() => {
     if (!book || !workspace || !isOwner) return;
     void (async () => {
-      const { data, error: memberError } = await supabase.rpc('list_workspace_members', { target_workspace: workspace.id });
-      if (memberError) setError(memberError.message);
-      else setMembers((data as Member[] | null) ?? []);
+      try { setMembers(await listWorkspaceMembers(workspace.id)); } catch (memberError) { setError(memberError instanceof Error ? memberError.message : 'Could not load company members.'); }
     })();
   }, [book, workspace?.id, isOwner]);
 
@@ -71,8 +69,7 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
     setError('');
     try {
       await run(async () => {
-        const { error: addError } = await supabase.from('workspace_member_app_permissions').upsert({ workspace_id: workspace.id, user_id: member.user_id, app_id: 'book', permission: 'edit' });
-        if (addError) throw addError;
+        await grantBookAccess(workspace.id, member.user_id);
         setMembers((current) => current.map((item) => item.user_id === member.user_id ? { ...item, book_permission: 'edit' } : item));
         setNotice(`${member.display_name || member.email} can now use Cash Book.`);
       });
@@ -112,9 +109,7 @@ export function AddMembersModal({ book, onClose }: { book: Book | null; onClose:
     setError('');
     try {
       await run(async () => {
-        const { data, error: inviteError } = await supabase.rpc('create_workspace_invitation', { target_workspace: workspace.id, target_email: email.trim(), target_book_permission: 'edit', target_payroll_permission: 'none', target_truck_permission: 'none', expires_in_days: 7 });
-        if (inviteError) throw inviteError;
-        const token = (data as Array<{ invite_token: string }> | null)?.[0]?.invite_token;
+        const token = await createBookInvitation(workspace.id, email.trim());
         const link = token ? `${window.location.origin}/invite/${token}` : await getLatestAppDownloadUrl();
         setNotice('Invite created. Choose how to send it.');
         setEmail('');

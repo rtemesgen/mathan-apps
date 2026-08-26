@@ -1,10 +1,10 @@
 import { Building2, Check, Mail, UserMinus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
-import { supabase } from '../lib/supabase';
+import { listMyWorkspaceInvitations, leaveWorkspace, respondToWorkspaceInvitation, type WorkspaceInvitation } from '../lib/repositories/workspaceRepository';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 
-type Invitation = { invitation_id: string; workspace_id: string; workspace_name: string; invited_by_name: string; book_permission: string; payroll_permission: string; truck_permission: string; expires_at: string };
+type Invitation = WorkspaceInvitation;
 
 function AccessText({ invitation }: { invitation: Invitation }) {
   const access = [invitation.book_permission !== 'none' ? 'Cash Book' : '', invitation.payroll_permission !== 'none' ? 'Payroll' : '', invitation.truck_permission !== 'none' ? 'Truck Equity' : ''].filter(Boolean).join(', ');
@@ -19,19 +19,13 @@ export function WorkspaceInvitations({ compact = false }: { compact?: boolean })
 
   const load = async () => {
     if (!user) return;
-    const { data, error: loadError } = await supabase.rpc('list_my_workspace_invitations');
-    if (!loadError) {
-      const next = (data as Invitation[] | null) ?? [];
-      setInvitations(next);
-    }
+    try { setInvitations(await listMyWorkspaceInvitations()); } catch { /* invitations are optional UI */ }
   };
   useEffect(() => { void load(); }, [user?.id]);
 
   const respond = async (invitation: Invitation, accept: boolean) => {
     setBusy(invitation.invitation_id); setError('');
-    const { error: responseError } = await supabase.rpc('respond_to_workspace_invitation', { target_invitation: invitation.invitation_id, accept_invitation: accept });
-    if (responseError) setError(responseError.message);
-    else { setInvitations((current) => current.filter((item) => item.invitation_id !== invitation.invitation_id)); window.dispatchEvent(new Event('mathan:invitations-changed')); if (accept) await refreshWorkspace(invitation.workspace_id); }
+    try { await respondToWorkspaceInvitation(invitation.invitation_id, accept); setInvitations((current) => current.filter((item) => item.invitation_id !== invitation.invitation_id)); window.dispatchEvent(new Event('mathan:invitations-changed')); if (accept) await refreshWorkspace(invitation.workspace_id); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update invitation.'); }
     setBusy(null);
   };
 
@@ -51,8 +45,7 @@ export function MyCompanyMemberships() {
   if (!user || !memberships.length) return null;
   const leave = async () => {
     if (!leaving) return;
-    const { error: leaveError } = await supabase.rpc('leave_workspace', { target_workspace: leaving.id });
-    if (leaveError) setError(leaveError.message); else { setLeaving(null); await refreshWorkspace(); }
+    try { await leaveWorkspace(leaving.id); setLeaving(null); await refreshWorkspace(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not leave company.'); }
   };
   return <section className="rounded-2xl border border-[#e6e2d6] bg-white p-5 shadow-sm"><div className="flex items-start gap-3"><UserMinus className="mt-1 h-5 w-5 text-zinc-500" /><div><h2 className="font-serif text-xl font-bold">Your company access</h2><p className="mt-1 text-xs text-zinc-500">Leave a company when you no longer want access.</p></div></div>{error && <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">{error}</p>}<div className="mt-4 space-y-2">{memberships.map((company) => <div key={company.id} className="flex items-center justify-between gap-3 rounded-xl bg-[#faf9f5] p-3"><span className="flex min-w-0 items-center gap-2 text-sm font-bold"><Building2 className="h-4 w-4 shrink-0 text-emerald-700" /><span className="truncate">{company.name}</span></span><button type="button" onClick={() => setLeaving({ id: company.id, name: company.name })} className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-bold text-red-700 hover:bg-red-50">Leave</button></div>)}</div><DeleteConfirmModal isOpen={!!leaving} title="Leave company?" message={leaving ? <>Are you sure you want to remove yourself from <strong className="text-[#121212]">{leaving.name}</strong>?</> : ''} onClose={() => setLeaving(null)} onConfirm={() => void leave()} confirmLabel="Leave" /></section>;
 }

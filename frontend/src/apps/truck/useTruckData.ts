@@ -39,12 +39,20 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
 
   const synchronize = useCallback(() => {
     if (!workspaceId || isGuest || !navigator.onLine) return;
-    void synchronizeTruckData(workspaceId, userId).then(applyData).catch(() => undefined);
+    void synchronizeTruckData(workspaceId, userId).then(applyData).catch(() => {
+      // The browser can report itself online for the first render while the
+      // backend request is already unreachable. Fall back to the durable
+      // Truck cache instead of leaving the screen at its empty initial state.
+      void refresh();
+    });
   }, [workspaceId, userId, isGuest, applyData]);
 
   useEffect(() => {
-    // One startup path: synchronize pending changes, then load the cloud view
-    // online. This avoids the old local-read + sync + refresh race.
+    // Hydrate the durable cache immediately. The browser's first online
+    // signal can be stale during an offline reload, and waiting for a failed
+    // cloud request would otherwise leave the screen at its empty initial
+    // state. A cloud reconciliation still follows for connected sessions.
+    if (workspaceId) void loadTruckData(workspaceId, true, userId).then(applyData).catch(() => undefined);
     if (navigator.onLine && !isGuest) void synchronize();
     else void refresh();
     if (workspaceId && !isGuest) void loadTruckWorkspaceMembers(workspaceId).then(setMembers).catch(() => undefined);

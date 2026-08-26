@@ -41,7 +41,7 @@ test('Truck app is available through the workspace launcher and preserves data a
   await expect(page.getByRole('button', { name: 'E2E Customer', exact: true })).toBeVisible();
   await page.locator('input[type=number]').first().fill('1000');
   await page.getByRole('button', { name: 'Save Income' }).click();
-  await expect(page.getByRole('status')).toContainText(/Saved on this device|Customer receivable saved successfully/);
+  await expect(page.getByRole('status')).toContainText(/Saved|Customer receivable saved successfully/);
 
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Expenses & Payouts' }).click();
@@ -52,7 +52,7 @@ test('Truck app is available through the workspace launcher and preserves data a
   await page.locator('input[type=number]').first().fill('400');
   await page.getByPlaceholder('Select or type category...').fill('Customer refund');
   await page.getByRole('button', { name: 'Save Expense' }).click();
-  await expect(page.getByRole('status')).toContainText(/Saved on this device|Customer payable saved successfully/);
+  await expect(page.getByRole('status')).toContainText(/Saved|Customer payable saved successfully/);
 
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Customers', exact: true }).click();

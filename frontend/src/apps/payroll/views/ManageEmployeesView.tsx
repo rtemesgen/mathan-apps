@@ -8,7 +8,7 @@ import { AppDatePicker } from '../../../components/AppDatePicker';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
 
 interface Props { employees: Employee[]; onSaveEmployee: (employee: Employee) => void | Promise<void>; onDeleteEmployee: (employeeId: string) => void | Promise<void>; }
-const createRaise = (): SalaryChange => ({ id: `raise-${Date.now()}`, effectiveDate: new Date().toISOString().slice(0, 10), newMonthlySalary: 0, reason: '', createdAt: new Date().toISOString() });
+const createRaise = (): SalaryChange => ({ id: crypto.randomUUID(), effectiveDate: new Date().toISOString().slice(0, 10), newMonthlySalary: 0, reason: '', createdAt: new Date().toISOString() });
 const normalize = (employee: Employee): Employee => ({ ...employee, initialSalary: Number(employee.initialSalary) || 0, salaryHistory: (employee.salaryHistory ?? []).map((raise) => ({ ...raise, newMonthlySalary: Number(raise.newMonthlySalary) || 0 })) });
 
 export function ManageEmployeesView({ employees, onSaveEmployee, onDeleteEmployee }: Props) {

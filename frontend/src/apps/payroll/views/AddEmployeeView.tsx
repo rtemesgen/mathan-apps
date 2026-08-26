@@ -50,7 +50,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
     if (!name.trim() || !startDate || !initialSalary) return;
 
     const newEmp: Employee = {
-      id: `emp-${Date.now().toString().slice(-5)}`,
+      id: crypto.randomUUID(),
       name: name.trim(),
       startDate,
       initialSalary: monthlySalaryNum,

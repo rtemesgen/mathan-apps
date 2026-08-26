@@ -2,6 +2,7 @@ import { emitToast } from '../toast';
 
 export type PersistenceState =
   | 'saving'
+  | 'saved'
   | 'saved locally'
   | 'offline saved'
   | 'sync pending'
@@ -20,7 +21,8 @@ export type PersistenceNotice = {
 };
 
 export const persistenceLabels: Record<PersistenceState, string> = {
-  saving: 'Saving locally…',
+  saving: 'Saving…',
+  saved: 'Saved',
   'saved locally': 'Saved on this device · Syncing…',
   'offline saved': 'Saved offline · Will sync when online',
   'sync pending': 'Saved on this device · Sync pending',
@@ -28,8 +30,8 @@ export const persistenceLabels: Record<PersistenceState, string> = {
   'sync conflict': 'Sync conflict · Local data retained',
 };
 
-export function persistenceStateForEnvironment(): Extract<PersistenceState, 'saved locally' | 'offline saved'> {
-  return typeof navigator !== 'undefined' && navigator.onLine ? 'saved locally' : 'offline saved';
+export function persistenceStateForEnvironment(): Extract<PersistenceState, 'saved' | 'offline saved'> {
+  return typeof navigator !== 'undefined' && navigator.onLine ? 'saved' : 'offline saved';
 }
 
 export function reportPersistenceNotice(notice: PersistenceNotice) {

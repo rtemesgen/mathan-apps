@@ -48,6 +48,10 @@ test('app data settings expose sync progress and the popup preference', async ({
   await expect(page.getByRole('heading', { name: 'Sync and notifications', exact: true })).toBeVisible();
   await expect(page.getByText('Pending', { exact: true })).toBeVisible();
   await expect(page.getByText('Errors', { exact: true })).toBeVisible();
+  const retry = page.getByRole('button', { name: 'Retry pending sync' });
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect(retry).toBeEnabled();
 
   const popups = page.getByLabel('Show sync popups');
   await expect(popups).toBeChecked();
@@ -128,6 +132,30 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await page.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
   await expect(page.getByText('Payroll Persistence Employee', { exact: true })).toBeVisible();
   await context.setOffline(false);
+});
+
+test('a second company member retrieves a record from the shared Supabase workspace', async ({ page, browser }) => {
+  const bookName = `Shared multi-device book ${Date.now()}`;
+  await signIn(page, 'admin');
+  await page.getByLabel('Cash Book').click();
+  await expect(page.getByText('Cash Book Overview')).toBeVisible();
+  await page.getByRole('button', { name: /Create Book|New Book/ }).first().click();
+  await page.getByPlaceholder(/Retail Shop Cashbook/).fill(bookName);
+  await page.getByRole('button', { name: 'Save Book' }).click();
+  await expect(page.getByRole('heading', { name: bookName })).toBeVisible();
+
+  const secondContext = await browser.newContext();
+  const secondPage = await secondContext.newPage();
+  try {
+    await signIn(secondPage, 'member');
+    await secondPage.goto('/companies');
+    await secondPage.getByRole('button').filter({ has: secondPage.getByText('Admin Company', { exact: true }) }).first().click();
+    await secondPage.getByRole('button', { name: 'Switch company' }).click();
+    await secondPage.getByLabel('Cash Book').click();
+    await expect(secondPage.getByRole('heading', { name: bookName })).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await secondContext.close();
+  }
 });
 
 test('all synced companies and their app data remain accessible offline', async ({ page, context }) => {

@@ -74,7 +74,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
     if (!selectedEmp || numAmount <= 0) return;
 
     const newTx: Transaction = {
-      id: `tx-${Date.now().toString().slice(-6)}`,
+      id: crypto.randomUUID(),
       employeeId: selectedEmp.id,
       employeeName: selectedEmp.name,
       amount: numAmount,
