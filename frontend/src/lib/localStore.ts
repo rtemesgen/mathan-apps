@@ -138,9 +138,39 @@ async function deleteIndexedDb(key: string): Promise<void> {
   });
 }
 
+async function readIndexedDbRecord<T>(key: string): Promise<T | null> {
+  const store = await getStore('readonly');
+  return await new Promise<T | null>((resolve, reject) => {
+    const request = store.get(key);
+    request.onsuccess = () => {
+      // A previous IndexedDB failure may have placed the newest value in the
+      // fallback store. Prefer it whenever present: IndexedDB may still have
+      // the older value because the failed write left that record untouched.
+      const fallback = readFallback<T>(key);
+      const value = fallback ?? (request.result as T | undefined) ?? null;
+      if (value !== null) memoryCache.set(key, value);
+      resolve(value);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function readOffline<T>(key: string): Promise<T | null> {
   if (memoryCache.has(key)) return memoryCache.get(key) as T;
   try {
+    // On the first Android launch, legacy IndexedDB is already a valid local
+    // source while the verified SQLite migration is running. Return it now
+    // and let the migration continue in the background; writes still await
+    // getNativeStoreReady(), so a new edit cannot be missed by the migration.
+    if (Capacitor.getPlatform() === 'android') {
+      let migrationComplete = false;
+      let migrationCheckFailed = false;
+      try { migrationComplete = await isNativeMigrationComplete(); } catch { migrationCheckFailed = true; }
+      if (migrationCheckFailed || !migrationComplete) {
+        if (!migrationCheckFailed) void getNativeStoreReady();
+        return await readIndexedDbRecord<T>(key);
+      }
+    }
     if (await getNativeStoreReady()) {
       // A failed native write may have left the newest value in the fallback
       // store while SQLite still contains the previous value. Prefer that
@@ -150,20 +180,7 @@ export async function readOffline<T>(key: string): Promise<T | null> {
       const nativeValue = await readNativeRecord<T>(key);
       if (nativeValue !== null) { memoryCache.set(key, nativeValue); return nativeValue; }
     }
-    const store = await getStore('readonly');
-    return await new Promise<T | null>((resolve, reject) => {
-      const request = store.get(key);
-      request.onsuccess = () => {
-        // A previous IndexedDB failure may have placed the newest value in the
-        // fallback store. Prefer it whenever present: IndexedDB may still have
-        // the older value because the failed write left that record untouched.
-        const fallback = readFallback<T>(key);
-        const value = fallback ?? (request.result as T | undefined) ?? null;
-        if (value !== null) memoryCache.set(key, value);
-        resolve(value);
-      };
-      request.onerror = () => reject(request.error);
-    });
+    return await readIndexedDbRecord<T>(key);
   } catch {
     return readFallback<T>(key);
   }
