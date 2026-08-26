@@ -104,7 +104,10 @@ export async function loadTruckData(workspaceId: string, localOnly = false, user
     return cached;
   }
   try { return await refreshTruckDataFromCloud(workspaceId, userId); }
-  catch (error) { if (cached.trucks.length || cached.owners.length || cached.transactions.length) return cached; throw error; }
+  catch (error) {
+    if (cached.trucks.length || cached.owners.length || cached.customers.length || cached.transactions.length) return cached;
+    throw error;
+  }
 }
 
 export async function refreshTruckDataFromCloud(workspaceId: string, userId?: string) {

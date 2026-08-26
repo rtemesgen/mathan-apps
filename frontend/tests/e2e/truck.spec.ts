@@ -27,6 +27,39 @@ test('Truck app is available through the workspace launcher and preserves data a
   await expect(page.locator('main').getByText('E2E Truck', { exact: true }).first()).toBeVisible();
   await context.setOffline(false);
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+  await page.getByRole('button', { name: 'Customers', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Customer', exact: true }).first().click();
+  await page.getByPlaceholder('e.g. ABC Transport').fill('E2E Customer');
+  await page.getByRole('button', { name: 'Save Customer', exact: true }).click();
+  await expect(page.getByText('E2E Customer', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+  await page.getByRole('button', { name: 'Income (Trips)' }).click();
+  await page.getByRole('button', { name: 'Cash received now', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'E2E Customer', exact: true })).toBeVisible();
+  await page.getByRole('option', { name: 'E2E Customer', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'E2E Customer', exact: true })).toBeVisible();
+  await page.locator('input[type=number]').first().fill('1000');
+  await page.getByRole('button', { name: 'Save Income' }).click();
+  await expect(page.getByRole('status')).toContainText(/Saved on this device|Customer receivable saved successfully/);
+
+  await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+  await page.getByRole('button', { name: 'Expenses & Payouts' }).click();
+  await page.getByRole('button', { name: 'Cash paid now', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'E2E Customer', exact: true })).toBeVisible();
+  await page.getByRole('option', { name: 'E2E Customer', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'E2E Customer', exact: true })).toBeVisible();
+  await page.locator('input[type=number]').first().fill('400');
+  await page.getByRole('button', { name: 'Save Expense' }).click();
+  await expect(page.getByRole('status')).toContainText(/Saved on this device|Customer payable saved successfully/);
+
+  await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+  await page.getByRole('button', { name: 'Customers', exact: true }).click();
+  await expect(page.getByText('E2E Customer', { exact: true })).toBeVisible();
+  await expect(page.getByText('$600.00', { exact: true })).toBeVisible();
+  await expect(page.getByText('RECEIVABLE', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Income (Trips)' }).click();
   await page.locator('input[type=number]').first().fill('1000');
   await page.getByRole('button', { name: 'Save Income' }).click();

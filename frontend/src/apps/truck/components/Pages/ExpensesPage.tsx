@@ -12,6 +12,7 @@ import { CategoryAutocomplete } from '../CategoryAutocomplete';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
+import { customersForTruck } from '../../utils/customerScope';
 
 interface ExpensesPageProps {
   summary: TruckFinancialSummary;
@@ -79,7 +80,8 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   );
   const { submitting, runAction } = useAsyncAction();
   const expenseCustomerId = expensePaymentSelection.startsWith('CUSTOMER:') ? expensePaymentSelection.slice('CUSTOMER:'.length) : '';
-  const selectedExpenseCustomer = customers.find((customer) => customer.id === expenseCustomerId);
+  const truckCustomers = customersForTruck(customers, truckId);
+  const selectedExpenseCustomer = truckCustomers.find((customer) => customer.id === expenseCustomerId);
 
   useEffect(() => {
     if (defaultTab) {
@@ -225,7 +227,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
               <input type="text" value={expenseVendor} onChange={(e) => setExpenseVendor(e.target.value)} placeholder="e.g. Love's, Pilot, Repair Shop" className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none" />
             </div>
 
-            <div><label className="block text-[#787672] uppercase text-[10px] font-bold">Payment method / customer *</label><TruckSelect value={expensePaymentSelection} onChange={setExpensePaymentSelection} options={[{ value: 'CASH', label: 'Cash paid now' }, ...customers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash paid now" /></div>
+            <div><label className="block text-[#787672] uppercase text-[10px] font-bold">Payment method / customer *</label><TruckSelect value={expensePaymentSelection} onChange={setExpensePaymentSelection} options={[{ value: 'CASH', label: 'Cash paid now' }, ...truckCustomers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash paid now" /></div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>

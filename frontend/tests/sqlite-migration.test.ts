@@ -29,7 +29,10 @@ const retryStore: MigrationStore = {
   readMarker: async () => marker,
   writeEntries: async (nextRecords, nextMetadata) => {
     attempts += 1;
-    if (attempts === 1) throw new Error('interrupted migration');
+    if (attempts === 1) {
+      migratedRecords.set(records[0].key, [{ id: 'stale-partial-row' }]);
+      throw new Error('interrupted migration');
+    }
     nextRecords.forEach((entry) => migratedRecords.set(entry.key, entry.value));
     nextMetadata.forEach((entry) => migratedMetadata.set(entry.key, entry.value));
   },

@@ -130,8 +130,12 @@ export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: Leg
     readMarker: () => readNativeMetadata<boolean>(MIGRATION_KEY),
     writeEntries: async (records, metadataEntries) => {
       const database = await openDatabase();
-      const recordStatements = records.map(({ key, value }) => ({ statement: `INSERT INTO records (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`, values: [key, jsonValue(value), Date.now()] }));
-      const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: `INSERT INTO metadata (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`, values: [key, jsonValue(value), Date.now()] }));
+      // A migration can be interrupted after SQLite has written some rows but
+      // before verification/marker commit. Upsert on retry so a stale partial
+      // row is repaired from the still-preserved legacy stores instead of
+      // causing verification to fail forever.
+      const recordStatements = records.map(({ key, value }) => ({ statement: `INSERT INTO records (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, values: [key, jsonValue(value), Date.now()] }));
+      const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: `INSERT INTO metadata (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, values: [key, jsonValue(value), Date.now()] }));
       if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
     },
     verifyEntries: (records, metadataEntries) => verifyMigratedEntries(records, metadataEntries),

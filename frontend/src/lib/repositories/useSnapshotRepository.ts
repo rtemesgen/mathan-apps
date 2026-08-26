@@ -33,6 +33,10 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
     setReady(false);
     void (async () => {
       const local = await readSnapshot(storageKey, initialValueRef.current);
+      // A workspace/app switch can unmount this effect while the IndexedDB or
+      // SQLite read is still pending. Never let that old read overwrite the
+      // state belonging to the newly active storage key.
+      if (!active) return;
       const localValue = local.value;
       valueRef.current = localValue;
       lastHydratedValue.current = JSON.stringify(localValue);
@@ -58,6 +62,10 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
   useEffect(() => {
     if (!hydrated.current || (!workspace && !standalone)) return;
     if (!standalone && !canEditApp(appId)) return;
+    // Hydration updates valueRef before React renders the hydrated value. The
+    // effect from that previous render may still run once with the initial
+    // empty value; never persist it over the durable snapshot.
+    if (JSON.stringify(value) !== JSON.stringify(valueRef.current)) return;
     if (lastHydratedValue.current === JSON.stringify(value)) return;
     lastHydratedValue.current = JSON.stringify(value);
     void (async () => {

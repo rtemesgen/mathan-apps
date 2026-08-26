@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import { calculateTruckFinancials } from '../src/apps/truck/utils/formatters';
 import type { Owner, Transaction, Truck } from '../src/apps/truck/types';
+import { customersForTruck } from '../src/apps/truck/utils/customerScope';
 
 const truck: Truck = { id: 't1', name: 'Unit 1', unitNumber: '1', makeModel: 'Test', vin: '', cashOnHand: 100, licensePlate: '' };
 const owner: Owner = { id: 'o1', truckId: 't1', name: 'Partner', startDate: '2026-01-01', equityPercentage: 50, monthlyDrawRate: 0, avatarColor: '' };
+assert.deepEqual(customersForTruck([
+  { id: 'customer-1', truckId: 't1', name: 'Unit 1 customer' },
+  { id: 'customer-2', truckId: 't2', name: 'Other unit customer' },
+], 't1').map((customer) => customer.id), ['customer-1']);
 const transactions: Transaction[] = [
   { id: 'i', truckId: 't1', date: '2026-01-01', type: 'INCOME', category: 'Trip', amount: 1000, description: '' },
   { id: 'e', truckId: 't1', date: '2026-01-02', type: 'EXPENSE', category: 'Fuel', amount: 200, description: '' },
