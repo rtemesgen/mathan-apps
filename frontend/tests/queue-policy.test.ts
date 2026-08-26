@@ -4,7 +4,7 @@ import { orderQueuedMutations } from '../src/lib/offlineSync';
 import { isSyncEligible, queuedMutationCompanyId, recoverQueuedMutation, type QueuedMutation } from '../src/lib/syncQueue';
 import { cacheKeysSafeToClear } from '../src/lib/offlinePrefetch';
 
-const entry = (mutationId: string, entityId: string, syncStatus: QueuePolicyEntry['syncStatus'] = 'pending'): QueuePolicyEntry => ({ mutationId, table: 'truck_transactions', companyId: 'workspace-a', entityId, syncStatus });
+const entry = (mutationId: string, entityId: string, syncStatus: QueuePolicyEntry['syncStatus'] = 'pending', operation?: QueuePolicyEntry['operation']): QueuePolicyEntry => ({ mutationId, table: 'truck_transactions', companyId: 'workspace-a', entityId, syncStatus, operation });
 
 const first = entry('one', 'transaction-a');
 const replacement = entry('two', 'transaction-a');
@@ -12,6 +12,7 @@ const second = entry('three', 'transaction-b');
 assert.deepEqual(mergeQueuedMutation([first], replacement), [replacement], 'unresolved edits for one entity should coalesce');
 assert.deepEqual(mergeQueuedMutation([first], second), [first, second], 'different entities must remain separate');
 assert.deepEqual(mergeQueuedMutation([entry('conflict', 'transaction-a', 'conflicted')], replacement), [entry('conflict', 'transaction-a', 'conflicted'), replacement], 'conflicts must remain visible');
+assert.deepEqual(mergeQueuedMutation([entry('create', 'transaction-a', 'pending', 'create')], entry('delete', 'transaction-a', 'pending', 'delete')), [], 'offline create followed by delete should cancel both operations');
 assert.deepEqual(mergeQueuedMutation([first], entry('one', 'transaction-a', 'pending')), [entry('one', 'transaction-a', 'pending')], 'the same mutation id replaces its existing queue row');
 
 const mutation = (table: string, entityType: string, queuedAt: string): QueuedMutation => ({ id: crypto.randomUUID(), mutationId: crypto.randomUUID(), userId: 'user-a', companyId: 'company-a', entityType, entityId: crypto.randomUUID(), baseRevision: 0, table, operation: 'upsert', payload: {}, queuedAt, updatedAt: queuedAt, baseServerUpdatedAt: null, lastAttemptAt: null, syncStatus: 'pending', retryCount: 0 });
