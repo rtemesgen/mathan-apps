@@ -1,6 +1,8 @@
 import { expect, test } from 'playwright/test';
 import { chromium } from 'playwright';
+import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
+import { localSupabaseStatus } from './supabaseLocal';
 
 test('Truck app is available through the workspace launcher and preserves data across app switches and offline reloads', async ({ page, context }) => {
   await signIn(page, 'admin');
@@ -113,6 +115,16 @@ test('Truck transactions survive closing and reopening the browser process offli
     await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
     await reopenedPage.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
     await expect(reopenedPage.getByText(description, { exact: true })).toBeVisible();
+    await persistent.setOffline(false);
+    await reopenedPage.reload();
+    const status = localSupabaseStatus();
+    const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    await expect.poll(async () => {
+      const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
+      if (!workspace) return 0;
+      const { count } = await service.from('truck_transactions').select('id', { count: 'exact', head: true }).eq('workspace_id', workspace.id).eq('description', description);
+      return count ?? 0;
+    }, { timeout: 20_000 }).toBe(1);
   } finally {
     await persistent.close();
   }

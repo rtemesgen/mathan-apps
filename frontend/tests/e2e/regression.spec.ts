@@ -1,7 +1,14 @@
 import { expect, test } from 'playwright/test';
 import { chromium } from 'playwright';
+import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
 import { E2E_USERS } from './globalSetup';
+import { localSupabaseStatus } from './supabaseLocal';
+
+const e2eService = () => {
+  const status = localSupabaseStatus();
+  return createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+};
 
 test('ordinary users cannot discover or open system administration', async ({ page }) => {
   await signIn(page, 'member');
@@ -192,6 +199,15 @@ test('Payroll data survives closing and reopening the browser process offline', 
     await expect(reopenedPage.getByText('Loading Payroll data…')).toBeHidden({ timeout: 20_000 });
     await reopenedPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
     await expect(reopenedPage.getByText(employeeName, { exact: true })).toBeVisible();
+    await persistent.setOffline(false);
+    await reopenedPage.reload();
+    const service = e2eService();
+    await expect.poll(async () => {
+      const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Member Company').single();
+      if (!workspace) return 0;
+      const { data: snapshots } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'payroll:employees');
+      return snapshots?.reduce((count, snapshot) => count + (Array.isArray(snapshot.payload) && snapshot.payload.some((employee) => (employee as { name?: string }).name === employeeName) ? 1 : 0), 0) ?? 0;
+    }, { timeout: 20_000 }).toBe(1);
   } finally {
     await persistent.close();
   }
