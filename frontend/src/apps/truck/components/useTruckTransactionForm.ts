@@ -114,7 +114,7 @@ export function useTruckTransactionForm({ owners, customers, trucks, currentTruc
         counterpartyName: ['RECEIVABLE', 'PAYABLE', 'RECEIVABLE_SETTLEMENT', 'PAYABLE_SETTLEMENT'].includes(type) ? counterpartyName.trim() : undefined,
       }),
       successMessage: editingTransaction ? 'Truck transaction updated successfully.' : 'Truck transaction saved successfully.',
-      errorMessage: 'Could not save the Truck transaction. Your entries were kept.',
+      errorMessage: 'Could not save the Truck transaction. Your form has been kept open.',
     });
     onComplete();
   };

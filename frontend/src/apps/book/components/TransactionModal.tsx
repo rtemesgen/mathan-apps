@@ -117,7 +117,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         attachmentName: attachmentName || undefined,
       }),
       successMessage: 'Cash Book transaction saved successfully.',
-      errorMessage: 'Could not save the Cash Book transaction. Your entries were kept.',
+      errorMessage: 'Could not save the Cash Book transaction. Your form has been kept open.',
     });
 
     onClose();
@@ -139,7 +139,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         attachmentName: attachmentName || undefined,
       }),
       successMessage: 'Cash Book transaction saved successfully.',
-      errorMessage: 'Could not save the Cash Book transaction. Your entries were kept.',
+      errorMessage: 'Could not save the Cash Book transaction. Your form has been kept open.',
     });
 
     // Clear form inputs but keep current Date/Time

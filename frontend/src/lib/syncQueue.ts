@@ -85,7 +85,7 @@ function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string
 export async function enqueueMutationsAtomic(mutations: QueuedMutationInput[], records: Array<{ key: string; value: unknown }>) {
   return withQueueLock(async () => {
     const queue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const nextQueue = mutations.reduce((current, mutation) => mergeQueuedMutation(current, queuedMutation(mutation)), queue);
+  const nextQueue = mutations.reduce((current, mutation) => mergeQueuedMutation(current, queuedMutation(mutation)), queue);
     await offlineStore.writeAtomic([...records, { key: KEY, value: nextQueue }]);
     // Keep Settings' pending/error counters current even when the device is
     // offline and no sync worker will emit a later progress event. This is a

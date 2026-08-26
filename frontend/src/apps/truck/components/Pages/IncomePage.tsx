@@ -88,7 +88,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
         });
       }
       resetForm();
-    }, successMessage: incomeType === 'TRIP' && selectedCustomerId ? 'Customer receivable saved successfully.' : 'Truck income saved successfully.', errorMessage: 'Could not save the Truck income. Your entries were kept.' });
+    }, successMessage: incomeType === 'TRIP' && selectedCustomerId ? 'Customer receivable saved successfully.' : 'Truck income saved successfully.', errorMessage: 'Could not save the Truck income. Your form has been kept open.' });
   };
 
   return (

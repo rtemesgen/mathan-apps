@@ -41,7 +41,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
         openingBalance: Math.max(0, Number(openingBalance) || 0),
       }),
       successMessage: 'Cash Book saved successfully.',
-      errorMessage: 'Could not save the Cash Book. Your entries were kept.',
+      errorMessage: 'Could not save the Cash Book. Your form has been kept open.',
     });
 
     // Reset form

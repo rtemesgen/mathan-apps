@@ -22,7 +22,7 @@ export function CustomersPage({ truck, customers, transactions, balances, onSave
   useEffect(() => { reset(); setExpanded(null); }, [truck.id]);
   const startAdd = () => { reset(); setShowForm(true); };
   const edit = (customer: Customer) => { setEditing(customer); setShowForm(true); setName(customer.name); setPhone(customer.phone ?? ''); setAddress(customer.address ?? ''); setNotes(customer.notes ?? ''); };
-  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (!name.trim()) return; await runAction({ operation: () => onSave({ id: editing?.id, truckId: truck.id, name: name.trim(), phone, address, notes }), successMessage: editing ? 'Customer updated successfully.' : 'Customer added successfully.', errorMessage: 'Could not save the customer. Your entries were kept.' }).then(reset); };
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (!name.trim()) return; await runAction({ operation: () => onSave({ id: editing?.id, truckId: truck.id, name: name.trim(), phone, address, notes }), successMessage: editing ? 'Customer updated successfully.' : 'Customer added successfully.', errorMessage: 'Could not save the customer. Your form has been kept open.' }).then(reset); };
   // The parent owns the shared confirmation dialog and delete lifecycle. Do
   // not open a second browser confirmation here or the user can confirm the
   // same deletion twice.

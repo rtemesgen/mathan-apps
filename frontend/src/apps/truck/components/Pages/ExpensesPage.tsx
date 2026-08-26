@@ -124,7 +124,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       counterpartyType: expenseCustomerId ? 'CUSTOMER' : undefined,
       customerId: expenseCustomerId || undefined,
       counterpartyName: expenseCustomerId ? selectedExpenseCustomer?.name : expenseVendor.trim() || undefined,
-    }), successMessage: expenseCustomerId ? 'Customer payable saved successfully.' : 'Truck expense saved successfully.', errorMessage: 'Could not save the Truck expense. Your entries were kept.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); setExpensePaymentSelection('CASH'); });
+    }), successMessage: expenseCustomerId ? 'Customer payable saved successfully.' : 'Truck expense saved successfully.', errorMessage: 'Could not save the Truck expense. Your form has been kept open.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); setExpensePaymentSelection('CASH'); });
   };
 
   const handlePayOwnerSubmit = async (e: React.FormEvent) => {
@@ -132,7 +132,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     const num = parseFloat(payAmount);
     if (isNaN(num) || num <= 0 || !currentPaySummary || submitting) return;
 
-    await runAction({ operation: () => onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo), successMessage: 'Owner payment saved successfully.', errorMessage: 'Could not save the owner payment. Your entry was kept.' }).then(() => setPayAmount(''));
+    await runAction({ operation: () => onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo), successMessage: 'Owner payment saved successfully.', errorMessage: 'Could not save the owner payment. Your form has been kept open.' }).then(() => setPayAmount(''));
   };
 
   const handleProfitDividendSubmit = async (e: React.FormEvent) => {
@@ -145,7 +145,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       amount: Number(((pool * o.equityPercentage) / 100).toFixed(2)),
     }));
 
-    await runAction({ operation: () => onExecuteProfitDistribution(allocations), successMessage: 'Profit distribution saved successfully.', errorMessage: 'Could not save the profit distribution. Your entries were kept.' }).then(() => setDividendPool('0'));
+    await runAction({ operation: () => onExecuteProfitDistribution(allocations), successMessage: 'Profit distribution saved successfully.', errorMessage: 'Could not save the profit distribution. Your form has been kept open.' }).then(() => setDividendPool('0'));
   };
 
   const poolAmount = parseFloat(dividendPool) || 0;

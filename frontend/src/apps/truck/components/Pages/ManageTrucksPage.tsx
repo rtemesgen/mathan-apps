@@ -59,7 +59,7 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
       if (editingTruck) await onUpdateTruck({ ...editingTruck, ...payload });
       else await onAddTruck(payload);
       resetForm();
-    }, errorMessage: 'Could not save the Truck. Your entries were kept.' });
+    }, errorMessage: 'Could not save the Truck. Your form has been kept open.' });
   };
 
   return (

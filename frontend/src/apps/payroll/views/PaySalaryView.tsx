@@ -85,7 +85,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    await runAction({ operation: () => onRecordWithdrawal(newTx), successMessage: 'Salary payment saved successfully.', errorMessage: 'Could not save the salary payment. Your entries were kept.' });
+    await runAction({ operation: () => onRecordWithdrawal(newTx), successMessage: 'Salary payment saved successfully.', errorMessage: 'Could not save the salary payment. Your form has been kept open.' });
     setLastTx(newTx);
     setIsSuccess(true);
     setAmount('');

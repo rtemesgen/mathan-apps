@@ -13,6 +13,7 @@ const appFiles = ['apps/book/App.tsx', 'apps/payroll/App.tsx', 'apps/truck/App.t
 assert.doesNotMatch(appFiles, /PersistenceToast|usePersistenceStatus|useCloudSnapshot/);
 assert.doesNotMatch(appFiles, /supabase|localStore|offlineStore|app_state_snapshots|syncQueue/);
 assert.doesNotMatch([read('auth/AuthGate.tsx'), ...collectTsx('components').map(read)].join('\n'), /supabase/);
+assert.doesNotMatch([...collectTsx('apps').map(read), read('lib/repositories/types.ts')].join('\n'), /Your entries were kept|Your entry was kept/);
 assert.match(read('lib/repositories/useSnapshotRepository.ts'), /persistSnapshot/);
 assert.match(read('lib/repositories/mutationLifecycle.ts'), /persistBeforeQueue/);
 assert.match(read('components/AppToast.tsx'), /mathan:toast/);

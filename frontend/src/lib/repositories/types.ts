@@ -26,7 +26,7 @@ export const persistenceLabels: Record<PersistenceState, string> = {
   'saved locally': 'Saved on this device · Syncing…',
   'offline saved': 'Saved offline · Will sync when online',
   'sync pending': 'Saved on this device · Sync pending',
-  'storage error': 'Could not save locally · Your entries were kept',
+  'storage error': 'Could not save locally · Please try again',
   'sync conflict': 'Sync conflict · Local data retained',
 };
 
