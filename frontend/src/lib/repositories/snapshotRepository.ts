@@ -19,6 +19,10 @@ export function shouldApplyRemoteSnapshot(remoteRevision: number, localRevision:
   return !hasPendingMutation && remoteRevision > localRevision;
 }
 
+export function effectiveSnapshotRevision(durableRevision: number | null | undefined, fallbackRevision: number) {
+  return durableRevision ?? fallbackRevision;
+}
+
 const snapshotTails = new Map<string, Promise<void>>();
 
 /** Serialize every operation that can read or replace one snapshot record. */
@@ -38,7 +42,13 @@ export async function readSnapshot<T>(storageKey: string, initialValue: T) {
 
 export async function persistSnapshot<T>(context: SnapshotRepositoryContext, value: T, revision: number): Promise<PersistenceState> {
   return withSnapshotStorageLock(context.storageKey, async () => {
-    const payload = context.workspaceId ? { workspace_id: context.workspaceId, domain: `${context.domain}:${context.key}`, payload: value, expected_revision: revision } : null;
+    // The background sync worker records the server revision directly in the
+    // durable store. The React hook can still hold the revision from its last
+    // render, so always use the newest durable revision before creating a
+    // mutation. This prevents a rapid edit immediately after a successful
+    // sync from being queued against an already-obsolete base revision.
+    const durableRevision = effectiveSnapshotRevision(await offlineStore.read<number>(`${context.storageKey}:revision`), revision);
+    const payload = context.workspaceId ? { workspace_id: context.workspaceId, domain: `${context.domain}:${context.key}`, payload: value, expected_revision: durableRevision } : null;
     if (context.standalone) await offlineStore.write(context.storageKey, value);
     else {
       if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
