@@ -45,6 +45,7 @@ assert.doesNotMatch(read('apps/truck/App.tsx'), /<DashboardView|<ExpensesPage|<M
 assert.match(read('apps/truck/components/TruckViewContent.tsx'), /currentView === 'dashboard'/);
 assert.match(read('components/AppConnectivityBanner.tsx'), /useOnlineStatus/);
 assert.match(read('components/AppConnectivityBanner.tsx'), /Offline/);
+assert.match(read('components/AppConnectivityBanner.tsx'), /fixed bottom-20/);
 assert.match(read('index.css'), /admin-sidebar \{ width: 240px !important/);
 assert.match(read('lib/fileExport.ts'), /createCsv/);
 assert.match(read('components/ExportButton.tsx'), /bg-\[#3f4d34\]/);

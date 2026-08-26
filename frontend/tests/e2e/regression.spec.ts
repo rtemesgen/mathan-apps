@@ -151,13 +151,24 @@ test('durable web state survives closing and reopening the browser process offli
     await signIn(firstPage, 'member');
     await firstPage.getByLabel('Cash Book').click();
     await expect(firstPage.getByText('Cash Book Overview')).toBeVisible();
+    await persistent.setOffline(true);
     const bookName = `Persistent browser book ${Date.now()}`;
     await firstPage.getByRole('button', { name: /Create Book|New Book/ }).first().click();
     await firstPage.getByPlaceholder(/Retail Shop Cashbook/).fill(bookName);
     await firstPage.getByRole('button', { name: 'Save Book' }).click();
     await expect(firstPage.getByRole('heading', { name: bookName })).toBeVisible();
 
-    await persistent.setOffline(true);
+    await firstPage.getByRole('button', { name: 'Cash In', exact: true }).last().click();
+    await firstPage.locator('input[type=number]').fill('555');
+    await firstPage.getByPlaceholder('e.g. Counter sale, Payment received').fill('Offline Cash In');
+    await firstPage.getByRole('button', { name: 'Save Entry', exact: true }).click();
+    await expect(firstPage.getByText('Offline Cash In', { exact: true })).toBeVisible();
+    await firstPage.getByRole('button', { name: 'Cash Out', exact: true }).last().click();
+    await firstPage.locator('input[type=number]').fill('100');
+    await firstPage.getByPlaceholder('e.g. Rent, Restock, Vendor payout').fill('Offline Cash Out');
+    await firstPage.getByRole('button', { name: 'Save Entry', exact: true }).click();
+    await expect(firstPage.getByText('Offline Cash Out', { exact: true })).toBeVisible();
+
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
     const reopenedPage = await persistent.newPage();
@@ -165,6 +176,25 @@ test('durable web state survives closing and reopening the browser process offli
     await persistent.setOffline(true);
     await reopenedPage.reload();
     await expect(reopenedPage.getByRole('heading', { name: bookName })).toBeVisible();
+    await reopenedPage.getByRole('heading', { name: bookName }).click();
+    await expect(reopenedPage.locator('main')).toContainText('Offline Cash In');
+    await expect(reopenedPage.locator('main')).toContainText('Offline Cash Out');
+    await persistent.setOffline(false);
+    await reopenedPage.reload();
+    const service = e2eService();
+    await expect.poll(async () => {
+      const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Member Company').single();
+      if (!workspace) return false;
+      const [{ data: bookSnapshots }, { data: transactionSnapshots }] = await Promise.all([
+        service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'cash_book:books'),
+        service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'cash_book:transactions'),
+      ]);
+      const books = (bookSnapshots?.[0]?.payload as Array<{ name?: string }> | undefined) ?? [];
+      const transactions = (transactionSnapshots?.[0]?.payload as Array<{ remark?: string }> | undefined) ?? [];
+      return books.filter((book) => book.name === bookName).length === 1
+        && transactions.filter((transaction) => transaction.remark === 'Offline Cash In').length === 1
+        && transactions.filter((transaction) => transaction.remark === 'Offline Cash Out').length === 1;
+    }, { timeout: 20_000 }).toBe(true);
   } finally {
     await persistent.close();
   }
