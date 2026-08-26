@@ -24,7 +24,10 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
     if (!workspaceId) return;
     setLoading(true);
     try {
-      const data = await loadTruckData(workspaceId, true, userId);
+      // Online sessions use the synchronized cloud view. Offline sessions use
+      // the durable local cache; queued local changes are protected from a
+      // cloud refresh by the repository.
+      const data = await loadTruckData(workspaceId, !navigator.onLine, userId);
       applyData(data);
       setDataError('');
     } catch (reason) {
@@ -40,8 +43,10 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
   }, [workspaceId, userId, isGuest, applyData]);
 
   useEffect(() => {
-    void refresh();
-    synchronize();
+    // One startup path: synchronize pending changes, then load the cloud view
+    // online. This avoids the old local-read + sync + refresh race.
+    if (navigator.onLine && !isGuest) void synchronize();
+    else void refresh();
     if (workspaceId && !isGuest) void loadTruckWorkspaceMembers(workspaceId).then(setMembers).catch(() => undefined);
     else setMembers([]);
   }, [workspaceId, isGuest, refresh, synchronize]);

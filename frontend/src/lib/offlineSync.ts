@@ -25,14 +25,28 @@ const permanentError = (error: { code?: string; message?: string } | null | unde
 };
 const wait = (attempt: number) => new Promise((resolve) => window.setTimeout(resolve, Math.min(30000, 500 * (2 ** Math.min(attempt, 6)) + Math.random() * 400)));
 
+/** Apply a Truck row directly while the app is online. Offline writes use the
+ * queue below; online writes should not create a needless queue round-trip. */
+export async function writeTruckMutationOnline(workspaceId: string, table: string, payload: Record<string, unknown>) {
+  if (!['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'].includes(table)) throw new Error('Unsupported Truck table');
+  const row = { ...payload };
+  delete row.workspace_id;
+  const id = String(row.id ?? '');
+  delete row.id;
+  const result = row.deleted_at
+    ? await supabase.from(table).update(row).eq('workspace_id', workspaceId).eq('id', id)
+    : await supabase.from(table).upsert({ id, workspace_id: workspaceId, ...row }, { onConflict: 'id' });
+  if (result.error) throw result.error;
+}
+
 /** Flush queued changes for one or more workspaces in a single pass. */
 let activeSync: Promise<void> = Promise.resolve();
+const workspaceSyncs = new Map<string, Promise<void>>();
 
 async function flushWorkspaceQueues(workspaceIds: string | string[]) {
   if (!navigator.onLine) { report('offline'); return; }
   const allowed = new Set(Array.isArray(workspaceIds) ? workspaceIds : [workspaceIds]);
   if (!allowed.size) return;
-  report('syncing');
   const queue = await getQueuedMutations();
   const remaining: QueuedMutation[] = [];
   let conflict = false;
@@ -41,6 +55,8 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
     const rank = (item: QueuedMutation) => item.entityType.includes('transaction') || item.table.includes('transaction') ? 3 : item.entityType.includes('owner') || item.entityType.includes('membership') ? 2 : 1;
     return rank(a) - rank(b) || a.queuedAt.localeCompare(b.queuedAt);
   });
+  if (ordered.length === 0) return;
+  report('syncing');
   emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed: 0, pending: ordered.length, errors: ordered.filter((item) => item.syncStatus === 'error' || item.syncStatus === 'conflicted').length, status: 'syncing' });
 
   for (const mutation of queue) {
@@ -54,14 +70,12 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
     try {
     if (mutation.table !== 'app_state_snapshots') {
       if (!['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'].includes(mutation.table)) { remaining.push(mutation); continue; }
-      const row = { ...mutation.payload }; delete row.workspace_id;
-      const id = String(row.id ?? ''); delete row.id;
-      const result = row.deleted_at
-        ? await supabase.from(mutation.table).update(row).eq('workspace_id', workspaceId).eq('id', id)
-        : await supabase.from(mutation.table).upsert({ id, workspace_id: workspaceId, ...row }, { onConflict: 'id' });
-      if (result.error) {
-        if (permanentError(result.error)) { errors += 1; reportTruckMutationStatus('sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: result.error.message }); }
-        else { reportTruckMutationStatus('sync pending'); failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: result.error.message }); }
+      try {
+        await writeTruckMutationOnline(workspaceId, mutation.table, mutation.payload);
+      } catch (reason) {
+        const error = reason as { code?: string; message?: string };
+        if (permanentError(error)) { errors += 1; reportTruckMutationStatus('sync conflict'); remaining.push({ ...mutation, syncStatus: 'error', lastError: error.message ?? 'Truck synchronization failed' }); }
+        else { reportTruckMutationStatus('sync pending'); failed = true; remaining.push({ ...mutation, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, lastError: error.message ?? 'Truck synchronization failed' }); }
       }
       completed += 1;
       emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: ordered.length - completed, errors, status: failed ? 'retry' : 'syncing' });
@@ -112,8 +126,16 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
 }
 
 export function syncWorkspaceQueues(workspaceIds: string | string[]) {
-  const next = activeSync.then(() => flushWorkspaceQueues(workspaceIds), () => flushWorkspaceQueues(workspaceIds));
+  const ids = [...new Set(Array.isArray(workspaceIds) ? workspaceIds : [workspaceIds])].filter(Boolean).sort();
+  const key = ids.join(',');
+  const existing = workspaceSyncs.get(key);
+  if (existing) return existing;
+  // Coalesce calls from AuthProvider, app startup, and the browser online
+  // event. They must share one pass instead of showing repeated sync cycles.
+  const next = activeSync.then(() => flushWorkspaceQueues(ids), () => flushWorkspaceQueues(ids));
   activeSync = next.catch(() => undefined);
+  workspaceSyncs.set(key, next);
+  void next.then(() => { if (workspaceSyncs.get(key) === next) workspaceSyncs.delete(key); }, () => { if (workspaceSyncs.get(key) === next) workspaceSyncs.delete(key); });
   return next;
 }
 

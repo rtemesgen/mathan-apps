@@ -19,7 +19,8 @@ import { clearGuestWorkspaceData } from '../auth/guestWorkspaces';
 import { getOfflineStorageEstimate, resetUserOfflineCache } from '../lib/localStore';
 import { loadPersonalDataArchive } from '../lib/repositories/personalDataRepository';
 import { WorkspaceAuditCard } from './WorkspaceAuditCard';
-import { getQueuedMutations } from '../lib/syncQueue';
+import { getQueuedMutations, getWorkspaceMutationStatus } from '../lib/syncQueue';
+import { syncWorkspaceQueues } from '../lib/offlineSync';
 import { syncNotificationsEnabled, setSyncNotificationsEnabled } from '../lib/syncPreferences';
 import type { SyncProgressDetail } from '../lib/toast';
 
@@ -363,6 +364,27 @@ export function SettingsPage() {
   const transferOwnership = async (targetUser: string) => {
     if (!workspace || !requireOnline()) return;
     setBusy(true); setError('');
+    // Ownership changes are cloud-only. Flush this device's offline changes
+    // first so a stale local snapshot cannot be left behind or later overwrite
+    // the company after the new owner signs in.
+    try { await syncWorkspaceQueues(workspace.id); } catch {
+      setError('Ownership cannot be transferred because offline changes could not be checked. Your data was kept.');
+      setBusy(false);
+      return;
+    }
+    let pendingStatus: Awaited<ReturnType<typeof getWorkspaceMutationStatus>>;
+    try { pendingStatus = await getWorkspaceMutationStatus(workspace.id); } catch {
+      setError('Ownership cannot be transferred because offline changes could not be checked. Your data was kept.');
+      setBusy(false);
+      return;
+    }
+    if (pendingStatus) {
+      setError(pendingStatus === 'conflict'
+        ? 'Ownership cannot be transferred while there is a sync conflict. Resolve the conflict first; your local data was kept.'
+        : 'Ownership cannot be transferred until all offline changes finish syncing. Keep this page open and try again.');
+      setBusy(false);
+      return;
+    }
     const { error: transferError } = await supabase.rpc('transfer_workspace_ownership', { target_workspace: workspace.id, target_user: targetUser });
     if (transferError) setError(transferError.message); else { setNotice('Ownership transferred. Your access is now a member account.'); await refreshWorkspace(); await loadOwnerData(); }
     setBusy(false);

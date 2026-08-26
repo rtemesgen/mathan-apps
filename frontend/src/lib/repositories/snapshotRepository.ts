@@ -50,6 +50,38 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
     const durableRevision = effectiveSnapshotRevision(await offlineStore.read<number>(`${context.storageKey}:revision`), revision);
     const payload = context.workspaceId ? { workspace_id: context.workspaceId, domain: `${context.domain}:${context.key}`, payload: value, expected_revision: durableRevision } : null;
     if (context.standalone) await offlineStore.write(context.storageKey, value);
+    else if (navigator.onLine) {
+      if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
+      // Do not let a new online edit leapfrog an older offline edit for the
+      // same snapshot. Reconnection must settle the queued version first.
+      let queued = await getQueuedMutations();
+      let relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === payload.domain);
+      if (relevant.length > 0) {
+        try { await syncQueue(context.workspaceId); } catch { /* the queue remains the source of truth */ }
+        queued = await getQueuedMutations();
+        relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === payload.domain);
+        if (relevant.length > 0) {
+          reportPersistenceNotice({ app: context.domain, state: relevant.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error') ? 'sync conflict' : 'sync pending' });
+          throw new Error('An earlier offline change is still syncing. Your new entry was kept in the form for retry.');
+        }
+      }
+      const { data, error } = await supabase.rpc('write_app_state_snapshot', {
+        target_workspace: context.workspaceId,
+        target_domain: payload.domain,
+        expected_revision: durableRevision,
+        target_payload: value,
+        audit_action: 'snapshot_written_online',
+        affected_client_ids: [],
+        mutation_id: null,
+      });
+      const result = (data as Array<{ status: string; revision: number; payload: unknown }> | null)?.[0];
+      if (error) throw error;
+      if (!result || result.status === 'conflict') {
+        reportPersistenceNotice({ app: context.domain, state: 'sync conflict' });
+        throw new Error('The online data changed before this save. Refresh and review the latest data.');
+      }
+      await offlineStore.writeAtomic([{ key: context.storageKey, value }, { key: `${context.storageKey}:revision`, value: result.revision }]);
+    }
     else {
       if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
       const mutationId = crypto.randomUUID();
@@ -60,7 +92,7 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
       const queueUserId = context.userId ?? context.storageKey.split(':')[0] ?? 'unknown';
       await enqueueMutationsAtomic([{
         mutationId, userId: queueUserId, companyId: context.workspaceId,
-        entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: revision,
+        entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: durableRevision,
         table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId },
       }], [{ key: context.storageKey, value }]);
     }
@@ -71,8 +103,9 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
     if (!context.workspaceId) throw new Error('A workspace is required to save this record.');
     const persistence: PersistenceState = navigator.onLine ? 'saved locally' : 'offline saved';
     reportPersistenceNotice({ app: context.domain, state: persistence });
-    emitSyncStatus(navigator.onLine ? 'syncing' : 'offline');
-    if (navigator.onLine) void syncQueue(context.workspaceId).catch(() => undefined);
+    // A direct online save is already complete. Only offline saves need a
+    // queue/status event and a later synchronization pass.
+    if (!navigator.onLine) emitSyncStatus('offline');
     return persistence;
   });
 }
@@ -80,19 +113,22 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
 export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, revision: number) {
   if (!context.workspaceId || context.standalone || !navigator.onLine) return { value: undefined as T | undefined, revision };
   return withSnapshotStorageLock(context.storageKey, async () => {
-    // Hydration must never wait for a network flush. The local snapshot is
-    // already available to the app, and sync can continue in the background.
-    // Waiting here made app switching and reopening feel like a save was stuck
-    // whenever another queued mutation was retrying.
-    void syncQueue(context.workspaceId!).catch(() => undefined);
+    // Online mode is cloud-first, but only after queued offline changes have
+    // had a chance to reach the server. This prevents a cloud read racing the
+    // queue and briefly/ permanently replacing an offline snapshot.
+    let queued = await getQueuedMutations();
+    let relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === `${context.domain}:${context.key}`);
+    if (relevant.length > 0) {
+      reportPersistenceNotice({ app: context.domain, state: relevant.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error') ? 'sync conflict' : 'sync pending' });
+      try { await syncQueue(context.workspaceId); } catch { /* local data remains the safe source */ }
+      queued = await getQueuedMutations();
+      relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === `${context.domain}:${context.key}`);
+      if (relevant.length > 0) return { value: undefined as T | undefined, revision: (await offlineStore.read<number>(`${context.storageKey}:revision`)) ?? revision };
+    }
     const currentLocalRevision = (await offlineStore.read<number>(`${context.storageKey}:revision`)) ?? revision;
     const { data } = await supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', context.workspaceId).eq('domain', `${context.domain}:${context.key}`).maybeSingle();
     const remote = data as unknown as { payload?: T; revision?: number } | null;
-    const queued = await getQueuedMutations();
-    const relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === `${context.domain}:${context.key}`);
-    if (relevant.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error')) reportPersistenceNotice({ app: context.domain, state: 'sync conflict' });
-    else if (relevant.length > 0) reportPersistenceNotice({ app: context.domain, state: 'sync pending' });
-    if (remote?.revision === undefined || !shouldApplyRemoteSnapshot(remote.revision, currentLocalRevision, relevant.length > 0)) return { value: undefined as T | undefined, revision: currentLocalRevision };
+    if (remote?.revision === undefined || !shouldApplyRemoteSnapshot(remote.revision, currentLocalRevision, false)) return { value: undefined as T | undefined, revision: currentLocalRevision };
     await offlineStore.write(`${context.storageKey}:revision`, remote.revision);
     if (remote.payload === undefined) return { value: undefined as T | undefined, revision: remote.revision };
     await offlineStore.write(context.storageKey, remote.payload);

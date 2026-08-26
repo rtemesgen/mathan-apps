@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase';
 import { offlineStore } from '../../lib/localStore';
 import { enqueueMutationsAtomic, getWorkspaceMutationStatus, type QueuedMutationInput } from '../../lib/syncQueue';
-import { syncQueue } from '../../lib/offlineSync';
+import { syncQueue, writeTruckMutationOnline } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import type { Customer, Owner, Transaction, Truck } from './types';
 
@@ -58,17 +58,32 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
       const storageKey = `truck:${userId}:${workspaceId}`;
       const cached = await offlineStore.read<TruckCache>(storageKey);
       const next = update(cached ? { ...emptyCache(), ...cached, customers: cached.customers ?? [] } : emptyCache());
-      if (localOnly || !writes.length) await offlineStore.write(storageKey, next);
-      else {
-        const mutations: QueuedMutationInput[] = writes.map(({ table, payload }) => ({
-          mutationId: crypto.randomUUID(), userId, companyId: workspaceId,
-          entityType: table, entityId: String(payload.id ?? ''), table,
-          operation: 'upsert', payload: { ...payload, workspace_id: workspaceId },
-        }));
-        await enqueueMutationsAtomic(mutations, [{ key: storageKey, value: next }]);
+      if (localOnly || !navigator.onLine || !writes.length) {
+        if (localOnly || !writes.length) await offlineStore.write(storageKey, next);
+        else {
+          const mutations: QueuedMutationInput[] = writes.map(({ table, payload }) => ({
+            mutationId: crypto.randomUUID(), userId, companyId: workspaceId,
+            entityType: table, entityId: String(payload.id ?? ''), table,
+            operation: 'upsert', payload: { ...payload, workspace_id: workspaceId },
+          }));
+          await enqueueMutationsAtomic(mutations, [{ key: storageKey, value: next }]);
+        }
+      } else {
+        // Online-first: write relational Truck rows to Supabase directly. The
+        // cache is updated only after every row is accepted by the server.
+        const pendingStatus = await getWorkspaceMutationStatus(workspaceId, TRUCK_TABLES);
+        if (pendingStatus) {
+          try { await syncQueue(workspaceId); } catch { /* the queue remains the source of truth */ }
+          const remainingStatus = await getWorkspaceMutationStatus(workspaceId, TRUCK_TABLES);
+          if (remainingStatus) {
+            reportTruckStatus(remainingStatus === 'conflict' ? 'sync conflict' : 'sync pending');
+            throw new Error('An earlier offline Truck change is still syncing. Your new entry was kept in the form for retry.');
+          }
+        }
+        await Promise.all(writes.map(({ table, payload }) => writeTruckMutationOnline(workspaceId, table, { ...payload, workspace_id: workspaceId })));
+        await offlineStore.write(storageKey, next);
       }
       reportTruckStatus(navigator.onLine ? 'saved locally' : 'offline saved');
-      if (!localOnly && navigator.onLine) void syncQueue(workspaceId).catch(() => undefined);
       return next;
     } catch (error) {
       reportTruckStatus('storage error');
