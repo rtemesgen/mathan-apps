@@ -53,7 +53,11 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
             lastHydratedValue.current = JSON.stringify(hydratedRemote.value);
             setValue(hydratedRemote.value);
           }
-        })().catch(() => undefined);
+        })().catch(() => {
+          if (!active) return;
+          setPersistenceStatus('load error');
+          reportPersistenceNotice({ app: domain, state: 'load error' });
+        });
       }
     })();
     return () => { active = false; resolveHydration(); };

@@ -50,7 +50,7 @@ export function AppToast() {
       lastKey.current = key;
       setToast(next);
       if (timeout) window.clearTimeout(timeout);
-      timeout = window.setTimeout(() => { setToast(null); lastKey.current = ''; }, next.state === 'storage error' || next.state === 'sync conflict' ? 5000 : 1800);
+      timeout = window.setTimeout(() => { setToast(null); lastKey.current = ''; }, next.state === 'storage error' || next.state === 'load error' || next.state === 'sync conflict' ? 5000 : 1800);
     };
     const handleSyncStatus = (event: Event) => {
       if (!syncNotificationsEnabled(user?.id)) return;
@@ -98,7 +98,7 @@ export function AppToast() {
   }, [location.pathname, user?.id]);
 
   if (!toast) return null;
-  const critical = toast.state === 'storage error' || toast.state === 'sync conflict' || toast.tone === 'error';
+  const critical = toast.state === 'storage error' || toast.state === 'load error' || toast.state === 'sync conflict' || toast.tone === 'error';
   const working = toast.state === 'saving' || toast.state === 'sync pending';
   const Icon = critical ? CircleAlert : working ? (toast.state === 'saving' ? LoaderCircle : CloudOff) : CheckCircle2;
   const info = toast.tone === 'info';

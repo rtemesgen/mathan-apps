@@ -1,9 +1,51 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { isJsonSerializable, jsonHash, jsonValue } from './sqliteJson';
+import { diagnostic } from './diagnostics';
 
 const DATABASE_NAME = 'mathan-erp-offline';
-const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
 const MIGRATION_KEY = '__offline_sqlite_migration_v1__';
+export const SQLITE_V2_UPGRADE_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY NOT NULL, state TEXT NOT NULL CHECK (state IN ('ready')), completed_at INTEGER NOT NULL);`,
+  `CREATE INDEX IF NOT EXISTS records_updated_at_idx ON records(updated_at);`,
+  `CREATE INDEX IF NOT EXISTS metadata_updated_at_idx ON metadata(updated_at);`,
+  `INSERT OR REPLACE INTO schema_migrations (version, state, completed_at) VALUES (2, 'ready', CAST(strftime('%s','now') AS INTEGER) * 1000);`,
+] as const;
+export const SQLITE_CURRENT_SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS records (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS metadata (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ready')),
+    completed_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS records_updated_at_idx ON records(updated_at);
+  CREATE INDEX IF NOT EXISTS metadata_updated_at_idx ON metadata(updated_at);
+  INSERT OR IGNORE INTO schema_migrations (version, state, completed_at)
+    VALUES (${DATABASE_VERSION}, 'ready', CAST(strftime('%s','now') AS INTEGER) * 1000);
+`;
+const REQUIRED_TABLE_COLUMNS = {
+  records: ['key', 'value', 'updated_at'],
+  metadata: ['key', 'value', 'updated_at'],
+  schema_migrations: ['version', 'state', 'completed_at'],
+} as const;
+
+export type NativeDatabaseHealth = {
+  healthy: boolean;
+  expectedVersion: number;
+  actualVersion: number;
+  missingTables: string[];
+  missingColumns: string[];
+  partialMigration: boolean;
+};
 
 export type LegacyEntry = { key: string; value: unknown };
 export type MigrationStore = {
@@ -25,35 +67,91 @@ async function openDatabase() {
   if (databasePromise) return databasePromise;
   databasePromise = (async () => {
     const sqlite = nativeDatabaseConnection();
+    diagnostic('local-schema-open', { database: DATABASE_NAME, expectedVersion: DATABASE_VERSION });
     if (!(await sqlite.isSecretStored()).result) {
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       const secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
       await sqlite.setEncryptionSecret(secret);
     }
+    await sqlite.addUpgradeStatement(DATABASE_NAME, [{
+      toVersion: 2,
+      statements: [...SQLITE_V2_UPGRADE_STATEMENTS],
+    }]);
     const consistent = (await sqlite.checkConnectionsConsistency()).result;
     const connected = (await sqlite.isConnection(DATABASE_NAME, false)).result;
     const database = consistent && connected
       ? await sqlite.retrieveConnection(DATABASE_NAME, false)
       : await sqlite.createConnection(DATABASE_NAME, true, 'secret', DATABASE_VERSION, false);
     await database.open();
-    await database.execute(`
-      CREATE TABLE IF NOT EXISTS records (
-        key TEXT PRIMARY KEY NOT NULL,
-        value TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS metadata (
-        key TEXT PRIMARY KEY NOT NULL,
-        value TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-    `);
+    await database.execute(SQLITE_CURRENT_SCHEMA_SQL);
+    const health = await inspectOpenDatabase(database);
+    diagnostic('local-schema-health', {
+      healthy: health.healthy,
+      expectedVersion: health.expectedVersion,
+      actualVersion: health.actualVersion,
+      missingTables: health.missingTables.join(','),
+      missingColumns: health.missingColumns.join(','),
+      partialMigration: health.partialMigration,
+    });
+    if (!health.healthy) {
+      throw new Error(`Offline database schema is invalid; data was preserved (${[
+        health.actualVersion !== health.expectedVersion ? `version ${health.actualVersion}` : '',
+        health.missingTables.length ? `missing tables: ${health.missingTables.join(', ')}` : '',
+        health.missingColumns.length ? `missing columns: ${health.missingColumns.join(', ')}` : '',
+        health.partialMigration ? 'partial migration detected' : '',
+      ].filter(Boolean).join('; ')})`);
+    }
     return database;
   })().catch((error) => {
     databasePromise = null;
     throw error;
   });
   return databasePromise;
+}
+
+export function evaluateNativeDatabaseHealth(input: {
+  actualVersion: number;
+  tables: Record<string, string[]>;
+  completedVersions: number[];
+}): NativeDatabaseHealth {
+  const missingTables = Object.keys(REQUIRED_TABLE_COLUMNS).filter((table) => !input.tables[table]);
+  const missingColumns = Object.entries(REQUIRED_TABLE_COLUMNS).flatMap(([table, required]) => {
+    const available = new Set(input.tables[table] ?? []);
+    return required.filter((column) => !available.has(column)).map((column) => `${table}.${column}`);
+  });
+  const partialMigration = input.actualVersion >= DATABASE_VERSION && !input.completedVersions.includes(DATABASE_VERSION);
+  return {
+    healthy: input.actualVersion === DATABASE_VERSION && !missingTables.length && !missingColumns.length && !partialMigration,
+    expectedVersion: DATABASE_VERSION,
+    actualVersion: input.actualVersion,
+    missingTables,
+    missingColumns,
+    partialMigration,
+  };
+}
+
+async function inspectOpenDatabase(database: SQLiteDBConnection): Promise<NativeDatabaseHealth> {
+  const versionResult = await database.query('PRAGMA user_version;');
+  const actualVersion = Number(versionResult.values?.[0]?.user_version ?? 0);
+  const tables: Record<string, string[]> = {};
+  for (const table of Object.keys(REQUIRED_TABLE_COLUMNS)) {
+    const exists = await database.query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`, [table]);
+    if (!exists.values?.length) continue;
+    const columns = await database.query(`PRAGMA table_info(${table});`);
+    tables[table] = (columns.values ?? []).map((row) => String(row.name));
+  }
+  const versions = tables.schema_migrations
+    ? await database.query(`SELECT version FROM schema_migrations WHERE state = 'ready' ORDER BY version`)
+    : { values: [] };
+  return evaluateNativeDatabaseHealth({
+    actualVersion,
+    tables,
+    completedVersions: (versions.values ?? []).map((row) => Number(row.version)),
+  });
+}
+
+export async function getNativeDatabaseHealth() {
+  return inspectOpenDatabase(await openDatabase());
 }
 
 async function readTable<T>(table: 'records' | 'metadata', key: string): Promise<T | null> {

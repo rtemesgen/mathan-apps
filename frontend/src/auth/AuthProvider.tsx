@@ -8,9 +8,11 @@ import { disableGuestMode, enableGuestMode, isGuestMode } from './guestMode';
 import { clearOfflineMemory, clearOfflinePrefix, offlineStore } from '../lib/localStore';
 import { prefetchWorkspaceData } from '../lib/offlinePrefetch';
 import { syncWorkspaceQueues } from '../lib/offlineSync';
-import { getQueuedMutations } from '../lib/syncQueue';
+import { getQueuedMutations, scopeLegacyQueuedMutations } from '../lib/syncQueue';
 import { withConnectionTimeout } from '../lib/connectivity';
 import { createGuestWorkspace as createLocalGuestWorkspace, deleteGuestWorkspace as deleteLocalGuestWorkspace, migrateLegacyGuestData, readGuestWorkspaceCache, renameGuestWorkspace as renameLocalGuestWorkspace, selectGuestWorkspace as selectLocalGuestWorkspace, type GuestWorkspaceCache } from './guestWorkspaces';
+import { diagnostic } from '../lib/diagnostics';
+import { migrateLegacySnapshotKeys } from '../lib/legacyLocalMigration';
 
 export type AppId = 'book' | 'payroll' | 'truck';
 export type AppPermission = 'none' | 'view' | 'edit';
@@ -122,6 +124,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!session) { setWorkspace(null); setWorkspaceError(null); setWorkspaceLoading(false); return null; }
     const requestId = ++refreshSequence.current;
     const cached = await readWorkspaceCache(session.user.id);
+    const cachedWorkspaceIds = cached?.memberships.map((membership) => membership.id) ?? [];
+    await migrateLegacySnapshotKeys(session.user.id, cachedWorkspaceIds);
+    await scopeLegacyQueuedMutations(session.user.id, cachedWorkspaceIds);
     const restoreCached = (message: string) => {
       const memberships = cached?.memberships ?? [];
       setWorkspaces(memberships);
@@ -134,12 +139,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const cachedSelection = restoreCached('Connect to the internet once to download your companies for offline use.');
     setOfflineAccessExpired(!navigator.onLine && !!cached?.cachedAt && Date.now() - new Date(cached.cachedAt).getTime() > 30 * 86400000);
     if (!navigator.onLine) { setWorkspaceLoading(false); return restoreCached('Connect to the internet once to download your companies for offline use.'); }
+    diagnostic('company-resolution-start', { userId: session.user.id, preferredWorkspaceId: preferredWorkspaceId ?? null });
     let workspaceResults: Awaited<ReturnType<typeof supabase.rpc>>[];
     try { workspaceResults = await withConnectionTimeout(Promise.all([supabase.rpc('list_my_workspaces'), supabase.rpc('list_my_workspace_deletions')])); }
-    catch { setWorkspaceLoading(false); return restoreCached('Could not reach Supabase. Using your saved company cache until the connection returns.'); }
-    const [{ data, error }, { data: deletionRows }] = workspaceResults;
+    catch (reason) {
+      diagnostic('company-resolution-error', { userId: session.user.id, code: 'network', error: reason instanceof Error ? reason.message : String(reason) });
+      setWorkspaceLoading(false);
+      return restoreCached('Could not reach Supabase. Using your saved company cache until the connection returns.');
+    }
+    const [{ data, error }, { data: deletionRows, error: deletionError }] = workspaceResults;
     if (requestId !== refreshSequence.current) return cachedSelection;
-    if (error) { setWorkspaceLoading(false); return restoreCached(error.message); }
+    if (error || deletionError) {
+      const fetchError = error ?? deletionError;
+      diagnostic('company-resolution-error', { userId: session.user.id, code: fetchError?.code ?? 'unknown', error: fetchError?.message ?? 'Company query failed' });
+      setWorkspaceLoading(false);
+      return restoreCached(fetchError?.message ?? 'Could not load companies. Using the saved company cache.');
+    }
+    if (!((data as unknown[] | null) ?? []).length && (cached?.memberships.length ?? 0) > 0) {
+      // A zero-row RPC result can mean a real account with no companies, but
+      // it can also expose a stale function/RLS migration. Probe the user's
+      // own membership rows before replacing a non-empty durable cache.
+      const membershipProbe = await withConnectionTimeout(supabase.from('workspace_members').select('workspace_id').eq('user_id', session.user.id));
+      if (membershipProbe.error || (membershipProbe.data?.length ?? 0) > 0) {
+        diagnostic('company-resolution-mismatch', { userId: session.user.id, cachedCount: cached?.memberships.length ?? 0, membershipCount: membershipProbe.data?.length ?? 0, code: membershipProbe.error?.code ?? null });
+        setWorkspaceLoading(false);
+        return restoreCached('Supabase returned an incomplete company list. Your saved companies were retained while access is repaired.');
+      }
+    }
     const memberships = ((data as Array<{ workspace_id: string; workspace_name: string; accent_color: string; member_role: 'owner' | 'member'; book_enabled: boolean; book_permission: AppPermission; payroll_enabled: boolean; payroll_permission: AppPermission; truck_enabled?: boolean; truck_permission?: AppPermission }> | null) ?? []).map((row) => ({
       id: row.workspace_id, name: row.workspace_name, accent_color: row.accent_color, role: row.member_role,
       deletionStatus: 'active' as 'active' | 'scheduled', deletionScheduledFor: null,
@@ -150,6 +176,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (requestId !== refreshSequence.current) return cachedSelection;
     const accessByWorkspace = new Map(((truckAccess as Array<{ workspace_id: string; truck_enabled: boolean; truck_permission: AppPermission }> | null) ?? []).map((item) => [item.workspace_id, item]));
     memberships.forEach((membership) => { const access = accessByWorkspace.get(membership.id); const cachedAccess = cached?.memberships.find((item) => item.id === membership.id)?.appAccess.truck; membership.appAccess.truck = { app_id: 'truck', enabled: access?.truck_enabled ?? cachedAccess?.enabled ?? true, permission: access?.truck_permission ?? cachedAccess?.permission ?? (membership.role === 'owner' ? 'edit' : 'none') }; });
+    await migrateLegacySnapshotKeys(session.user.id, memberships.map((membership) => membership.id));
+    await scopeLegacyQueuedMutations(session.user.id, memberships.map((membership) => membership.id));
+    diagnostic('company-resolution-success', { userId: session.user.id, companyCount: memberships.length, cachedCount: cached?.memberships.length ?? 0 });
     setWorkspaces(memberships);
     const current = memberships.find((item) => item.id === (preferredWorkspaceId ?? workspace?.id ?? cached?.selectedWorkspaceId));
     const preferred = current ?? memberships.find((item) => item.role === 'owner') ?? memberships[0] ?? null;

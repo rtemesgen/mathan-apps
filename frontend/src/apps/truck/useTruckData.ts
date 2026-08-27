@@ -42,11 +42,12 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
 
   const synchronize = useCallback(() => {
     if (!workspaceId || isGuest || !navigator.onLine) return;
-    void synchronizeTruckData(workspaceId, userId).then(applyData).catch(() => {
+    void synchronizeTruckData(workspaceId, userId).then((data) => { applyData(data); setDataError(''); }).catch((reason) => {
       // The browser can report itself online for the first render while the
       // backend request is already unreachable. Fall back to the durable
       // Truck cache without toggling the already-hydrated dashboard back into
       // a loading state.
+      setDataError(`Could not refresh Truck data from the server. Cached data was retained${reason instanceof Error && reason.message ? `: ${reason.message}` : '.'}`);
       void loadTruckData(workspaceId, true, userId).then(applyData).catch(() => undefined);
     });
   }, [workspaceId, userId, isGuest, applyData]);

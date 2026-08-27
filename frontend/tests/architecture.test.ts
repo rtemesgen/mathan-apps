@@ -165,6 +165,8 @@ assert.match(read('apps/truck/truckRepository.ts'), /saveOfflineFallback/);
 assert.match(read('apps/truck/truckRepository.ts'), /applyConfirmedTruckRows/);
 assert.match(read('lib/offlineSync.ts'), /\.select\(\)\.single\(\)/, 'online Truck writes must cache Supabase-confirmed rows');
 assert.match(read('lib/offlineSync.ts'), /expectedUpdatedAt/);
+assert.match(read('lib/offlineSync.ts'), /last_mutation_id/);
+assert.match(read('lib/offlineSync.ts'), /mutation\.mutationId/);
 assert.match(read('lib/offlineSync.ts'), /code === 'CONFLICT'/);
 assert.doesNotMatch(read('apps/truck/truckRepository.ts'), /queueRow\(/);
 assert.match(read('apps/truck/truckRepository.ts'), /\[\{ key: storageKey, value: next \}\]/);

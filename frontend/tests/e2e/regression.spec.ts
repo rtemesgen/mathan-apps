@@ -1,5 +1,6 @@
 import { expect, test } from 'playwright/test';
 import { chromium } from 'playwright';
+import type { Page } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
 import { E2E_USERS } from './globalSetup';
@@ -9,6 +10,34 @@ const e2eService = () => {
   const status = localSupabaseStatus();
   return createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 };
+
+async function inspectIndexedDbCashContract(page: Page, remarks: string[]) {
+  return page.evaluate(async (expectedRemarks) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('mathan-erp-offline', 2);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const entries = await new Promise<Array<{ key: string; value: unknown }>>((resolve, reject) => {
+      const transaction = database.transaction('records', 'readonly');
+      const store = transaction.objectStore('records');
+      const keysRequest = store.getAllKeys();
+      const valuesRequest = store.getAll();
+      transaction.oncomplete = () => resolve(keysRequest.result.map((key, index) => ({ key: String(key), value: valuesRequest.result[index] })));
+      transaction.onerror = () => reject(transaction.error);
+    });
+    database.close();
+    const transactionRecords = entries
+      .filter((entry) => entry.key.endsWith(':cash_book:transactions') && Array.isArray(entry.value))
+      .flatMap((entry) => entry.value as Array<{ remark?: string }>);
+    const queue = entries.find((entry) => entry.key === 'sync-queue-v1')?.value;
+    const queuedMutations = Array.isArray(queue) ? queue : [];
+    return {
+      paymentCounts: Object.fromEntries(expectedRemarks.map((remark) => [remark, transactionRecords.filter((record) => record.remark === remark).length])),
+      matchingOutboxCount: queuedMutations.filter((mutation) => expectedRemarks.every((remark) => JSON.stringify(mutation).includes(remark))).length,
+    };
+  }, remarks);
+}
 
 test('ordinary users cannot discover or open system administration', async ({ page }) => {
   await signIn(page, 'member');
@@ -169,6 +198,12 @@ test('durable web state survives closing and reopening the browser process offli
     await firstPage.getByRole('button', { name: 'Save Entry', exact: true }).click();
     await expect(firstPage.getByText('Offline Cash Out', { exact: true })).toBeVisible();
 
+    // Adapter contract, stages 1-2: the same offline operation must reach the
+    // effective business cache and durable outbox before any restart occurs.
+    const beforeRestart = await inspectIndexedDbCashContract(firstPage, ['Offline Cash In', 'Offline Cash Out']);
+    expect(beforeRestart.paymentCounts).toEqual({ 'Offline Cash In': 1, 'Offline Cash Out': 1 });
+    expect(beforeRestart.matchingOutboxCount).toBe(1);
+
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
     const reopenedPage = await persistent.newPage();
@@ -179,6 +214,10 @@ test('durable web state survives closing and reopening the browser process offli
     await reopenedPage.getByRole('heading', { name: bookName }).click();
     await expect(reopenedPage.locator('main')).toContainText('Offline Cash In');
     await expect(reopenedPage.locator('main')).toContainText('Offline Cash Out');
+    // Adapter contract, stages 3-4: a new browser process reads the same
+    // business data and outbox directly from IndexedDB while offline.
+    const afterRestart = await inspectIndexedDbCashContract(reopenedPage, ['Offline Cash In', 'Offline Cash Out']);
+    expect(afterRestart).toEqual(beforeRestart);
     await persistent.setOffline(false);
     await reopenedPage.reload();
     const service = e2eService();
@@ -195,6 +234,12 @@ test('durable web state survives closing and reopening the browser process offli
         && transactions.filter((transaction) => transaction.remark === 'Offline Cash In').length === 1
         && transactions.filter((transaction) => transaction.remark === 'Offline Cash Out').length === 1;
     }, { timeout: 20_000 }).toBe(true);
+    // Adapter contract, stage 5: acknowledgement clears the matching outbox
+    // mutation while retaining exactly one local copy of each payment.
+    await expect.poll(() => inspectIndexedDbCashContract(reopenedPage, ['Offline Cash In', 'Offline Cash Out']), { timeout: 20_000 }).toEqual({
+      paymentCounts: { 'Offline Cash In': 1, 'Offline Cash Out': 1 },
+      matchingOutboxCount: 0,
+    });
   } finally {
     await persistent.close();
   }

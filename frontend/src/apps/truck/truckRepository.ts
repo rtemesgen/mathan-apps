@@ -89,11 +89,15 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
       const cached = await offlineStore.read<TruckCache>(storageKey);
       const currentCache = cached ? { ...emptyCache(), ...cached, customers: cached.customers ?? [] } : emptyCache();
       const next = update(currentCache);
+      // Allocate identities before the first network attempt. If PostgreSQL
+      // commits but the response is lost, the fallback queue must retry with
+      // the same ID that the server row already acknowledges.
+      const durableWrites = writes.map((write) => ({ ...write, mutationId: crypto.randomUUID() }));
       if (localOnly || !navigator.onLine || !writes.length) {
         if (localOnly || !writes.length) await offlineStore.write(storageKey, next);
         else {
-          await saveOfflineFallback(writes.map(({ table, payload, operation }) => ({
-            mutationId: crypto.randomUUID(), userId, companyId: workspaceId,
+          await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId }) => ({
+            mutationId, userId, companyId: workspaceId,
             entityType: table, entityId: String(payload.id ?? ''), table,
             operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
           })), [{ key: storageKey, value: next }]);
@@ -107,12 +111,13 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
           const remainingStatus = await getWorkspaceMutationStatus(workspaceId, TRUCK_TABLES);
           if (remainingStatus) {
             reportTruckStatus(remainingStatus === 'conflict' ? 'sync conflict' : 'sync pending');
-            throw new Error('An earlier offline Truck change is still syncing. Your new entry was kept in the form for retry.');
+            diagnostic('local-write-queued', { app: 'truck', workspaceId, operation: 'truck', reason: 'earlier-mutation-unresolved' });
+            return next;
           }
         }
         try {
           diagnostic('online-save-attempt', { app: 'truck', workspaceId, operation: 'truck' });
-          const confirmedRows = await Promise.all(writes.map(({ table, payload, operation }) => withConnectionTimeout(writeTruckMutationOnline(workspaceId, table, { ...payload, workspace_id: workspaceId }, operation, operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? ''))))));
+          const confirmedRows = await Promise.all(durableWrites.map(({ table, payload, operation, mutationId }) => withConnectionTimeout(writeTruckMutationOnline(workspaceId, table, { ...payload, workspace_id: workspaceId }, operation, operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), mutationId))));
           try {
             await offlineStore.write(storageKey, applyConfirmedTruckRows(next, writes, confirmedRows));
           } catch (cacheError) {
@@ -124,8 +129,8 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
           diagnostic('online-save-success', { app: 'truck', workspaceId, operation: 'truck' });
         } catch (error) {
           if (!isConnectivityFailure(error)) throw error;
-          await saveOfflineFallback(writes.map(({ table, payload, operation }) => ({
-              mutationId: crypto.randomUUID(), userId, companyId: workspaceId,
+          await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId }) => ({
+              mutationId, userId, companyId: workspaceId,
               entityType: table, entityId: String(payload.id ?? ''), table,
               operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
             })), [{ key: storageKey, value: next }]);
@@ -145,6 +150,7 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
 }
 
 async function fetchTruckData(workspaceId: string) {
+  diagnostic('supabase-fetch-start', { app: 'truck', workspaceId, entity: 'truck-dataset' });
   const [trucks, owners, customers, transactions] = await withConnectionTimeout(Promise.all([
     supabase.from('trucks').select('*').eq('workspace_id', workspaceId).is('deleted_at', null).order('created_at'),
     supabase.from('truck_owners').select('*').eq('workspace_id', workspaceId).is('deleted_at', null).order('created_at'),
@@ -152,13 +158,18 @@ async function fetchTruckData(workspaceId: string) {
     supabase.from('truck_transactions').select('*').eq('workspace_id', workspaceId).is('deleted_at', null).order('occurred_on', { ascending: false }),
   ]));
   const error = trucks.error ?? owners.error ?? customers.error ?? transactions.error;
-  if (error) throw explain(error);
-  return {
+  if (error) {
+    diagnostic('supabase-fetch-error', { app: 'truck', workspaceId, entity: 'truck-dataset', code: error.code ?? 'unknown' });
+    throw explain(error);
+  }
+  const result = {
     trucks: (trucks.data ?? []).map((r) => truckFromDb(r as Record<string, unknown>)),
     owners: (owners.data ?? []).map((r) => ownerFromDb(r as Record<string, unknown>)),
     customers: (customers.data ?? []).map((r) => customerFromDb(r as Record<string, unknown>)),
     transactions: (transactions.data ?? []).map((r) => transactionFromDb(r as Record<string, unknown>)),
   };
+  diagnostic('supabase-fetch-success', { app: 'truck', workspaceId, entity: 'truck-dataset', empty: !result.trucks.length && !result.owners.length && !result.customers.length && !result.transactions.length });
+  return result;
 }
 
 export async function loadTruckData(workspaceId: string, localOnly = false, userId?: string) {
@@ -172,8 +183,18 @@ export async function loadTruckData(workspaceId: string, localOnly = false, user
   }
   try { return await refreshTruckDataFromCloud(workspaceId, userId); }
   catch (error) {
-    if (cached.trucks.length || cached.owners.length || cached.customers.length || cached.transactions.length) return cached;
-    throw error;
+    // A failed request is not a successful empty response. Keep the durable
+    // local snapshot (including any optimistic records written alongside the
+    // outbox) as the effective dataset even when the valid snapshot happens
+    // to contain no rows. This is what lets a newly-created empty workspace
+    // render offline without turning a transport failure into a data reset.
+    diagnostic('offline-fallback', {
+      app: 'truck',
+      workspaceId,
+      operation: 'cloud-fetch',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return cached;
   }
 }
 

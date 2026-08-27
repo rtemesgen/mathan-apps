@@ -17,6 +17,9 @@ export interface QueuedMutation {
   updatedAt: string;
   baseServerUpdatedAt: string | null;
   lastAttemptAt: string | null;
+  syncStartedAt: string | null;
+  syncAttemptId: string | null;
+  leaseExpiresAt: string | null;
   syncStatus: 'pending' | 'syncing' | 'retrying' | 'conflicted' | 'error' | 'completed';
   retryCount: number;
   errorCode?: string;
@@ -24,20 +27,29 @@ export interface QueuedMutation {
   lastError?: string;
 }
 const KEY = 'sync-queue-v1';
+export const SYNC_LEASE_MS = 60_000;
 let queueTail: Promise<void> = Promise.resolve();
 
 export type QueuedMutationInput = Partial<Pick<QueuedMutation, 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision' | 'baseServerUpdatedAt'>>
-  & Omit<QueuedMutation, 'id' | 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision' | 'baseServerUpdatedAt' | 'queuedAt' | 'updatedAt' | 'lastAttemptAt' | 'syncStatus' | 'retryCount' | 'errorCode' | 'errorMessage'>;
+  & Omit<QueuedMutation, 'id' | 'mutationId' | 'userId' | 'companyId' | 'entityType' | 'entityId' | 'baseRevision' | 'baseServerUpdatedAt' | 'queuedAt' | 'updatedAt' | 'lastAttemptAt' | 'syncStartedAt' | 'syncAttemptId' | 'leaseExpiresAt' | 'syncStatus' | 'retryCount' | 'errorCode' | 'errorMessage'>;
 
-export function recoverQueuedMutation(item: QueuedMutation): QueuedMutation {
-  return item.syncStatus === 'syncing' ? { ...item, syncStatus: 'pending', updatedAt: new Date().toISOString() } : item;
+function leaseExpired(item: Pick<QueuedMutation, 'syncStatus'> & { leaseExpiresAt?: string | null }, now = Date.now()) {
+  if (item.syncStatus !== 'syncing') return false;
+  const expiresAt = item.leaseExpiresAt ? Date.parse(item.leaseExpiresAt) : Number.NaN;
+  return !Number.isFinite(expiresAt) || expiresAt <= now;
+}
+
+export function recoverQueuedMutation(item: QueuedMutation, now = Date.now()): QueuedMutation {
+  return leaseExpired(item, now)
+    ? { ...item, syncStatus: 'pending', updatedAt: new Date(now).toISOString(), syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null }
+    : item;
 }
 export function queuedMutationCompanyId(mutation: Pick<QueuedMutation, 'companyId' | 'payload'>) {
   return mutation.companyId || String(mutation.payload.workspace_id ?? '');
 }
 
-export function isSyncEligible(mutation: Pick<QueuedMutation, 'syncStatus'>) {
-  return mutation.syncStatus === 'pending' || mutation.syncStatus === 'retrying' || mutation.syncStatus === 'syncing';
+export function isSyncEligible(mutation: Pick<QueuedMutation, 'syncStatus'> & { leaseExpiresAt?: string | null }, now = Date.now()) {
+  return mutation.syncStatus === 'pending' || mutation.syncStatus === 'retrying' || leaseExpired(mutation, now);
 }
 
 function withQueueLock<T>(operation: () => Promise<T>) {
@@ -51,7 +63,7 @@ function queuedMutation(mutation: QueuedMutationInput): QueuedMutation {
   const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
   const entityId = mutation.entityId ?? String(mutation.payload.id ?? mutation.payload.client_id ?? mutation.payload.domain ?? '');
   const now = new Date().toISOString();
-  return { ...mutation, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: now, updatedAt: now, baseServerUpdatedAt: mutation.baseServerUpdatedAt ?? null, lastAttemptAt: null, syncStatus: 'pending', retryCount: 0 };
+  return { ...mutation, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: now, updatedAt: now, baseServerUpdatedAt: mutation.baseServerUpdatedAt ?? null, lastAttemptAt: null, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, syncStatus: 'pending', retryCount: 0 };
 }
 
 function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string; operation: QueuedMutation['operation']; payload: Record<string, unknown> }): QueuedMutation {
@@ -75,10 +87,13 @@ function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string
     updatedAt: item.updatedAt ?? queuedAt,
     baseServerUpdatedAt: item.baseServerUpdatedAt ?? null,
     lastAttemptAt: item.lastAttemptAt ?? null,
+    syncStartedAt: item.syncStartedAt ?? item.lastAttemptAt ?? null,
+    syncAttemptId: item.syncAttemptId ?? null,
+    leaseExpiresAt: item.leaseExpiresAt ?? null,
     syncStatus: String(item.syncStatus ?? 'pending') === 'failed' ? 'error' : String(item.syncStatus ?? 'pending') === 'synced' ? 'completed' : item.syncStatus ?? 'pending',
     retryCount: item.retryCount ?? 0,
   };
-  return recoverQueuedMutation(normalized);
+  return normalized;
 }
 
 /** Persist local records and their mutations in one durable storage transaction. */
@@ -112,7 +127,67 @@ export async function enqueueMutation(mutation: QueuedMutationInput) {
 export async function getQueuedMutations() {
   await queueTail;
   const queue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-  return queue.map((item) => normalizeQueuedMutation(item));
+  return queue.map((item) => recoverQueuedMutation(normalizeQueuedMutation(item)));
+}
+
+/** Durably reclaim mutations left in `syncing` by a killed process. Active
+ * leases remain untouched so another WebView/tab cannot process them twice. */
+export async function recoverStaleQueuedMutations(now = Date.now()) {
+  return withQueueLock(async () => {
+    const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const normalized = raw.map((item) => normalizeQueuedMutation(item));
+    const recovered = normalized.map((item) => recoverQueuedMutation(item, now));
+    const changed = recovered.some((item, index) => item.syncStatus !== raw[index]?.syncStatus || item.leaseExpiresAt !== raw[index]?.leaseExpiresAt || item.syncAttemptId !== raw[index]?.syncAttemptId);
+    if (changed) await offlineStore.write(KEY, recovered);
+    return recovered;
+  });
+}
+
+/** Older outbox rows predate persisted auth identity. Scope only rows whose
+ * company is one of the signed-in user's resolved memberships; never guess
+ * across companies and never discard an unresolvable row. */
+export async function scopeLegacyQueuedMutations(userId: string, workspaceIds: string[]) {
+  return withQueueLock(async () => {
+    const allowed = new Set(workspaceIds);
+    const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const queue = raw.map((item) => normalizeQueuedMutation(item));
+    let changed = false;
+    const scoped = queue.map((mutation) => {
+      const next = scopeQueuedMutationForUser(mutation, userId, allowed);
+      if (next !== mutation) {
+        changed = true;
+      }
+      return next;
+    });
+    if (changed) await offlineStore.write(KEY, scoped);
+    return scoped;
+  });
+}
+
+export function scopeQueuedMutationForUser(mutation: QueuedMutation, userId: string, workspaceIds: Set<string>) {
+  return (mutation.userId === 'unknown' || !mutation.userId) && workspaceIds.has(queuedMutationCompanyId(mutation))
+    ? { ...mutation, userId, updatedAt: new Date().toISOString() }
+    : mutation;
+}
+
+/** Atomically lease eligible mutations before network I/O. The persisted
+ * lease makes a mid-request process death recoverable on the next startup. */
+export async function claimQueuedMutations(workspaceIds: string[], workerId: string, now = Date.now(), leaseMs = SYNC_LEASE_MS) {
+  return withQueueLock(async () => {
+    const allowed = new Set(workspaceIds);
+    const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const queue = raw.map((item) => recoverQueuedMutation(normalizeQueuedMutation(item), now));
+    const startedAt = new Date(now).toISOString();
+    const leaseExpiresAt = new Date(now + leaseMs).toISOString();
+    const claimedIds = new Set(queue
+      .filter((mutation) => allowed.has(queuedMutationCompanyId(mutation)) && isSyncEligible(mutation, now))
+      .map((mutation) => mutation.mutationId));
+    const leased = queue.map((mutation) => claimedIds.has(mutation.mutationId)
+      ? { ...mutation, syncStatus: 'syncing' as const, syncStartedAt: startedAt, syncAttemptId: `${workerId}:${mutation.mutationId}`, leaseExpiresAt, lastAttemptAt: startedAt, updatedAt: startedAt }
+      : mutation);
+    if (claimedIds.size || leased.some((item, index) => item.syncStatus !== raw[index]?.syncStatus)) await offlineStore.write(KEY, leased);
+    return { queue: leased, claimed: leased.filter((mutation) => claimedIds.has(mutation.mutationId)) };
+  });
 }
 
 export async function hasPendingMutationsForWorkspace(workspaceId: string, tables?: string[]) {
@@ -155,7 +230,7 @@ export async function retryQueuedMutations(workspaceId: string) {
     const queue = rawQueue.map((mutation) => normalizeQueuedMutation(mutation));
     const now = new Date().toISOString();
     const retried = queue.map((mutation) => queuedMutationCompanyId(mutation) === workspaceId && mutation.syncStatus === 'error'
-      ? { ...mutation, syncStatus: 'pending' as const, updatedAt: now, errorCode: undefined, errorMessage: undefined, lastError: undefined }
+      ? { ...mutation, syncStatus: 'pending' as const, updatedAt: now, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, errorCode: undefined, errorMessage: undefined, lastError: undefined }
       : mutation);
     await offlineStore.write(KEY, retried);
   });

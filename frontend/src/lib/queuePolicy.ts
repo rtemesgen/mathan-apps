@@ -14,7 +14,11 @@ function entityKey(entry: Pick<QueuePolicyEntry, 'table' | 'companyId' | 'entity
 /** Replace only unresolved edits for the same record; conflicts/errors remain visible. */
 export function mergeQueuedMutation<T extends QueuePolicyEntry>(queue: T[], next: T) {
   const exact = queue.findIndex((entry) => entry.mutationId === next.mutationId);
-  const coalescible = queue.findIndex((entry) => entityKey(entry) === entityKey(next) && (entry.syncStatus === 'pending' || entry.syncStatus === 'syncing' || entry.syncStatus === 'retrying'));
+  // Once a network attempt starts, its mutation ID must remain durable: the
+  // server may have accepted it even if the client has not received the
+  // response. Coalesce only never-attempted pending edits. Later edits queue
+  // behind syncing/retrying work and are rebased after acknowledgement.
+  const coalescible = queue.findIndex((entry) => entityKey(entry) === entityKey(next) && entry.syncStatus === 'pending');
   // An entity created and deleted before its first sync never needs to reach
   // Supabase. Removing both queue entries avoids a guaranteed missing-row
   // failure and preserves the user's intended final state.

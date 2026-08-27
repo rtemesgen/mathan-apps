@@ -6,6 +6,7 @@ export type PersistenceState =
   | 'saved locally'
   | 'offline saved'
   | 'sync pending'
+  | 'load error'
   | 'storage error'
   | 'sync conflict';
 
@@ -26,6 +27,7 @@ export const persistenceLabels: Record<PersistenceState, string> = {
   'saved locally': 'Saved on this device · Syncing…',
   'offline saved': 'Saved offline · Will sync when online',
   'sync pending': 'Saved on this device · Sync pending',
+  'load error': 'Could not refresh server data · Cached data retained',
   'storage error': 'Could not save locally · Please try again',
   'sync conflict': 'Sync conflict · Local data retained',
 };

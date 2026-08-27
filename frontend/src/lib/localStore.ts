@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
-import { deleteNativeRecord, isJsonSerializable, isNativeMigrationComplete, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
+import { deleteNativeRecord, getNativeDatabaseHealth, isJsonSerializable, isNativeMigrationComplete, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
+import { diagnostic } from './diagnostics';
 
 const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
@@ -128,12 +129,16 @@ async function getNativeStoreReady() {
       await migrateLegacyRecords([...mergedRecords.values()], metadata);
       nativeMigrationState = true;
       return true;
-    } catch {
+    } catch (error) {
       // Keep IndexedDB active until a complete verified migration succeeds.
       nativeMigrationState = false;
+      diagnostic('migration-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
       return false;
     }
-  })().catch(() => false);
+  })().catch((error) => {
+    diagnostic('migration-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
+    return false;
+  });
   return nativeStoreReady;
 }
 
@@ -363,6 +368,47 @@ export async function getOfflineStorageEstimate() {
 }
 
 export function clearOfflineMemory() { memoryCache.clear(); }
+
+export type OfflineStorageHealth = {
+  healthy: boolean;
+  adapter: 'sqlite' | 'indexeddb';
+  schemaVersion: number;
+  message?: string;
+};
+
+/** Startup health gate. It is read-only apart from the normal deterministic
+ * SQLite/IndexedDB upgrade transaction and never clears or recreates data. */
+export async function validateOfflineStorage(): Promise<OfflineStorageHealth> {
+  if (Capacitor.getPlatform() === 'android') {
+    const ready = await getNativeStoreReady();
+    if (!ready) {
+      const result = { healthy: false, adapter: 'sqlite' as const, schemaVersion: 0, message: 'The encrypted offline database could not be migrated. Existing data was preserved.' };
+      diagnostic('local-schema-health', result);
+      return result;
+    }
+    try {
+      const health = await getNativeDatabaseHealth();
+      return { healthy: health.healthy, adapter: 'sqlite', schemaVersion: health.actualVersion, message: health.healthy ? undefined : 'The encrypted offline database schema is incomplete. Existing data was preserved.' };
+    } catch (error) {
+      return { healthy: false, adapter: 'sqlite', schemaVersion: 0, message: error instanceof Error ? error.message : 'The encrypted offline database could not be validated.' };
+    }
+  }
+
+  try {
+    const database = await getDatabase();
+    const missing = [STORE_NAME, META_STORE_NAME].filter((store) => !database.objectStoreNames.contains(store));
+    const result = {
+      healthy: missing.length === 0,
+      adapter: 'indexeddb' as const,
+      schemaVersion: database.version,
+      message: missing.length ? `Offline database is missing object stores: ${missing.join(', ')}` : undefined,
+    };
+    diagnostic('local-schema-health', { adapter: result.adapter, schemaVersion: result.schemaVersion, healthy: result.healthy });
+    return result;
+  } catch (error) {
+    return { healthy: false, adapter: 'indexeddb', schemaVersion: 0, message: error instanceof Error ? error.message : 'The offline database could not be opened.' };
+  }
+}
 
 /** Shared storage contract used by repositories and synchronization. The implementation selects encrypted SQLite on Android and IndexedDB/localStorage fallback on web. */
 export interface OfflineStore {

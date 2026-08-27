@@ -19,6 +19,7 @@ import { AdminPage } from './admin/AdminPage';
 import { AppDialog } from './components/AppDialog';
 import { AppButton } from './components/AppButton';
 import { LogOut } from 'lucide-react';
+import { DataLayerGate } from './components/DataLayerGate';
 
 function InviteRoute() {
   const { token = '' } = useParams();
@@ -53,7 +54,7 @@ function SettingsRoute() {
 
 export default function App() {
   return (
-    <AuthProvider>
+    <DataLayerGate><AuthProvider>
       <BrowserRouter>
         <AppUpdateProvider>
           <AndroidNavigationBridge />
@@ -78,6 +79,6 @@ export default function App() {
           </AuthGate>
         </AppUpdateProvider>
       </BrowserRouter>
-    </AuthProvider>
+    </AuthProvider></DataLayerGate>
   );
 }

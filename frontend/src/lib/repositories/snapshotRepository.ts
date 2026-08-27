@@ -53,6 +53,9 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
     // sync from being queued against an already-obsolete base revision.
     const durableRevision = effectiveSnapshotRevision(await offlineStore.read<number>(`${context.storageKey}:revision`), revision);
     const payload = context.workspaceId ? { workspace_id: context.workspaceId, domain: `${context.domain}:${context.key}`, payload: value, expected_revision: durableRevision } : null;
+    // Allocate before the first request so an ambiguous timeout can be
+    // retried through the outbox with the same server receipt identity.
+    const mutationId = payload ? crypto.randomUUID() : null;
     if (context.standalone) await offlineStore.write(context.storageKey, value);
     else if (navigator.onLine) {
       if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
@@ -65,8 +68,21 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
         queued = await getQueuedMutations();
         relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === payload.domain);
         if (relevant.length > 0) {
-          reportPersistenceNotice({ app: context.domain, state: relevant.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error') ? 'sync conflict' : 'sync pending' });
-          throw new Error('An earlier offline change is still syncing. Your new entry was kept in the form for retry.');
+          // A slow, conflicted, or leased earlier mutation must not make the
+          // local repository read-only. Persist the new effective snapshot
+          // and its stable outbox entry together; queue coalescing preserves
+          // unresolved conflicts while replacing only retryable edits for the
+          // same snapshot.
+          if (!mutationId) throw new Error('A mutation identity is required to save this record.');
+          const queueUserId = context.userId ?? context.storageKey.split(':')[0] ?? 'unknown';
+          await saveOfflineFallback({
+            mutationId, userId: queueUserId, companyId: context.workspaceId,
+            entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: durableRevision,
+            table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId },
+          }, [{ key: context.storageKey, value }]);
+          reportPersistenceNotice({ app: context.domain, state: 'sync pending' });
+          diagnostic('local-write-queued', { app: context.domain, workspaceId: context.workspaceId, operation: 'snapshot', reason: 'earlier-mutation-unresolved' });
+          return 'saved locally';
         }
       }
       try {
@@ -78,7 +94,7 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
           target_payload: value,
           audit_action: 'snapshot_written_online',
           affected_client_ids: [],
-          mutation_id: null,
+          mutation_id: mutationId,
         }));
         const result = (data as Array<{ status: string; revision: number; payload: unknown }> | null)?.[0];
         if (error) throw error;
@@ -97,7 +113,7 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
         diagnostic('online-save-success', { app: context.domain, workspaceId: context.workspaceId, operation: 'snapshot' });
       } catch (error) {
         if (!isConnectivityFailure(error)) throw error;
-        const mutationId = crypto.randomUUID();
+        if (!mutationId) throw new Error('A mutation identity is required to save this record.');
         const queueUserId = context.userId ?? context.storageKey.split(':')[0] ?? 'unknown';
         await saveOfflineFallback({
           mutationId, userId: queueUserId, companyId: context.workspaceId,
@@ -112,7 +128,7 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
     }
     else {
       if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
-      const mutationId = crypto.randomUUID();
+      if (!mutationId) throw new Error('A mutation identity is required to save this record.');
       // Keep the queue's user identity aligned with the snapshot storage key
       // even during the short auth/workspace transition at app startup.
       // Otherwise the sync worker could write the acknowledged payload to an
@@ -154,8 +170,14 @@ export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, rev
       if (relevant.length > 0) return { value: undefined as T | undefined, revision: (await offlineStore.read<number>(`${context.storageKey}:revision`)) ?? revision };
     }
     const currentLocalRevision = (await offlineStore.read<number>(`${context.storageKey}:revision`)) ?? revision;
-    const { data } = await withConnectionTimeout(supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', context.workspaceId).eq('domain', `${context.domain}:${context.key}`).maybeSingle());
+    diagnostic('supabase-fetch-start', { app: context.domain, workspaceId: context.workspaceId, entity: context.key });
+    const { data, error } = await withConnectionTimeout(supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', context.workspaceId).eq('domain', `${context.domain}:${context.key}`).maybeSingle());
+    if (error) {
+      diagnostic('supabase-fetch-error', { app: context.domain, workspaceId: context.workspaceId, entity: context.key, code: error.code ?? 'unknown' });
+      throw error;
+    }
     const remote = data as unknown as { payload?: T; revision?: number } | null;
+    diagnostic('supabase-fetch-success', { app: context.domain, workspaceId: context.workspaceId, entity: context.key, empty: remote === null });
     if (remote?.revision === undefined || !shouldApplyRemoteSnapshot(remote.revision, currentLocalRevision, false)) return { value: undefined as T | undefined, revision: currentLocalRevision };
     await offlineStore.write(`${context.storageKey}:revision`, remote.revision);
     if (remote.payload === undefined) return { value: undefined as T | undefined, revision: remote.revision };
