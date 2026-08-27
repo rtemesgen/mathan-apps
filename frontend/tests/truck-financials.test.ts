@@ -64,4 +64,13 @@ const ownerOnlyResult = calculateTruckFinancials(truck, [owner], [
 assert.equal(ownerOnlyResult.totalReceivable, 0);
 assert.equal(ownerOnlyResult.totalPayable, 0);
 assert.deepEqual(ownerOnlyResult.counterpartyBalances, [{ type: 'payable', name: 'Partner', ownerId: 'o1', counterpartyType: 'OWNER', amount: 900 }]);
+
+// Compatibility with APKs that attached a customer to INCOME/EXPENSE before
+// the explicit RECEIVABLE/PAYABLE transaction types were introduced.
+const legacyCustomerResult = calculateTruckFinancials(truck, [owner], [
+  { id: 'legacy-trip', truckId: 't1', date: '2026-01-01', type: 'INCOME', category: 'Trip Pay', amount: 6500, customerId: 'customer-1', counterpartyType: 'CUSTOMER', counterpartyName: 'Wow', description: '' },
+]);
+assert.equal(legacyCustomerResult.totalIncome, 6500);
+assert.equal(legacyCustomerResult.cashOnHand, 100, 'unpaid legacy trip credit is not counted as cash');
+assert.deepEqual(legacyCustomerResult.counterpartyBalances, [{ type: 'receivable', name: 'Wow', customerId: 'customer-1', amount: 6500 }]);
 console.log('Truck financial tests passed.');

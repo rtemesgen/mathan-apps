@@ -4,26 +4,44 @@ import { useSnapshotRepository } from '../../lib/repositories/useSnapshotReposit
 
 type Persist<T> = (next: T) => Promise<PersistenceState>;
 type PersistUpdate<T> = (update: (current: T) => T) => Promise<PersistenceState>;
+export type PayrollState = { employees: Employee[]; transactions: Transaction[] };
+
+export function combineLegacyPayrollSnapshots(values: Record<string, unknown>): PayrollState {
+  return {
+    employees: Array.isArray(values.employees) ? values.employees as Employee[] : [],
+    transactions: Array.isArray(values.transactions) ? values.transactions as Transaction[] : [],
+  };
+}
+
+export function mergePayrollStates(current: PayrollState, legacy: PayrollState): PayrollState {
+  return {
+    employees: [...current.employees, ...legacy.employees.filter((candidate) => !current.employees.some((employee) => employee.id === candidate.id))],
+    transactions: [...current.transactions, ...legacy.transactions.filter((candidate) => !current.transactions.some((transaction) => transaction.id === candidate.id))],
+  };
+}
+
+const emptyPayrollState: PayrollState = { employees: [], transactions: [] };
+const payrollLegacy = { keys: ['employees', 'transactions'], combine: combineLegacyPayrollSnapshots, merge: mergePayrollStates };
 
 /** Payroll repository adapter: domain operations and their snapshot-backed persistence stay together. */
 export function usePayrollRepository() {
-  const employees = useSnapshotRepository<Employee[]>('payroll', 'employees', []);
-  const transactions = useSnapshotRepository<Transaction[]>('payroll', 'transactions', []);
-  const persistEmployees = employees[4];
-  const persistTransactions = transactions[4];
-  const updateEmployees = employees[5];
-  const updateTransactions = transactions[5];
+  const state = useSnapshotRepository<PayrollState>('payroll', 'state', emptyPayrollState, payrollLegacy);
+  const [current, , ready, status, , updateState] = state;
+  const updateEmployees = (update: (employees: Employee[]) => Employee[]) => updateState((value) => ({ ...value, employees: update(value.employees) }));
+  const updateTransactions = (update: (transactions: Transaction[]) => Transaction[]) => updateState((value) => ({ ...value, transactions: update(value.transactions) }));
+  const employees = [current.employees, undefined, ready, status] as const;
+  const transactions = [current.transactions, undefined, ready, status] as const;
   return {
     employees,
     transactions,
     actions: {
-      saveEmployee: (employee: Employee) => saveEmployee(employee, employees[0], persistEmployees, updateEmployees),
-      deleteEmployee: (employeeId: string) => saveRemovedEmployee(employeeId, employees[0], transactions[0], persistEmployees, persistTransactions, updateEmployees, updateTransactions),
-      saveRaise: (employeeId: string, raise: Parameters<typeof saveEmployeeRaise>[1]) => saveEmployeeRaise(employeeId, raise, employees[0], persistEmployees, updateEmployees),
-      saveTransaction: (transaction: Transaction) => savePayrollTransaction(transaction, transactions[0], persistTransactions, updateTransactions),
-      deleteTransaction: (transactionId: string) => saveRemovedPayrollTransaction(transactionId, transactions[0], persistTransactions, updateTransactions),
-      updateRaise: (employeeId: string, raise: Parameters<typeof saveUpdatedRaise>[1]) => saveUpdatedRaise(employeeId, raise, employees[0], persistEmployees, updateEmployees),
-      deleteRaise: (employeeId: string, raiseId: string) => saveRemovedRaise(employeeId, raiseId, employees[0], persistEmployees, updateEmployees),
+      saveEmployee: async (employee: Employee) => { const result = current.employees.some((item) => item.id === employee.id) ? updateEmployee(employee, current.employees) : addEmployee(employee, current.employees); const persistence = await updateEmployees((items) => items.some((item) => item.id === employee.id) ? items.map((item) => item.id === employee.id ? employee : item) : [employee, ...items]); return { ...result, persistence }; },
+      deleteEmployee: async (employeeId: string) => { const result = removeEmployee(employeeId, current.employees, current.transactions); const persistence = await updateState((value) => ({ employees: value.employees.filter((employee) => employee.id !== employeeId), transactions: value.transactions.filter((transaction) => transaction.employeeId !== employeeId) })); return { ...result, persistence }; },
+      saveRaise: (employeeId: string, raise: Parameters<typeof saveEmployeeRaise>[1]) => updateEmployees((items) => addRaise(employeeId, raise, items).data),
+      saveTransaction: async (transaction: Transaction) => { if (!current.employees.some((employee) => employee.id === transaction.employeeId)) throw new Error('The employee for this payment is not available locally.'); const result = current.transactions.some((item) => item.id === transaction.id) ? updateTransaction(transaction, current.transactions) : addTransaction(transaction, current.transactions); const persistence = await updateTransactions((items) => items.some((item) => item.id === transaction.id) ? items.map((item) => item.id === transaction.id ? transaction : item) : [transaction, ...items]); return { ...result, persistence }; },
+      deleteTransaction: (transactionId: string) => updateTransactions((items) => items.filter((item) => item.id !== transactionId)),
+      updateRaise: (employeeId: string, raise: Parameters<typeof saveUpdatedRaise>[1]) => updateEmployees((items) => updateRaise(employeeId, raise, items).data),
+      deleteRaise: (employeeId: string, raiseId: string) => updateEmployees((items) => removeRaise(employeeId, raiseId, items).data),
     },
   };
 }

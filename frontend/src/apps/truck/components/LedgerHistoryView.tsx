@@ -51,13 +51,13 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
   // Filtered Totals
   const totalInflow = useMemo(() => {
     return filteredTx
-      .filter((t) => t.type === 'INCOME' || t.type === 'CAPITAL_INJECTION')
+      .filter((t) => ['INCOME', 'CAPITAL_INJECTION', 'RECEIVABLE', 'RECEIVABLE_SETTLEMENT'].includes(t.type))
       .reduce((sum, t) => sum + t.amount, 0);
   }, [filteredTx]);
 
   const totalOutflow = useMemo(() => {
     return filteredTx
-      .filter((t) => t.type !== 'INCOME' && t.type !== 'CAPITAL_INJECTION')
+      .filter((t) => ['EXPENSE', 'CAPITAL_REPAYMENT', 'PROFIT_DISTRIBUTION', 'PAYABLE', 'PAYABLE_SETTLEMENT'].includes(t.type))
       .reduce((sum, t) => sum + t.amount, 0);
   }, [filteredTx]);
 

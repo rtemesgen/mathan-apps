@@ -58,11 +58,13 @@ export const calculateTruckFinancials = (
     switch (tx.type) {
       case 'INCOME':
         totalIncome += tx.amount;
-        cashIncome += tx.amount;
+        // Older APKs stored customer trip credit as INCOME plus customer_id.
+        // Preserve that business meaning when rebuilding the ledger.
+        if (!tx.customerId && tx.counterpartyType !== 'CUSTOMER') cashIncome += tx.amount;
         break;
       case 'EXPENSE':
         totalExpenses += tx.amount;
-        cashExpenses += tx.amount;
+        if (!tx.customerId && tx.counterpartyType !== 'CUSTOMER') cashExpenses += tx.amount;
         break;
       case 'RECEIVABLE':
         totalIncome += tx.amount;
@@ -98,9 +100,11 @@ export const calculateTruckFinancials = (
 
   const outstanding = new Map<string, { type: 'receivable' | 'payable'; amount: number; name: string; customerId?: string; ownerId?: string; counterpartyType?: Transaction['counterpartyType'] }>();
   filteredTx.forEach((tx) => {
-    if (tx.type === 'RECEIVABLE' || tx.type === 'PAYABLE') {
+    const legacyCustomerCredit = (tx.type === 'INCOME' || tx.type === 'EXPENSE') && (Boolean(tx.customerId) || tx.counterpartyType === 'CUSTOMER');
+    if (tx.type === 'RECEIVABLE' || tx.type === 'PAYABLE' || legacyCustomerCredit) {
+      const receivable = tx.type === 'RECEIVABLE' || tx.type === 'INCOME';
       outstanding.set(tx.id, {
-        type: tx.type === 'RECEIVABLE' ? 'receivable' : 'payable',
+        type: receivable ? 'receivable' : 'payable',
         amount: tx.amount,
         name: tx.counterpartyName || 'Unassigned',
         customerId: tx.customerId,

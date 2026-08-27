@@ -18,6 +18,12 @@ export type SnapshotRepositoryContext = {
   key: string;
 };
 
+export type LegacySnapshotGroup<T> = {
+  keys: string[];
+  combine: (values: Record<string, unknown>) => T;
+  merge?: (current: T, legacy: T) => T;
+};
+
 /** Cloud data may replace a local snapshot only when it is newer and settled. */
 export function shouldApplyRemoteSnapshot(remoteRevision: number, localRevision: number, hasPendingMutation: boolean) {
   return !hasPendingMutation && remoteRevision > localRevision;
@@ -41,7 +47,40 @@ export function withSnapshotStorageLock<T>(storageKey: string, operation: () => 
 export async function readSnapshot<T>(storageKey: string, initialValue: T) {
   const value = await offlineStore.read<T>(storageKey);
   const revision = (await offlineStore.read<number>(`${storageKey}:revision`)) ?? 0;
-  return { value: value ?? initialValue, revision };
+  return { value: value ?? initialValue, revision, exists: value !== null };
+}
+
+/** Upgrade split parent/child caches into one local canonical record. Sources
+ * are copied, never removed, so an interrupted APK upgrade remains recoverable. */
+export async function readCanonicalSnapshot<T>(storageKey: string, initialValue: T, legacy?: LegacySnapshotGroup<T>) {
+  const current = await readSnapshot(storageKey, initialValue);
+  if (current.exists || !legacy) return current;
+  const prefix = storageKey.slice(0, storageKey.lastIndexOf(':') + 1);
+  const entries = await Promise.all(legacy.keys.map(async (key) => [key, await offlineStore.read<unknown>(`${prefix}${key}`)] as const));
+  if (!entries.some(([, value]) => value !== null)) return current;
+  const value = legacy.combine(Object.fromEntries(entries));
+  await offlineStore.writeAtomic([{ key: storageKey, value }, { key: `${storageKey}:revision`, value: 0 }]);
+  return { value, revision: 0, exists: true };
+}
+
+/** Fresh installs can still open workspaces whose server data predates the
+ * canonical state snapshot. The legacy rows are projected into the same local
+ * representation used by offline writes and all UI selectors. */
+export async function hydrateLegacySnapshotGroup<T>(context: SnapshotRepositoryContext, legacy: LegacySnapshotGroup<T>, current: T) {
+  if (!context.workspaceId || context.standalone || !navigator.onLine) return undefined;
+  const values: Record<string, unknown> = {};
+  let found = false;
+  for (const key of legacy.keys) {
+    const { data, error } = await withConnectionTimeout(supabase.from('app_state_snapshots').select('payload').eq('workspace_id', context.workspaceId).eq('domain', `${context.domain}:${key}`).maybeSingle());
+    if (error) throw error;
+    const row = data as unknown as { payload?: unknown } | null;
+    if (row?.payload !== undefined) { values[key] = row.payload; found = true; }
+  }
+  if (!found) return undefined;
+  const migrated = legacy.combine(values);
+  const value = legacy.merge ? legacy.merge(current, migrated) : migrated;
+  await offlineStore.writeAtomic([{ key: context.storageKey, value }, { key: `${context.storageKey}:revision`, value: 0 }]);
+  return value;
 }
 
 export async function persistSnapshot<T>(context: SnapshotRepositoryContext, value: T, revision: number): Promise<PersistenceState> {
@@ -155,7 +194,7 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
 }
 
 export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, revision: number) {
-  if (!context.workspaceId || context.standalone || !navigator.onLine) return { value: undefined as T | undefined, revision };
+  if (!context.workspaceId || context.standalone || !navigator.onLine) return { value: undefined as T | undefined, revision, found: false };
   return withSnapshotStorageLock(context.storageKey, async () => {
     // Online mode is cloud-first, but only after queued offline changes have
     // had a chance to reach the server. This prevents a cloud read racing the
@@ -167,7 +206,7 @@ export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, rev
       try { await syncQueue(context.workspaceId); } catch { /* local data remains the safe source */ }
       queued = await getQueuedMutations();
       relevant = queued.filter((mutation) => mutation.companyId === context.workspaceId && mutation.table === 'app_state_snapshots' && mutation.entityId === `${context.domain}:${context.key}`);
-      if (relevant.length > 0) return { value: undefined as T | undefined, revision: (await offlineStore.read<number>(`${context.storageKey}:revision`)) ?? revision };
+      if (relevant.length > 0) return { value: undefined as T | undefined, revision: (await offlineStore.read<number>(`${context.storageKey}:revision`)) ?? revision, found: true };
     }
     const currentLocalRevision = (await offlineStore.read<number>(`${context.storageKey}:revision`)) ?? revision;
     diagnostic('supabase-fetch-start', { app: context.domain, workspaceId: context.workspaceId, entity: context.key });
@@ -178,10 +217,10 @@ export async function hydrateSnapshot<T>(context: SnapshotRepositoryContext, rev
     }
     const remote = data as unknown as { payload?: T; revision?: number } | null;
     diagnostic('supabase-fetch-success', { app: context.domain, workspaceId: context.workspaceId, entity: context.key, empty: remote === null });
-    if (remote?.revision === undefined || !shouldApplyRemoteSnapshot(remote.revision, currentLocalRevision, false)) return { value: undefined as T | undefined, revision: currentLocalRevision };
+    if (remote?.revision === undefined || !shouldApplyRemoteSnapshot(remote.revision, currentLocalRevision, false)) return { value: undefined as T | undefined, revision: currentLocalRevision, found: remote !== null };
     await offlineStore.write(`${context.storageKey}:revision`, remote.revision);
-    if (remote.payload === undefined) return { value: undefined as T | undefined, revision: remote.revision };
+    if (remote.payload === undefined) return { value: undefined as T | undefined, revision: remote.revision, found: true };
     await offlineStore.write(context.storageKey, remote.payload);
-    return { value: remote.payload, revision: remote.revision };
+    return { value: remote.payload, revision: remote.revision, found: true };
   });
 }

@@ -28,12 +28,14 @@ const v1Schema = `
 `;
 execute(upgradedPath, v1Schema);
 
-const businessKey = 'user-old:workspace-old:cash_book:transactions';
+const businessKey = 'user-old:workspace-old:cash_book:state';
+const book = { id: 'book-1', name: 'Offline Book', currency: '$', createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T01:00:00.000Z' };
 const payment = [{ id: 'payment-1', bookId: 'book-1', type: 'in', amount: 125, remark: 'offline payment', dateTime: '2026-08-27T01:00', createdAt: '2026-08-27T01:00:00.000Z' }];
+const businessState = { books: [book], transactions: payment };
 const outbox = [{
   id: 'mutation-1', mutationId: 'mutation-1', userId: 'user-old', companyId: 'workspace-old',
-  entityType: 'app_state_snapshot', entityId: 'cash_book:transactions', baseRevision: 2,
-  table: 'app_state_snapshots', operation: 'upsert', payload: { workspace_id: 'workspace-old', domain: 'cash_book:transactions', payload: payment, expected_revision: 2 },
+  entityType: 'app_state_snapshot', entityId: 'cash_book:state', baseRevision: 2,
+  table: 'app_state_snapshots', operation: 'upsert', payload: { workspace_id: 'workspace-old', domain: 'cash_book:state', payload: businessState, expected_revision: 2 },
   queuedAt: '2026-08-27T01:00:00.000Z', updatedAt: '2026-08-27T01:00:00.000Z', baseServerUpdatedAt: null,
   lastAttemptAt: null, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, syncStatus: 'pending', retryCount: 0,
 }];
@@ -41,7 +43,7 @@ const outbox = [{
 const sqlString = (value: unknown) => `'${JSON.stringify(value).replaceAll("'", "''")}'`;
 execute(upgradedPath, `
   BEGIN IMMEDIATE;
-  INSERT INTO records(key, value, updated_at) VALUES (${sqlString(businessKey)}, ${sqlString(payment)}, 1);
+  INSERT INTO records(key, value, updated_at) VALUES (${sqlString(businessKey)}, ${sqlString(businessState)}, 1);
   INSERT INTO records(key, value, updated_at) VALUES ('sync-queue-v1', ${sqlString(outbox)}, 1);
   COMMIT;
 `);
@@ -64,7 +66,7 @@ assert.equal(query<{ user_version: number }>(upgradedPath, 'PRAGMA user_version'
 // Test 1: server-confirmed/effective business data is physically present after
 // closing and reopening the sqlite3 process (each query opens a new process).
 const persistedPayment = query<{ value: string }>(upgradedPath, `SELECT value FROM records WHERE key=${sqlString(businessKey)}`);
-assert.deepEqual(JSON.parse(persistedPayment[0].value), payment, 'Cash Book data survives a direct SQLite restart read');
+assert.deepEqual(JSON.parse(persistedPayment[0].value), businessState, 'Cash Book parents and entries survive a direct SQLite restart read');
 
 // Test 2: the local effective state and outbox are committed together.
 const persistedPair = query<{ key: string; value: string }>(upgradedPath, `SELECT key, value FROM records WHERE key IN (${sqlString(businessKey)}, 'sync-queue-v1') ORDER BY key`);
@@ -74,7 +76,7 @@ assert.equal((JSON.parse(persistedPair.find((row) => row.key === 'sync-queue-v1'
 // Restart/read/sync/read contract: acknowledgement clears only the outbox;
 // the effective payment remains durable and is never duplicated.
 execute(upgradedPath, `BEGIN IMMEDIATE; UPDATE records SET value='[]', updated_at=2 WHERE key='sync-queue-v1'; COMMIT;`);
-assert.deepEqual(JSON.parse(query<{ value: string }>(upgradedPath, `SELECT value FROM records WHERE key=${sqlString(businessKey)}`)[0].value), payment);
+assert.deepEqual(JSON.parse(query<{ value: string }>(upgradedPath, `SELECT value FROM records WHERE key=${sqlString(businessKey)}`)[0].value), businessState);
 assert.deepEqual(JSON.parse(query<{ value: string }>(upgradedPath, `SELECT value FROM records WHERE key='sync-queue-v1'`)[0].value), []);
 
 fs.rmSync(directory, { recursive: true, force: true });

@@ -8,32 +8,89 @@ export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | '
 type Persist<T> = (next: T) => Promise<PersistenceState>;
 type PersistUpdate<T> = (update: (current: T) => T) => Promise<PersistenceState>;
 export type CashBookImport = { book: NewBook; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] };
+export type CashBookState = { books: Book[]; transactions: Transaction[] };
+
+export function combineLegacyCashBookSnapshots(values: Record<string, unknown>): CashBookState {
+  const books = Array.isArray(values.books) ? values.books as Book[] : [];
+  const transactions = Array.isArray(values.transactions) ? values.transactions as Transaction[] : [];
+  const knownIds = new Set(books.map((book) => book.id));
+  const recovered = [...new Set(transactions.map((transaction) => transaction.bookId).filter((bookId) => bookId && !knownIds.has(bookId)))].map((bookId) => {
+    const rows = transactions.filter((transaction) => transaction.bookId === bookId);
+    const createdAt = rows.map((row) => row.createdAt || row.dateTime).sort()[0] || new Date(0).toISOString();
+    const updatedAt = rows.map((row) => row.dateTime || row.createdAt).sort().at(-1) || createdAt;
+    return { id: bookId, name: 'Recovered Cash Book', currency: '$', category: 'Recovered', createdAt, updatedAt } satisfies Book;
+  });
+  return { books: [...books, ...recovered], transactions };
+}
+
+export function mergeCashBookStates(current: CashBookState, legacy: CashBookState): CashBookState {
+  const legacyBooks = new Map(legacy.books.map((book) => [book.id, book]));
+  const books = [
+    ...current.books.map((book) => book.category === 'Recovered' && legacyBooks.has(book.id) ? legacyBooks.get(book.id)! : book),
+    ...legacy.books.filter((candidate) => !current.books.some((book) => book.id === candidate.id)),
+  ];
+  const transactions = [...current.transactions, ...legacy.transactions.filter((candidate) => !current.transactions.some((transaction) => transaction.id === candidate.id))];
+  return combineLegacyCashBookSnapshots({ books, transactions });
+}
+
+const emptyCashBookState: CashBookState = { books: [], transactions: [] };
+const cashBookLegacy = { keys: ['books', 'transactions'], combine: combineLegacyCashBookSnapshots, merge: mergeCashBookStates };
 
 /** Cash Book repository adapter: domain operations and their snapshot-backed persistence stay together. */
 export function useCashBookRepository() {
-  const books = useSnapshotRepository<Book[]>('cash_book', 'books', []);
-  const transactions = useSnapshotRepository<Transaction[]>('cash_book', 'transactions', []);
-  const persistBooks = books[4];
-  const persistTransactions = transactions[4];
-  const updateBooks = books[5];
-  const updateTransactions = transactions[5];
+  const state = useSnapshotRepository<CashBookState>('cash_book', 'state', emptyCashBookState, cashBookLegacy);
+  const [current, , ready, status, , updateState] = state;
+  // Compatibility tuples keep view code simple while every mutation below is
+  // committed as one parent+entries snapshot and one outbox operation.
+  const updateBooks = (update: (books: Book[]) => Book[]) => updateState((value) => ({ ...value, books: update(value.books) }));
+  const updateTransactions = (update: (transactions: Transaction[]) => Transaction[]) => updateState((value) => ({ ...value, transactions: update(value.transactions) }));
+  const books = [current.books, undefined, ready, status] as const;
+  const transactions = [current.transactions, undefined, ready, status] as const;
   return {
     books,
     transactions,
     actions: {
-      createBook: (input: Parameters<typeof saveNewBook>[0]) => saveNewBook(input, books[0], persistBooks, updateBooks),
+      createBook: async (input: Parameters<typeof saveNewBook>[0]) => {
+        const result = createBook(input);
+        const persistence = await updateState((value) => ({ ...value, books: [result.data, ...value.books] }));
+        return { ...result, persistence };
+      },
       renameBook: (bookId: string, name: string) => {
         const book = books[0].find((item) => item.id === bookId);
-        return book ? saveRenamedBook(book, name, books[0], persistBooks, updateBooks) : Promise.resolve(undefined);
+        if (!book) return Promise.resolve(undefined);
+        const result = renameBook(book, name);
+        return updateState((value) => ({ ...value, books: value.books.map((item) => item.id === bookId ? result.data : item) })).then((persistence) => ({ ...result, persistence }));
       },
       updateBook: (bookId: string, changes: BookUpdate) => {
         const book = books[0].find((item) => item.id === bookId);
-        return book ? saveUpdatedBook(book, changes, books[0], persistBooks, updateBooks) : Promise.resolve(undefined);
+        if (!book) return Promise.resolve(undefined);
+        const result = updateBook(book, changes);
+        return updateState((value) => ({ ...value, books: value.books.map((item) => item.id === bookId ? result.data : item) })).then((persistence) => ({ ...result, persistence }));
       },
-      deleteBook: (bookId: string) => saveRemovedBook(bookId, books[0], transactions[0], persistBooks, persistTransactions, updateBooks, updateTransactions),
-      createTransaction: (bookId: string, type: Transaction['type'], input: Parameters<typeof saveNewTransactionAndTouchBook>[2]) => saveNewTransactionAndTouchBook(bookId, type, input, transactions[0], books[0], persistTransactions, persistBooks, updateTransactions, updateBooks),
-      deleteTransaction: (transactionId: string) => saveRemovedTransaction(transactionId, transactions[0], persistTransactions, updateTransactions),
-      importBooks: (input: CashBookImport[]) => saveImportedBooks(input, books[0], transactions[0], persistBooks, persistTransactions, updateBooks, updateTransactions),
+      deleteBook: async (bookId: string) => {
+        const result = removeBook(bookId, current.books, current.transactions);
+        const persistence = await updateState((value) => ({ books: value.books.filter((book) => book.id !== bookId), transactions: value.transactions.filter((transaction) => transaction.bookId !== bookId) }));
+        return { ...result, persistence };
+      },
+      createTransaction: async (bookId: string, type: Transaction['type'], input: Parameters<typeof saveNewTransactionAndTouchBook>[2]) => {
+        if (!current.books.some((book) => book.id === bookId)) throw new Error('The Cash Book for this transaction is not available locally.');
+        const result = createTransaction(bookId, type, input);
+        const touchedAt = now();
+        const persistence = await updateState((value) => ({ books: value.books.map((book) => book.id === bookId ? { ...book, updatedAt: touchedAt } : book), transactions: [result.data, ...value.transactions] }));
+        return { ...result, persistence };
+      },
+      deleteTransaction: async (transactionId: string) => {
+        const result = removeTransaction(transactionId, current.transactions);
+        const persistence = await updateState((value) => ({ ...value, transactions: value.transactions.filter((transaction) => transaction.id !== transactionId) }));
+        return { ...result, persistence };
+      },
+      importBooks: async (input: CashBookImport[]) => {
+        const timestamp = now();
+        const importedBooks = input.map(({ book }) => ({ ...book, id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp }));
+        const importedTransactions = input.flatMap(({ transactions: rows }, index) => rows.map((transaction) => ({ ...transaction, id: crypto.randomUUID(), bookId: importedBooks[index].id, createdAt: timestamp })));
+        const persistence = await updateState((value) => ({ books: [...importedBooks, ...value.books], transactions: [...importedTransactions, ...value.transactions] }));
+        return { data: { books: [...importedBooks, ...current.books], transactions: [...importedTransactions, ...current.transactions] }, persistence };
+      },
     },
   };
 }

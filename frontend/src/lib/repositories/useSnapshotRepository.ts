@@ -1,14 +1,14 @@
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth, type AppId } from '../../auth/AuthProvider';
 import { syncQueue } from '../offlineSync';
-import { hydrateSnapshot, persistSnapshot, readSnapshot, type SnapshotRepositoryContext } from './snapshotRepository';
+import { hydrateLegacySnapshotGroup, hydrateSnapshot, persistSnapshot, readCanonicalSnapshot, type LegacySnapshotGroup, type SnapshotRepositoryContext } from './snapshotRepository';
 import { reportPersistenceNotice, type PersistenceState } from './types';
 import { emitSyncStatus } from '../toast';
 
 export type SnapshotPersistenceStatus = 'idle' | PersistenceState;
 
 /** React adapter for the shared snapshot repository. Domain stores consume this adapter; they do not own storage or sync policy. */
-export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>, boolean, SnapshotPersistenceStatus, (next: SetStateAction<T>) => Promise<PersistenceState>, (update: (current: T) => T) => Promise<PersistenceState>] {
+export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: string, initialValue: T, legacy?: LegacySnapshotGroup<T>): [T, Dispatch<SetStateAction<T>>, boolean, SnapshotPersistenceStatus, (next: SetStateAction<T>) => Promise<PersistenceState>, (update: (current: T) => T) => Promise<PersistenceState>] {
   const { workspace, user, isGuest, canEditApp } = useAuth();
   const appId: AppId = domain === 'cash_book' ? 'book' : 'payroll';
   const standalone = import.meta.env.VITE_STANDALONE === 'true' || isGuest;
@@ -32,7 +32,7 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
     hydrationWaiter.current = { promise: new Promise<void>((resolve) => { resolveHydration = resolve; }), resolve: () => resolveHydration() };
     setReady(false);
     void (async () => {
-      const local = await readSnapshot(storageKey, initialValueRef.current);
+      const local = await readCanonicalSnapshot(storageKey, initialValueRef.current, legacy);
       // A workspace/app switch can unmount this effect while the IndexedDB or
       // SQLite read is still pending. Never let that old read overwrite the
       // state belonging to the newly active storage key.
@@ -52,6 +52,13 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
             valueRef.current = hydratedRemote.value;
             lastHydratedValue.current = JSON.stringify(hydratedRemote.value);
             setValue(hydratedRemote.value);
+          } else if (!hydratedRemote.found && legacy && active && !localMutationStarted.current) {
+            const migratedRemote = await hydrateLegacySnapshotGroup(context, legacy, valueRef.current);
+            if (migratedRemote !== undefined && active && !localMutationStarted.current) {
+              valueRef.current = migratedRemote;
+              lastHydratedValue.current = JSON.stringify(migratedRemote);
+              setValue(migratedRemote);
+            }
           }
         })().catch(() => {
           if (!active) return;

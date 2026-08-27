@@ -28,8 +28,8 @@ async function inspectIndexedDbCashContract(page: Page, remarks: string[]) {
     });
     database.close();
     const transactionRecords = entries
-      .filter((entry) => entry.key.endsWith(':cash_book:transactions') && Array.isArray(entry.value))
-      .flatMap((entry) => entry.value as Array<{ remark?: string }>);
+      .filter((entry) => entry.key.endsWith(':cash_book:state'))
+      .flatMap((entry) => ((entry.value as { transactions?: Array<{ remark?: string }> } | null)?.transactions ?? []));
     const queue = entries.find((entry) => entry.key === 'sync-queue-v1')?.value;
     const queuedMutations = Array.isArray(queue) ? queue : [];
     return {
@@ -224,12 +224,10 @@ test('durable web state survives closing and reopening the browser process offli
     await expect.poll(async () => {
       const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Member Company').single();
       if (!workspace) return false;
-      const [{ data: bookSnapshots }, { data: transactionSnapshots }] = await Promise.all([
-        service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'cash_book:books'),
-        service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'cash_book:transactions'),
-      ]);
-      const books = (bookSnapshots?.[0]?.payload as Array<{ name?: string }> | undefined) ?? [];
-      const transactions = (transactionSnapshots?.[0]?.payload as Array<{ remark?: string }> | undefined) ?? [];
+      const { data: snapshot } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'cash_book:state').maybeSingle();
+      const state = snapshot?.payload as { books?: Array<{ name?: string }>; transactions?: Array<{ remark?: string }> } | undefined;
+      const books = state?.books ?? [];
+      const transactions = state?.transactions ?? [];
       return books.filter((book) => book.name === bookName).length === 1
         && transactions.filter((transaction) => transaction.remark === 'Offline Cash In').length === 1
         && transactions.filter((transaction) => transaction.remark === 'Offline Cash Out').length === 1;
@@ -280,8 +278,8 @@ test('Payroll data survives closing and reopening the browser process offline', 
     await expect.poll(async () => {
       const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Member Company').single();
       if (!workspace) return 0;
-      const { data: snapshots } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'payroll:employees');
-      return snapshots?.reduce((count, snapshot) => count + (Array.isArray(snapshot.payload) && snapshot.payload.some((employee) => (employee as { name?: string }).name === employeeName) ? 1 : 0), 0) ?? 0;
+      const { data: snapshot } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'payroll:state').maybeSingle();
+      return ((snapshot?.payload as { employees?: Array<{ name?: string }> } | null)?.employees ?? []).filter((employee) => employee.name === employeeName).length;
     }, { timeout: 20_000 }).toBe(1);
   } finally {
     await persistent.close();
@@ -321,7 +319,7 @@ test('all synced companies and their app data remain accessible offline', async 
     const cacheKey = keys.find((key) => String(key).startsWith('workspaces:'));
     if (!cacheKey) return false;
     const cache = await new Promise<{ memberships?: unknown[] } | undefined>((resolve, reject) => { const read = database.transaction('records', 'readonly').objectStore('records').get(cacheKey); read.onsuccess = () => resolve(read.result); read.onerror = () => reject(read.error); });
-    const appDataReady = keys.some((key) => String(key).endsWith(':cash_book:books:revision'));
+    const appDataReady = keys.some((key) => String(key).endsWith(':cash_book:state:revision'));
     return (cache?.memberships?.length ?? 0) >= 2 && appDataReady;
   });
   await page.goto('/companies');

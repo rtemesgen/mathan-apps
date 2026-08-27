@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { legacySnapshotKeyMappings } from '../src/lib/legacyLocalMigration';
 import { businessRecordShapeError } from '../src/lib/dataLayerHealth';
+import { combineLegacyCashBookSnapshots, mergeCashBookStates } from '../src/apps/book/cashBookRepository';
+import { combineLegacyPayrollSnapshots } from '../src/apps/payroll/payrollRepository';
 
 const migrationPath = path.resolve('../backend/supabase/migrations/202608270001_legacy_workspace_data_repair.sql');
 const migration = fs.readFileSync(migrationPath, 'utf8');
@@ -37,8 +39,23 @@ assert.doesNotMatch(truckIdempotency, /\b(delete\s+from|drop\s+table|truncate|dr
 
 assert.equal(businessRecordShapeError('user:workspace:cash_book:books', []), null);
 assert.match(businessRecordShapeError('user:workspace:cash_book:books', {}) ?? '', /not an array/);
+assert.equal(businessRecordShapeError('user:workspace:cash_book:state', { books: [], transactions: [] }), null);
+assert.equal(businessRecordShapeError('user:workspace:payroll:state', { employees: [], transactions: [] }), null);
 assert.equal(businessRecordShapeError('truck:user:workspace', { trucks: [], owners: [], transactions: [] }), null, 'pre-customer Truck caches remain compatible');
 assert.match(businessRecordShapeError('truck:user:workspace', []) ?? '', /incompatible schema/);
 assert.match(businessRecordShapeError('sync-queue-v1', {}) ?? '', /not an array/);
+
+const orphanTransaction = { id: 'tx-old', bookId: 'book-old', type: 'in' as const, amount: 747, remark: 'Legacy', dateTime: '2026-08-01T10:00', createdAt: '2026-08-01T10:00:00.000Z' };
+const recoveredCash = combineLegacyCashBookSnapshots({ transactions: [orphanTransaction] });
+assert.equal(recoveredCash.books[0].id, 'book-old', 'a legacy transaction keeps its original parent identity navigable');
+assert.equal(recoveredCash.transactions[0].bookId, recoveredCash.books[0].id);
+const realBook = { id: 'book-old', name: 'Real server book', currency: '$', createdAt: '2026-07-01', updatedAt: '2026-08-01' };
+assert.equal(mergeCashBookStates(recoveredCash, { books: [realBook], transactions: [orphanTransaction] }).books[0].name, 'Real server book', 'server parent metadata replaces only the temporary recovery projection');
+assert.deepEqual(combineLegacyPayrollSnapshots({ employees: [{ id: 'employee-old' }], transactions: [{ id: 'payment-old', employeeId: 'employee-old' }] }), { employees: [{ id: 'employee-old' }], transactions: [{ id: 'payment-old', employeeId: 'employee-old' }] });
+
+const canonicalMigration = fs.readFileSync(path.resolve('../backend/supabase/migrations/202608270003_canonical_business_snapshots.sql'), 'utf8');
+assert.match(canonicalMigration, /'cash_book:state'/);
+assert.match(canonicalMigration, /'payroll:state'/);
+assert.doesNotMatch(canonicalMigration, /\b(delete\s+from|drop\s+table|truncate|drop\s+column)\b/i, 'canonical snapshot migration is non-destructive');
 
 console.log('Legacy data-layer migration contract tests passed.');
