@@ -58,4 +58,10 @@ assert.match(canonicalMigration, /'cash_book:state'/);
 assert.match(canonicalMigration, /'payroll:state'/);
 assert.doesNotMatch(canonicalMigration, /\b(delete\s+from|drop\s+table|truncate|drop\s+column)\b/i, 'canonical snapshot migration is non-destructive');
 
+const receiptRepair = fs.readFileSync(path.resolve('../backend/supabase/migrations/202608280001_repair_snapshot_mutation_receipt_rpc.sql'), 'utf8');
+assert.match(receiptRepair, /incoming_mutation_id uuid := mutation_id/);
+assert.match(receiptRepair, /receipt\.mutation_id = incoming_mutation_id/);
+assert.match(receiptRepair, /\(incoming_mutation_id, auth\.uid\(\)/);
+assert.doesNotMatch(receiptRepair, /\b(delete\s+from|drop\s+table|truncate|drop\s+column)\b/i, 'receipt-RPC repair is non-destructive');
+
 console.log('Legacy data-layer migration contract tests passed.');

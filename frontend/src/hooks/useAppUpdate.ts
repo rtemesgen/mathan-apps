@@ -21,7 +21,7 @@ function versionParts(value: string) {
   return value.replace(/^v/i, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
 }
 
-function isNewerVersion(latest: string, current: string) {
+export function isNewerVersion(latest: string, current: string) {
   const next = versionParts(latest);
   const installed = versionParts(current);
   for (let index = 0; index < Math.max(next.length, installed.length); index += 1) {
@@ -77,7 +77,10 @@ function useUpdateController() {
     try {
       const info = await CapacitorApp.getInfo();
       const bundledVersion = (import.meta.env.VITE_APP_VERSION as string | undefined)?.trim();
-      const installedVersion = bundledVersion || info.version;
+      // The Android package manager is authoritative. A web asset can be
+      // cached or accidentally built with a stale VITE_APP_VERSION, which
+      // must never make an already-installed APK prompt for itself.
+      const installedVersion = info.version?.trim() || bundledVersion || '0.0.0';
       const response = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
       if (!response.ok) { setStatus('error'); return null; }
       const release = await response.json() as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean; assets?: Array<{ name?: string; browser_download_url?: string }> };

@@ -22,10 +22,11 @@ function explain(error: { message?: string; code?: string }) {
 }
 
 const updatedAt = (r: Record<string, unknown>) => r.updated_at ? String(r.updated_at) : undefined;
+const createdAt = (r: Record<string, unknown>) => r.created_at ? String(r.created_at) : undefined;
 const truckFromDb = (r: Record<string, unknown>): Truck => ({ id: String(r.id), name: String(r.name ?? ''), unitNumber: String(r.unit_number ?? ''), makeModel: String(r.make_model ?? ''), vin: String(r.vin ?? ''), cashOnHand: Number(r.cash_on_hand ?? 0), licensePlate: String(r.license_plate ?? ''), updatedAt: updatedAt(r) });
 const ownerFromDb = (r: Record<string, unknown>): Owner => ({ id: String(r.id), truckId: String(r.truck_id), name: String(r.name ?? ''), startDate: String(r.start_date ?? ''), equityPercentage: Number(r.equity_percentage ?? 0), monthlyDrawRate: Number(r.monthly_draw_rate ?? 0), avatarColor: String(r.avatar_color ?? 'bg-slate-800 text-white'), updatedAt: updatedAt(r) });
 const customerFromDb = (r: Record<string, unknown>): Customer => ({ id: String(r.id), truckId: String(r.truck_id), name: String(r.name ?? ''), phone: r.phone ? String(r.phone) : undefined, address: r.address ? String(r.address) : undefined, notes: r.notes ? String(r.notes) : undefined, updatedAt: updatedAt(r) });
-const transactionFromDb = (r: Record<string, unknown>): Transaction => ({ id: String(r.id), truckId: String(r.truck_id), date: String(r.occurred_on), type: r.transaction_type as Transaction['type'], category: String(r.category ?? ''), amount: Number(r.amount ?? 0), ownerId: r.owner_id ? String(r.owner_id) : undefined, customerId: r.customer_id ? String(r.customer_id) : undefined, description: String(r.description ?? ''), referenceNo: r.reference_no ? String(r.reference_no) : undefined, counterpartyType: r.counterparty_type as Transaction['counterpartyType'] | undefined, counterpartyName: r.counterparty_name ? String(r.counterparty_name) : undefined, settlesTransactionId: r.settles_transaction_id ? String(r.settles_transaction_id) : undefined, updatedAt: updatedAt(r) });
+const transactionFromDb = (r: Record<string, unknown>): Transaction => ({ id: String(r.id), truckId: String(r.truck_id), date: String(r.occurred_on), type: r.transaction_type as Transaction['type'], category: String(r.category ?? ''), amount: Number(r.amount ?? 0), ownerId: r.owner_id ? String(r.owner_id) : undefined, customerId: r.customer_id ? String(r.customer_id) : undefined, description: String(r.description ?? ''), referenceNo: r.reference_no ? String(r.reference_no) : undefined, counterpartyType: r.counterparty_type as Transaction['counterpartyType'] | undefined, counterpartyName: r.counterparty_name ? String(r.counterparty_name) : undefined, settlesTransactionId: r.settles_transaction_id ? String(r.settles_transaction_id) : undefined, createdAt: createdAt(r), updatedAt: updatedAt(r) });
 
 export type TruckCache = { trucks: Truck[]; owners: Owner[]; customers: Customer[]; transactions: Transaction[] };
 const cacheKey = async (workspaceId: string, userId?: string) => {
@@ -267,7 +268,7 @@ export async function deleteTruck(workspaceId: string, id: string, localOnly = f
 }
 
 export async function createTruckTransaction(workspaceId: string, v: Omit<Transaction, 'id'>, localOnly = false, userId?: string) {
-  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null };
+  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null, created_at: new Date().toISOString() };
   const transaction = transactionFromDb(row);
   await persistTruckChange(workspaceId, (cache) => ({ ...cache, transactions: [...cache.transactions.filter((item) => item.id !== transaction.id), transaction] }), [{ table: 'truck_transactions', payload: row, operation: 'create' }], localOnly, userId);
   return transaction;
@@ -275,7 +276,8 @@ export async function createTruckTransaction(workspaceId: string, v: Omit<Transa
 
 export async function createTruckTransactionBatch(workspaceId: string, values: Omit<Transaction, 'id'>[], localOnly = false, userId?: string) {
   if (!values.length) return [];
-  const rows = values.map((v) => ({ id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null }));
+  const createdAt = new Date().toISOString();
+  const rows = values.map((v) => ({ id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null, created_at: createdAt }));
   const transactions = rows.map((row) => transactionFromDb(row));
   await persistTruckChange(workspaceId, (cache) => ({ ...cache, transactions: [...transactions, ...cache.transactions] }), rows.map((payload) => ({ table: 'truck_transactions', payload, operation: 'create' })), localOnly, userId);
   return transactions;

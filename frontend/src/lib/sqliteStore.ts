@@ -6,6 +6,8 @@ const DATABASE_NAME = 'mathan-erp-offline';
 export const DATABASE_VERSION = 2;
 const MIGRATION_KEY = '__offline_sqlite_migration_v1__';
 export const SQLITE_V2_UPGRADE_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS records (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL);`,
+  `CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL);`,
   `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY NOT NULL, state TEXT NOT NULL CHECK (state IN ('ready')), completed_at INTEGER NOT NULL);`,
   `CREATE INDEX IF NOT EXISTS records_updated_at_idx ON records(updated_at);`,
   `CREATE INDEX IF NOT EXISTS metadata_updated_at_idx ON metadata(updated_at);`,

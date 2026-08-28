@@ -45,6 +45,8 @@ export interface Truck {
 
 export interface Transaction {
   id: string;
+  /** Server creation time. Used for a stable latest-activity ordering. */
+  createdAt?: string;
   updatedAt?: string;
   truckId: string;
   date: string;

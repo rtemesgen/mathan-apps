@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { calculateTruckFinancials } from '../src/apps/truck/utils/formatters';
 import type { Owner, Transaction, Truck } from '../src/apps/truck/types';
 import { customersForTruck } from '../src/apps/truck/utils/customerScope';
+import { sortTruckActivityNewestFirst } from '../src/apps/truck/components/LedgerHistoryView';
 
 const truck: Truck = { id: 't1', name: 'Unit 1', unitNumber: '1', makeModel: 'Test', vin: '', cashOnHand: 100, licensePlate: '' };
 const owner: Owner = { id: 'o1', truckId: 't1', name: 'Partner', startDate: '2026-01-01', equityPercentage: 50, monthlyDrawRate: 0, avatarColor: '' };
@@ -73,4 +74,11 @@ const legacyCustomerResult = calculateTruckFinancials(truck, [owner], [
 assert.equal(legacyCustomerResult.totalIncome, 6500);
 assert.equal(legacyCustomerResult.cashOnHand, 100, 'unpaid legacy trip credit is not counted as cash');
 assert.deepEqual(legacyCustomerResult.counterpartyBalances, [{ type: 'receivable', name: 'Wow', customerId: 'customer-1', amount: 6500 }]);
+
+const activityOrder = sortTruckActivityNewestFirst([
+  { id: 'older-recorded', truckId: 't1', date: '2026-08-28', type: 'INCOME', category: 'Trip', amount: 1, description: '', createdAt: '2026-08-28T09:00:00.000Z' },
+  { id: 'newer-recorded', truckId: 't1', date: '2026-08-01', type: 'INCOME', category: 'Trip', amount: 1, description: '', createdAt: '2026-08-28T10:00:00.000Z' },
+  { id: 'latest-edited', truckId: 't1', date: '2026-07-01', type: 'INCOME', category: 'Trip', amount: 1, description: '', createdAt: '2026-08-01T10:00:00.000Z', updatedAt: '2026-08-28T11:00:00.000Z' },
+]);
+assert.deepEqual(activityOrder.map((item) => item.id), ['latest-edited', 'newer-recorded', 'older-recorded'], 'Activity History is newest recorded or edited activity first, not random UUID order');
 console.log('Truck financial tests passed.');

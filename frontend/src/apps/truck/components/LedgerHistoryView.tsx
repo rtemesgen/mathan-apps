@@ -20,6 +20,17 @@ interface LedgerHistoryViewProps {
   onExport?: (filters: { startDate?: string; endDate?: string; transactionType?: string; query?: string }) => void;
 }
 
+/** Latest activity is based on when the entry was recorded or edited, not a
+ * user-entered accounting date. Older records without timestamps retain a
+ * deterministic date/id fallback. */
+export function sortTruckActivityNewestFirst(transactions: Transaction[]) {
+  const recordedAt = (transaction: Transaction) => {
+    const timestamp = Date.parse(transaction.updatedAt ?? transaction.createdAt ?? '');
+    return Number.isFinite(timestamp) ? timestamp : Date.parse(`${transaction.date}T00:00:00Z`) || 0;
+  };
+  return [...transactions].sort((a, b) => recordedAt(b) - recordedAt(a) || b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+}
+
 export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
   transactions,
   owners,
@@ -33,7 +44,7 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
   const [toDate, setToDate] = useState<string>('');
 
   const filteredTx = useMemo(() => {
-    return transactions.filter((tx) => {
+    const filtered = transactions.filter((tx) => {
       const matchesSearch =
         tx.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
         tx.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -45,7 +56,8 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
       const matchesToDate = !toDate || tx.date <= toDate;
 
       return matchesSearch && matchesType && matchesFromDate && matchesToDate;
-    }).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    });
+    return sortTruckActivityNewestFirst(filtered);
   }, [transactions, searchTerm, selectedType, fromDate, toDate]);
 
   // Filtered Totals

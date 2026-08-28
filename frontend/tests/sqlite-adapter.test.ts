@@ -9,6 +9,7 @@ const sqlite = process.env.SQLITE3_BIN || 'sqlite3';
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mathan-sqlite-adapter-'));
 const upgradedPath = path.join(directory, 'upgraded-v1.db');
 const freshPath = path.join(directory, 'fresh-v2.db');
+const freshUpgradePath = path.join(directory, 'fresh-upgrade-v2.db');
 
 function execute(database: string, sql: string) {
   // Android SDK's sqlite3 build can keep stdin open when launched by Node.
@@ -52,6 +53,10 @@ execute(upgradedPath, `
 // version bump performed by the native plugin after all statements succeed.
 execute(upgradedPath, `BEGIN IMMEDIATE; ${SQLITE_V2_UPGRADE_STATEMENTS.join('\n')} PRAGMA user_version = ${DATABASE_VERSION}; COMMIT;`);
 execute(freshPath, `${SQLITE_CURRENT_SCHEMA_SQL} PRAGMA user_version = ${DATABASE_VERSION};`);
+// Capacitor applies registered upgrade statements before application code can
+// execute the current schema. A brand-new database therefore enters this path
+// from user_version 0 and must create the base tables itself.
+execute(freshUpgradePath, `BEGIN IMMEDIATE; ${SQLITE_V2_UPGRADE_STATEMENTS.join('\n')} PRAGMA user_version = ${DATABASE_VERSION}; COMMIT;`);
 
 function schemaDescriptor(database: string) {
   const tables = query<{ name: string }>(database, `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).map((row) => row.name);
@@ -61,6 +66,7 @@ function schemaDescriptor(database: string) {
 }
 
 assert.deepEqual(schemaDescriptor(upgradedPath), schemaDescriptor(freshPath), 'upgraded-v1 and fresh-v2 SQLite schemas have identical tables, columns, and indexes');
+assert.deepEqual(schemaDescriptor(freshUpgradePath), schemaDescriptor(freshPath), 'a native fresh install upgraded from version 0 creates the complete current schema');
 assert.equal(query<{ user_version: number }>(upgradedPath, 'PRAGMA user_version')[0].user_version, DATABASE_VERSION);
 
 // Test 1: server-confirmed/effective business data is physically present after

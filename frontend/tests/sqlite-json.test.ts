@@ -11,6 +11,9 @@ assert.equal(isJsonSafe({ backupKey: key }), false, 'CryptoKey values must remai
 assert.equal(isJsonSerializable({ backupKey: key }), false);
 assert.equal(jsonValue({ backupKey: key }), null);
 assert.equal(isJsonSerializable({ records: [{ id: 'one', amount: 12.5 }] }), true);
+assert.equal(isJsonSerializable({ id: 'one', optionalAttachment: undefined }), true, 'optional object fields are omitted by canonical JSON');
+assert.equal(jsonValue({ id: 'one', optionalAttachment: undefined }), '{"id":"one"}');
+assert.equal(isJsonSerializable(['one', undefined]), false, 'undefined array entries must not silently become null');
 assert.equal(isJsonSerializable(new Map([['id', 'one']])), false);
 assert.equal(isJsonSerializable({ amount: 1n }), false);
 

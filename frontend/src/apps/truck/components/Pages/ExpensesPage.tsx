@@ -13,6 +13,7 @@ import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 import { customersForTruck } from '../../utils/customerScope';
+import { localDateString } from '../../../../lib/localDate';
 
 interface ExpensesPageProps {
   summary: TruckFinancialSummary;
@@ -63,7 +64,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [expenseVendor, setExpenseVendor] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseRef, setExpenseRef] = useState('');
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expenseDate, setExpenseDate] = useState(localDateString());
   const [expensePaymentSelection, setExpensePaymentSelection] = useState('CASH');
 
   // Tab 2: Pay Owner State

@@ -17,6 +17,7 @@ import { Truck, Transaction, Owner } from '../../types';
 import { calculateTruckFinancials, formatCurrency, formatDate, transactionDetails } from '../../utils/formatters';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
 import { DeleteConfirmModal } from '../../../../components/DeleteConfirmModal';
+import { localDateString } from '../../../../lib/localDate';
 
 interface CashReportViewProps {
   truck: Truck;
@@ -44,11 +45,7 @@ export const CashReportView: React.FC<CashReportViewProps> = ({
   onEditTransaction,
   onDeleteTransaction,
 }) => {
-  // Current local date helper
-  const todayStr = useMemo(() => {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
-  }, []);
+  const todayStr = useMemo(() => localDateString(), []);
 
   const [periodType, setPeriodType] = useState<PeriodFilterType>('monthly');
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);

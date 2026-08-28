@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { localDateString } from '../../lib/localDate';
 
 type StoredPreferences = { view?: string; truckId?: string; date?: string; sortBy?: string };
 
 export function useTruckPreferences(workspaceId: string | undefined, currentTruckId: string, setCurrentTruckId: Dispatch<SetStateAction<string>>) {
   const [currentView, setCurrentView] = useState('dashboard');
   const [sortBy, setSortBy] = useState('balance');
-  const [calculationDate, setCalculationDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [calculationDate, setCalculationDate] = useState(() => localDateString());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const ready = useRef(false);
   const readyKey = useRef('');

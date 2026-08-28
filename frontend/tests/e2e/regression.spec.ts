@@ -262,6 +262,20 @@ test('Payroll data survives closing and reopening the browser process offline', 
     await firstPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
     await expect(firstPage.getByText(employeeName, { exact: true })).toBeVisible();
 
+    await firstPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
+    await firstPage.getByRole('button', { name: /Choose employee|Persistent payroll employee/ }).first().click();
+    await firstPage.getByRole('button', { name: new RegExp(employeeName) }).last().click();
+    const paymentNote = `Restart payroll payment ${Date.now()}`;
+    await firstPage.locator('input[type=number]').first().fill('100');
+    await firstPage.getByPlaceholder('e.g. Mid-month salary withdrawal').fill(paymentNote);
+    await firstPage.getByRole('button', { name: 'Save Payout' }).click();
+    await expect(firstPage.getByText('Payout Recorded Successfully!')).toBeVisible();
+    const paidBeforeRestart = await firstPage.getByText('Previously Paid:').locator('..').textContent();
+    const balanceBeforeRestart = await firstPage.getByText('Available Balance:').locator('..').textContent();
+    await firstPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
+    await firstPage.getByText(employeeName, { exact: true }).last().click();
+    await expect(firstPage.getByText(paymentNote, { exact: true })).toBeVisible();
+
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
     await persistent.setOffline(false);
@@ -272,6 +286,14 @@ test('Payroll data survives closing and reopening the browser process offline', 
     await expect(reopenedPage.getByText('Loading Payroll data…')).toBeHidden({ timeout: 20_000 });
     await reopenedPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
     await expect(reopenedPage.getByText(employeeName, { exact: true })).toBeVisible();
+    await reopenedPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
+    await reopenedPage.getByRole('button', { name: /Choose employee|Persistent payroll employee/ }).first().click();
+    await reopenedPage.getByRole('button', { name: new RegExp(employeeName) }).last().click();
+    await expect(reopenedPage.getByText('Previously Paid:').locator('..')).toHaveText(paidBeforeRestart ?? '');
+    await expect(reopenedPage.getByText('Available Balance:').locator('..')).toHaveText(balanceBeforeRestart ?? '');
+    await reopenedPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
+    await reopenedPage.getByText(employeeName, { exact: true }).last().click();
+    await expect(reopenedPage.getByText(paymentNote, { exact: true })).toBeVisible();
     await persistent.setOffline(false);
     await reopenedPage.reload();
     const service = e2eService();
@@ -279,10 +301,90 @@ test('Payroll data survives closing and reopening the browser process offline', 
       const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Member Company').single();
       if (!workspace) return 0;
       const { data: snapshot } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'payroll:state').maybeSingle();
-      return ((snapshot?.payload as { employees?: Array<{ name?: string }> } | null)?.employees ?? []).filter((employee) => employee.name === employeeName).length;
+      const state = snapshot?.payload as { employees?: Array<{ name?: string }>; transactions?: Array<{ notes?: string }> } | null;
+      return state?.employees?.filter((employee) => employee.name === employeeName).length === 1
+        && state?.transactions?.filter((transaction) => transaction.notes === paymentNote).length === 1 ? 1 : 0;
     }, { timeout: 20_000 }).toBe(1);
   } finally {
     await persistent.close();
+  }
+});
+
+test('legacy split Payroll workspace upgrades to canonical state and survives offline restart', async ({}, testInfo) => {
+  const status = localSupabaseStatus();
+  const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const creator = createClient(status.API_URL, status.ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  await creator.auth.signInWithPassword({ email: E2E_USERS.admin.email, password: E2E_USERS.admin.password });
+  const workspaceName = `Legacy Payroll ${Date.now()}`;
+  const { data: createdWorkspace, error: createError } = await creator.rpc('create_workspace', { workspace_name: workspaceName });
+  expect(createError).toBeNull();
+  const workspaceId = createdWorkspace!.id as string;
+  const employeeId = crypto.randomUUID();
+  const legacyEmployeeName = `Legacy employee ${Date.now()}`;
+  const legacyEmployee = { id: employeeId, name: legacyEmployeeName, startDate: '2026-01-01', initialSalary: 5000, salaryHistory: [], status: 'active', createdAt: '2026-01-01T00:00:00.000Z' };
+  const legacyPayment = { id: crypto.randomUUID(), employeeId, employeeName: legacyEmployeeName, amount: 50, date: '2026-08-01', type: 'withdrawal', notes: 'Pre-upgrade payment', createdAt: '2026-08-01T00:00:00.000Z' };
+  await service.from('app_state_snapshots').insert([
+    { workspace_id: workspaceId, domain: 'payroll:employees', revision: 3, payload: [legacyEmployee] },
+    { workspace_id: workspaceId, domain: 'payroll:transactions', revision: 4, payload: [legacyPayment] },
+  ]);
+
+  const profile = testInfo.outputPath('legacy-payroll-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  const newPaymentNote = `Post-upgrade payment ${Date.now()}`;
+  try {
+    const firstPage = await persistent.newPage();
+    await signIn(firstPage, 'admin');
+    await firstPage.goto('/companies');
+    await firstPage.getByRole('button').filter({ has: firstPage.getByText(workspaceName, { exact: true }) }).first().click();
+    await firstPage.getByRole('button', { name: 'Switch company' }).click();
+    await firstPage.getByLabel('Payroll').click();
+    await firstPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
+    await expect(firstPage.getByText(legacyEmployeeName, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await firstPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
+    await firstPage.getByText(legacyEmployeeName, { exact: true }).last().click();
+    await expect(firstPage.getByText('Pre-upgrade payment', { exact: true })).toBeVisible();
+
+    await persistent.setOffline(true);
+    await firstPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
+    await firstPage.getByRole('button', { name: /Choose employee|Legacy employee/ }).first().click();
+    await firstPage.getByRole('button', { name: new RegExp(legacyEmployeeName) }).last().click();
+    await firstPage.locator('input[type=number]').first().fill('75');
+    await firstPage.getByPlaceholder('e.g. Mid-month salary withdrawal').fill(newPaymentNote);
+    await firstPage.getByRole('button', { name: 'Save Payout' }).click();
+    await expect(firstPage.getByText('Payout Recorded Successfully!')).toBeVisible();
+    const paidBeforeRestart = await firstPage.getByText('Previously Paid:').locator('..').textContent();
+    const balanceBeforeRestart = await firstPage.getByText('Available Balance:').locator('..').textContent();
+
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/payroll');
+    await persistent.setOffline(true);
+    await reopenedPage.reload();
+    await expect(reopenedPage.getByText('Loading Payroll data…')).toBeHidden({ timeout: 20_000 });
+    await reopenedPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
+    await reopenedPage.getByRole('button', { name: /Choose employee|Legacy employee/ }).first().click();
+    await reopenedPage.getByRole('button', { name: new RegExp(legacyEmployeeName) }).last().click();
+    await expect(reopenedPage.getByText('Previously Paid:').locator('..')).toHaveText(paidBeforeRestart ?? '');
+    await expect(reopenedPage.getByText('Available Balance:').locator('..')).toHaveText(balanceBeforeRestart ?? '');
+    await reopenedPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
+    await reopenedPage.getByPlaceholder('Search payment records...').fill(newPaymentNote);
+    await reopenedPage.getByText(legacyEmployeeName, { exact: true }).last().click();
+    await expect(reopenedPage.getByText(newPaymentNote, { exact: true })).toBeVisible();
+
+    await persistent.setOffline(false);
+    await reopenedPage.reload();
+    await expect.poll(async () => {
+      const { data } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspaceId).eq('domain', 'payroll:state').maybeSingle();
+      const state = data?.payload as { employees?: Array<{ id?: string }>; transactions?: Array<{ notes?: string }> } | undefined;
+      return state?.employees?.filter((employee) => employee.id === employeeId).length === 1
+        && state?.transactions?.filter((transaction) => transaction.notes === 'Pre-upgrade payment').length === 1
+        && state?.transactions?.filter((transaction) => transaction.notes === newPaymentNote).length === 1;
+    }, { timeout: 20_000 }).toBe(true);
+  } finally {
+    await persistent.close();
+    await service.from('workspaces').delete().eq('id', workspaceId);
   }
 });
 

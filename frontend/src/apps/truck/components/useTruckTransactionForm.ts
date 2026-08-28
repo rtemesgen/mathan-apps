@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { CounterpartyType, Customer, Owner, Transaction, TransactionType, Truck } from '../types';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
+import { localDateString } from '../../../lib/localDate';
 
 export type TruckTransactionInput = {
   truckId: string;
@@ -52,7 +53,7 @@ export function useTruckTransactionForm({ owners, customers, trucks, currentTruc
   const [counterpartyType, setCounterpartyType] = useState<CounterpartyType>('CUSTOMER');
   const [counterpartyName, setCounterpartyName] = useState('');
   const [customerId, setCustomerId] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(localDateString());
   const { submitting, runAction } = useAsyncAction();
   const truckOptionsKey = trucks.map((truck) => truck.id).join(',');
   const ownerOptionsKey = owners.map((owner) => owner.id).join(',');
@@ -84,7 +85,7 @@ export function useTruckTransactionForm({ owners, customers, trucks, currentTruc
     setCounterpartyType('CUSTOMER');
     setCounterpartyName('');
     setCustomerId('');
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(localDateString());
   }, [active, editingTransaction?.id, currentTruckId, defaultOwnerId, defaultType, truckOptionsKey, ownerOptionsKey, customerOptionsKey]);
 
   const handleTypeChange = (newType: TransactionType) => {

@@ -4,6 +4,20 @@ import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
 import { localSupabaseStatus } from './supabaseLocal';
 
+async function inspectTruckOfflineContract(page: import('playwright/test').Page, memo: string) {
+  return page.evaluate(async (expectedMemo) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('mathan-erp-offline'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    const entries = await new Promise<Array<{ key: string; value: unknown }>>((resolve, reject) => { const transaction = database.transaction('records', 'readonly'); const store = transaction.objectStore('records'); const keys = store.getAllKeys(); const values = store.getAll(); transaction.oncomplete = () => resolve(keys.result.map((key, index) => ({ key: String(key), value: values.result[index] }))); transaction.onerror = () => reject(transaction.error); });
+    database.close();
+    const cachedTransactions = entries.filter((entry) => entry.key.startsWith('truck:')).flatMap((entry) => (entry.value as { transactions?: Array<{ description?: string }> } | null)?.transactions ?? []);
+    const queue = entries.find((entry) => entry.key === 'sync-queue-v1')?.value;
+    return {
+      effectiveCount: cachedTransactions.filter((transaction) => transaction.description === expectedMemo).length,
+      outboxCount: (Array.isArray(queue) ? queue : []).filter((mutation) => JSON.stringify(mutation).includes(expectedMemo)).length,
+    };
+  }, memo);
+}
+
 test('Truck app is available through the workspace launcher and preserves data across app switches and offline reloads', async ({ page, context }) => {
   await signIn(page, 'admin');
   const launcher = page.getByLabel('Truck Equity');
@@ -84,9 +98,9 @@ test('Truck transactions survive closing and reopening the browser process offli
     const launcher = firstPage.getByLabel('Truck Equity');
     if (await launcher.count() === 0) test.skip(true, 'Truck access is not granted to this fixture workspace.');
     await launcher.click();
-    await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
-    await firstPage.getByRole('button', { name: /Dashboard\(Trucks\)/ }).click();
-    await firstPage.getByRole('button', { name: 'Manage Fleet' }).click();
+    const manageFleet = firstPage.getByRole('button', { name: 'Manage Fleet' });
+    await expect(manageFleet).toBeVisible();
+    await manageFleet.click();
     await firstPage.getByRole('button', { name: '+ Add Truck' }).click();
     const truckName = `Persistent truck ${Date.now()}`;
     await firstPage.getByPlaceholder('e.g. Big Red').fill(truckName);
@@ -128,5 +142,112 @@ test('Truck transactions survive closing and reopening the browser process offli
     }, { timeout: 20_000 }).toBe(1);
   } finally {
     await persistent.close();
+  }
+});
+
+test('customer projections and Pay Owner remain identical after restart and sync exactly once', async ({}, testInfo) => {
+  const profile = testInfo.outputPath('persistent-truck-projections-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  const status = localSupabaseStatus();
+  const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
+  expect(workspace).toBeTruthy();
+  const truckId = crypto.randomUUID();
+  const ownerId = crypto.randomUUID();
+  const customerId = crypto.randomUUID();
+  const truckName = `Projection truck ${Date.now()}`;
+  const unitNumber = `PX-${Date.now()}`;
+  const ownerName = `Projection owner ${Date.now()}`;
+  const customerName = `Wow ${Date.now()}`;
+  const ownerPaymentMemo = `Offline owner payment ${Date.now()}`;
+  await service.from('trucks').insert({ id: truckId, workspace_id: workspace!.id, name: truckName, unit_number: unitNumber, make_model: 'Projection test', vin: '', cash_on_hand: 2000, license_plate: unitNumber });
+  await service.from('truck_owners').insert({ id: ownerId, workspace_id: workspace!.id, truck_id: truckId, name: ownerName, start_date: '2026-01-01', equity_percentage: 0, monthly_draw_rate: 0, avatar_color: 'bg-slate-800 text-white' });
+  await service.from('truck_customers').insert({ id: customerId, workspace_id: workspace!.id, truck_id: truckId, name: customerName });
+  await service.from('truck_transactions').insert([
+    { id: crypto.randomUUID(), workspace_id: workspace!.id, truck_id: truckId, owner_id: ownerId, occurred_on: '2026-08-01', transaction_type: 'CAPITAL_INJECTION', category: 'Owner Loan', amount: 1000, description: 'Projection owner loan' },
+    // This is the exact legacy shape behind the screenshot: customer-linked
+    // Trip Pay stored as INCOME before explicit RECEIVABLE rows existed.
+    { id: crypto.randomUUID(), workspace_id: workspace!.id, truck_id: truckId, customer_id: customerId, occurred_on: '2026-08-02', transaction_type: 'INCOME', category: 'Trip Pay', amount: 6500, description: 'Legacy customer trip', counterparty_type: 'CUSTOMER', counterparty_name: customerName },
+  ]);
+
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  try {
+    const firstPage = await persistent.newPage();
+    await signIn(firstPage, 'admin');
+    await firstPage.getByLabel('Truck Equity').click();
+    await expect(firstPage.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });
+    await firstPage.locator('header button[aria-haspopup=listbox]').click();
+    await firstPage.getByRole('option', { name: `${truckName} (${unitNumber})`, exact: true }).dispatchEvent('click');
+    await expect(firstPage.locator('header button[aria-haspopup=listbox]')).toContainText(truckName);
+
+    await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await firstPage.getByRole('button', { name: 'Customers', exact: true }).click();
+    const customerCard = firstPage.getByText(customerName, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+    await expect(customerCard).toContainText('RECEIVABLE');
+    await expect(customerCard).toContainText('$6,500.00');
+    await customerCard.getByRole('button', { name: /History/ }).click();
+    await expect(customerCard).toContainText('Trip Pay');
+    await expect(customerCard).toContainText('$6,500.00');
+
+    await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await firstPage.getByRole('button', { name: /Partners & Loans/ }).click();
+    const ownerCard = firstPage.getByText(ownerName, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+    await expect(ownerCard).toContainText('$1,000.00');
+
+    await persistent.setOffline(true);
+    await ownerCard.getByRole('button', { name: 'Pay', exact: true }).click();
+    await firstPage.locator('input[placeholder="0.00"]').fill('250');
+    await firstPage.getByPlaceholder('e.g. Loan repayment check or Zelle transfer').fill(ownerPaymentMemo);
+    await firstPage.getByRole('button', { name: 'Pay Owner', exact: true }).click();
+    await expect(firstPage.getByText(/Saved offline|Owner payment saved successfully/).first()).toBeVisible();
+    await expect.poll(() => inspectTruckOfflineContract(firstPage, ownerPaymentMemo)).toEqual({ effectiveCount: 1, outboxCount: 1 });
+
+    await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await firstPage.getByRole('button', { name: /Partners & Loans/ }).click();
+    const updatedOwnerCard = firstPage.getByText(ownerName, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+    await expect(updatedOwnerCard).toContainText('$750.00');
+    await expect(updatedOwnerCard).toContainText('Repaid: $250');
+    await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await firstPage.getByRole('button', { name: 'Activity History', exact: true }).click();
+    await expect(firstPage.getByText(ownerPaymentMemo, { exact: true })).toBeVisible();
+
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/truck');
+    await persistent.setOffline(true);
+    await reopenedPage.reload();
+    await expect(reopenedPage.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });
+    await reopenedPage.locator('header button[aria-haspopup=listbox]').click();
+    await reopenedPage.getByRole('option', { name: `${truckName} (${unitNumber})`, exact: true }).dispatchEvent('click');
+    await expect(reopenedPage.locator('header button[aria-haspopup=listbox]')).toContainText(truckName);
+    await expect.poll(() => inspectTruckOfflineContract(reopenedPage, ownerPaymentMemo)).toEqual({ effectiveCount: 1, outboxCount: 1 });
+    await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await reopenedPage.getByRole('button', { name: 'Customers', exact: true }).click();
+    const restartedCustomerCard = reopenedPage.getByText(customerName, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+    await expect(restartedCustomerCard).toContainText('RECEIVABLE');
+    await expect(restartedCustomerCard).toContainText('$6,500.00');
+    await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await reopenedPage.getByRole('button', { name: /Partners & Loans/ }).click();
+    const restartedOwnerCard = reopenedPage.getByText(ownerName, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+    await expect(restartedOwnerCard).toContainText('$750.00');
+    await expect(restartedOwnerCard).toContainText('Repaid: $250');
+    await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await reopenedPage.getByRole('button', { name: 'Activity History', exact: true }).click();
+    await expect(reopenedPage.getByText(ownerPaymentMemo, { exact: true })).toBeVisible();
+
+    await persistent.setOffline(false);
+    await reopenedPage.reload();
+    await expect.poll(async () => {
+      const { data } = await service.from('truck_transactions').select('id').eq('workspace_id', workspace!.id).eq('truck_id', truckId).eq('description', ownerPaymentMemo);
+      return data?.length ?? 0;
+    }, { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => inspectTruckOfflineContract(reopenedPage, ownerPaymentMemo), { timeout: 20_000 }).toEqual({ effectiveCount: 1, outboxCount: 0 });
+  } finally {
+    await persistent.close();
+    await service.from('truck_transactions').delete().eq('truck_id', truckId);
+    await service.from('truck_customers').delete().eq('truck_id', truckId);
+    await service.from('truck_owners').delete().eq('truck_id', truckId);
+    await service.from('trucks').delete().eq('id', truckId);
   }
 });

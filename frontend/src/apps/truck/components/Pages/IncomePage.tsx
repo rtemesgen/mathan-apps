@@ -6,6 +6,7 @@ import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 import { customersForTruck } from '../../utils/customerScope';
+import { localDateString } from '../../../../lib/localDate';
 
 interface IncomePageProps {
   owners: Owner[];
@@ -49,13 +50,13 @@ export const IncomePage: React.FC<IncomePageProps> = ({
   const [customerOrCompany, setCustomerOrCompany] = useState('');
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(localDateString());
   const { submitting, runAction } = useAsyncAction();
   const selectedCustomerId = paymentSelection.startsWith('CUSTOMER:') ? paymentSelection.slice('CUSTOMER:'.length) : '';
   const truckCustomers = customersForTruck(customers, truckId);
   const selectedCustomer = truckCustomers.find((customer) => customer.id === selectedCustomerId);
 
-  const resetForm = () => { setAmount(''); setCustomerOrCompany(''); setPaymentSelection('CASH'); setDescription(''); setReferenceNo(''); setDate(new Date().toISOString().split('T')[0]); };
+  const resetForm = () => { setAmount(''); setCustomerOrCompany(''); setPaymentSelection('CASH'); setDescription(''); setReferenceNo(''); setDate(localDateString()); };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);

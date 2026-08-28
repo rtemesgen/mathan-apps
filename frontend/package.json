@@ -19,13 +19,14 @@
     "test:data-layer-migration": "node --import tsx tests/data-layer-migration.test.ts",
     "test:queue-policy": "node --import tsx tests/queue-policy.test.ts",
     "test:connectivity": "node --import tsx tests/connectivity.test.ts",
+    "test:app-update": "node --import tsx tests/app-update.test.ts",
     "test:architecture": "node --import tsx tests/architecture.test.ts",
     "test:file-export": "node --import tsx tests/file-export.test.ts",
     "test:export-metadata": "node --import tsx tests/export-metadata.test.ts",
     "test:context-export": "node --import tsx tests/context-export.test.ts",
     "test:book-import": "node --import tsx tests/book-import.test.ts",
     "test:e2e": "playwright test",
-    "test": "npm run lint && npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:connectivity && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:architecture"
+    "test": "npm run lint && npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:connectivity && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:architecture"
   },
   "dependencies": {
     "@capacitor-community/contacts": "^7.2.0",

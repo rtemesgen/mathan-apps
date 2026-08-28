@@ -16,7 +16,12 @@ export function isJsonSafe(value: unknown, seen = new WeakSet<object>()): boolea
   seen.add(value);
   if (Array.isArray(value)) return value.every((item) => isJsonSafe(item, seen));
   if (!isPlainObject(value)) return false;
-  return Object.values(value).every((item) => isJsonSafe(item, seen));
+  // JSON.stringify intentionally omits undefined object properties. Optional
+  // fields are common in persisted business records, so accepting them keeps
+  // the object on SQLite while producing the same canonical JSON that will be
+  // read after restart. Undefined array entries remain rejected because JSON
+  // would change their meaning to null.
+  return Object.values(value).every((item) => item === undefined || isJsonSafe(item, seen));
 }
 
 export function jsonValue(value: unknown): string | null {

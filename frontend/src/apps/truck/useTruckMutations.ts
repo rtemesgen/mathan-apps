@@ -3,6 +3,7 @@ import { createTruck, createTruckCustomer, createTruckOwner, createTruckTransact
 import type { Customer, Owner, Transaction, TransactionType, Truck } from './types';
 import { formatCurrency, formatDate } from './utils/formatters';
 import type { DeleteConfirmationRequest } from '../../hooks/useDeleteConfirmation';
+import { localDateString } from '../../lib/localDate';
 
 /** Compatibility name for callers; the shared confirmation contract is canonical. */
 export type TruckDeleteRequest = DeleteConfirmationRequest;
@@ -53,14 +54,14 @@ export function useTruckMutations({ workspaceId, userId, isGuest, editable, truc
 
   const handlePayOwnerSubmit = async (ownerId: string, amount: number, memo: string) => {
     const targetOwner = owners.find((owner) => owner.id === ownerId);
-    await handleAddTransaction({ truckId: activeTruck.id, date: calculationDate || new Date().toISOString().split('T')[0], type: 'CAPITAL_REPAYMENT', category: 'Owner Debt Clearance', amount, ownerId, description: memo || `Debt repayment to ${targetOwner?.name || 'Owner'}`, referenceNo: `PAY-${Math.floor(1000 + Math.random() * 9000)}` });
+    await handleAddTransaction({ truckId: activeTruck.id, date: calculationDate || localDateString(), type: 'CAPITAL_REPAYMENT', category: 'Owner Debt Clearance', amount, ownerId, description: memo || `Debt repayment to ${targetOwner?.name || 'Owner'}`, referenceNo: `PAY-${Math.floor(1000 + Math.random() * 9000)}` });
   };
 
   const handleExecuteProfitDistribution = async (allocations: { ownerId: string; amount: number }[]) => {
     const batch: Omit<Transaction, 'id'>[] = allocations.flatMap(({ ownerId, amount }) => {
       if (amount <= 0) return [];
       const owner = owners.find((item) => item.id === ownerId);
-      return [{ truckId: activeTruck.id, date: calculationDate || new Date().toISOString().split('T')[0], type: 'PROFIT_DISTRIBUTION', category: 'Profit Equity Dividend', amount, ownerId, description: `${owner?.name || 'Owner'} ${owner?.equityPercentage}% Net Profit Distribution`, referenceNo: `DIV-${Math.floor(1000 + Math.random() * 9000)}` }];
+      return [{ truckId: activeTruck.id, date: calculationDate || localDateString(), type: 'PROFIT_DISTRIBUTION', category: 'Profit Equity Dividend', amount, ownerId, description: `${owner?.name || 'Owner'} ${owner?.equityPercentage}% Net Profit Distribution`, referenceNo: `DIV-${Math.floor(1000 + Math.random() * 9000)}` }];
     });
     if (!workspaceId || !editable) throw new Error('You do not have permission to edit Truck data.');
     try { await createTruckTransactionBatch(workspaceId, batch, isGuest, userId); await refresh(); setError(''); }
