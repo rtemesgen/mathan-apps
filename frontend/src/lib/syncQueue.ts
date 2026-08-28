@@ -48,6 +48,15 @@ export function queuedMutationCompanyId(mutation: Pick<QueuedMutation, 'companyI
   return mutation.companyId || String(mutation.payload.workspace_id ?? '');
 }
 
+/** Rebase a newer full snapshot after an earlier snapshot has been
+ * acknowledged. This preserves the newer local payload while preventing a
+ * reconnect race from submitting it against an obsolete revision. */
+export function rebaseSnapshotMutation(mutation: QueuedMutation, revision: number): QueuedMutation {
+  return mutation.table === 'app_state_snapshots' && mutation.syncStatus !== 'conflicted' && mutation.syncStatus !== 'error'
+    ? { ...mutation, baseRevision: revision, payload: { ...mutation.payload, expected_revision: revision } }
+    : mutation;
+}
+
 export function isSyncEligible(mutation: Pick<QueuedMutation, 'syncStatus'> & { leaseExpiresAt?: string | null }, now = Date.now()) {
   return mutation.syncStatus === 'pending' || mutation.syncStatus === 'retrying' || leaseExpired(mutation, now);
 }
@@ -210,12 +219,20 @@ export async function getWorkspaceMutationStatus(workspaceId: string, tables?: s
   return relevant.length ? 'pending' as const : null;
 }
 
-export async function replaceQueue(queue: QueuedMutation[], processedMutationIds: string[] = []) {
+export async function replaceQueue(queue: QueuedMutation[], processedMutationIds: string[] = [], acknowledgedSnapshotRevisions: Map<string, number> = new Map()) {
   return withQueueLock(async () => {
     const latest = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
     const processed = new Set(processedMutationIds);
-    const additions = latest.filter((mutation) => !processed.has(mutation.mutationId ?? mutation.id));
-    const merged = additions.reduce((current, mutation) => mergeQueuedMutation(current, mutation), queue);
+    const rebase = (mutation: QueuedMutation): QueuedMutation => {
+      const snapshotKey = `${queuedMutationCompanyId(mutation)}:${String(mutation.payload.domain ?? mutation.entityId)}`;
+      const revision = acknowledgedSnapshotRevisions.get(snapshotKey);
+      return revision === undefined ? mutation : rebaseSnapshotMutation(mutation, revision);
+    };
+    const rebasedQueue = queue.map(rebase);
+    const additions = latest
+      .filter((mutation) => !processed.has(mutation.mutationId ?? mutation.id))
+      .map((mutation) => rebase(normalizeQueuedMutation(mutation)));
+    const merged = additions.reduce((current, mutation) => mergeQueuedMutation(current, mutation), rebasedQueue);
     await offlineStore.write(KEY, merged);
   });
 }

@@ -192,7 +192,12 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
     emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: ordered.length - completed, errors, status: failed ? 'retry' : 'syncing' });
   }
 
-  await replaceQueue(remaining, ordered.map((mutation) => mutation.mutationId));
+  // A later full-snapshot edit may have been queued while an earlier snapshot
+  // was in flight. Rebase that durable mutation onto the revision acknowledged
+  // by the server before releasing the queue; otherwise the next pass would
+  // submit the stale base revision and leave the newer offline data stranded
+  // behind a conflict.
+  await replaceQueue(remaining, ordered.map((mutation) => mutation.mutationId), acknowledgedSnapshotRevisions);
   if (conflict) { report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length }); emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'conflicted' }); }
   else if (failed || remaining.some((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')))) {
     report('retry', remaining.length);

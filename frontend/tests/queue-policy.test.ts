@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mergeQueuedMutation, type QueuePolicyEntry } from '../src/lib/queuePolicy';
 import { orderQueuedMutations } from '../src/lib/offlineSync';
-import { isSyncEligible, queuedMutationCompanyId, recoverQueuedMutation, scopeQueuedMutationForUser, type QueuedMutation } from '../src/lib/syncQueue';
+import { isSyncEligible, queuedMutationCompanyId, recoverQueuedMutation, rebaseSnapshotMutation, scopeQueuedMutationForUser, type QueuedMutation } from '../src/lib/syncQueue';
 import { cacheKeysSafeToClear } from '../src/lib/offlinePrefetch';
 
 const entry = (mutationId: string, entityId: string, syncStatus: QueuePolicyEntry['syncStatus'] = 'pending', operation?: QueuePolicyEntry['operation']): QueuePolicyEntry => ({ mutationId, table: 'truck_transactions', companyId: 'workspace-a', entityId, syncStatus, operation });
@@ -18,6 +18,15 @@ assert.deepEqual(mergeQueuedMutation([entry('create', 'transaction-a', 'pending'
 assert.deepEqual(mergeQueuedMutation([first], entry('one', 'transaction-a', 'pending')), [entry('one', 'transaction-a', 'pending')], 'the same mutation id replaces its existing queue row');
 
 const mutation = (table: string, entityType: string, queuedAt: string): QueuedMutation => ({ id: crypto.randomUUID(), mutationId: crypto.randomUUID(), userId: 'user-a', companyId: 'company-a', entityType, entityId: crypto.randomUUID(), baseRevision: 0, table, operation: 'upsert', payload: {}, queuedAt, updatedAt: queuedAt, baseServerUpdatedAt: null, lastAttemptAt: null, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, syncStatus: 'pending', retryCount: 0 });
+const queuedSnapshot = mutation('app_state_snapshots', 'app_state_snapshot', '2026-01-01');
+queuedSnapshot.entityId = 'cash_book:state';
+queuedSnapshot.payload = { workspace_id: 'company-a', domain: 'cash_book:state', payload: { transactions: [{ id: 'tx-new' }] }, expected_revision: 4 };
+queuedSnapshot.baseRevision = 4;
+const rebasedSnapshot = rebaseSnapshotMutation(queuedSnapshot, 5);
+assert.equal(rebasedSnapshot.baseRevision, 5, 'a newer queued snapshot must rebase onto the acknowledged revision');
+assert.equal(rebasedSnapshot.payload.expected_revision, 5, 'the RPC payload must carry the acknowledged revision');
+assert.deepEqual(rebasedSnapshot.payload.payload, queuedSnapshot.payload.payload, 'rebasing must preserve the newer local snapshot payload');
+
 const ordered = orderQueuedMutations([
   mutation('truck_transactions', 'truck_transaction', '2026-01-03'),
   mutation('truck_owners', 'truck_owner', '2026-01-02'),
