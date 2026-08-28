@@ -22,6 +22,14 @@ allprojects {
         google()
         mavenCentral()
     }
+    if (project.name == 'capacitor-cordova-android-plugins') {
+        configurations.configureEach {
+            // Kotlin 1.8 folded the jdk7/jdk8 artifacts into kotlin-stdlib.
+            // Cordova 10 still requests the split 1.6 jars for its test APK.
+            exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+            exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+        }
+    }
 }
 
 task clean(type: Delete) {

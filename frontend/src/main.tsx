@@ -4,6 +4,22 @@ import App from './App';
 import './index.css';
 import { enableGuestMode } from './auth/guestMode';
 import { Capacitor } from '@capacitor/core';
+import { getOfflineDiagnosticSnapshot, type OfflineDiagnosticSnapshot } from './lib/offlineDiagnostics';
+
+declare global {
+  interface Window {
+    __mathanOfflineDiagnostics?: { snapshot: () => Promise<OfflineDiagnosticSnapshot> };
+  }
+}
+
+if (import.meta.env.VITE_ENABLE_OFFLINE_DIAGNOSTICS === 'true') {
+  Object.defineProperty(window, '__mathanOfflineDiagnostics', {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: Object.freeze({ snapshot: getOfflineDiagnosticSnapshot }),
+  });
+}
 
 if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => { void navigator.serviceWorker.register('/sw.js'); });

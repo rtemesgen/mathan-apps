@@ -6,6 +6,7 @@ const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
 const META_STORE_NAME = 'metadata';
 const DB_VERSION = 2;
+const ATOMIC_RECOVERY_KEY = 'mathan_erp_offline_atomic_recovery_v1';
 const memoryCache = new Map<string, unknown>();
 const fallbackKey = (key: string) => `mathan_erp_offline_${key}`;
 let nativeStoreReady: Promise<boolean> | null = null;
@@ -16,13 +17,67 @@ let nativeMigrationState: boolean | null = null;
 let nativeMigrationCheck: Promise<boolean> | null = null;
 const writeTails = new Map<string, Promise<void>>();
 
+type AtomicRecoveryRecord = Record<string, unknown>;
+
+function readAtomicRecovery(): AtomicRecoveryRecord {
+  try {
+    const raw = localStorage.getItem(ATOMIC_RECOVERY_KEY);
+    const parsed = raw === null ? null : JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as AtomicRecoveryRecord : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAtomicRecovery(entries: Array<{ key: string; value: unknown }>) {
+  const next = { ...readAtomicRecovery() };
+  entries.forEach(({ key, value }) => { next[key] = value; });
+  localStorage.setItem(ATOMIC_RECOVERY_KEY, JSON.stringify(next));
+}
+
+function removeAtomicRecovery(keys: string[]) {
+  const current = readAtomicRecovery();
+  let changed = false;
+  keys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(current, key)) {
+      delete current[key];
+      changed = true;
+    }
+  });
+  if (!changed) return;
+  if (Object.keys(current).length) localStorage.setItem(ATOMIC_RECOVERY_KEY, JSON.stringify(current));
+  else localStorage.removeItem(ATOMIC_RECOVERY_KEY);
+}
+
 function readFallback<T>(key: string): T | null {
   try {
+    const recovery = readAtomicRecovery();
+    if (Object.prototype.hasOwnProperty.call(recovery, key)) return recovery[key] as T;
     const raw = localStorage.getItem(fallbackKey(key));
     return raw === null ? null : JSON.parse(raw) as T;
   } catch {
     return null;
   }
+}
+
+async function writeIndexedDbAtomic(entries: Array<{ key: string; value: unknown }>) {
+  const database = await getDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    entries.forEach(({ key, value }) => store.put(value, key));
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error('Offline cache transaction aborted'));
+  });
+}
+
+async function replayAtomicRecoveryToNative() {
+  const recovery = readAtomicRecovery();
+  const entries = Object.entries(recovery).map(([key, value]) => ({ key, value }));
+  if (!entries.length) return;
+  await writeNativeRecordsAtomic(entries);
+  removeAtomicRecovery(entries.map(({ key }) => key));
 }
 
 function removeFallback(key: string) {
@@ -84,7 +139,7 @@ async function readLegacyStore(storeName: string) {
 async function readLegacyLocalStorage() {
   const entries: Array<{ key: string; value: unknown }> = [];
   try {
-    for (const key of Object.keys(localStorage).filter((item) => item.startsWith('mathan_erp_offline_'))) {
+    for (const key of Object.keys(localStorage).filter((item) => item.startsWith('mathan_erp_offline_') && item !== ATOMIC_RECOVERY_KEY)) {
       const value = readFallback(key.slice('mathan_erp_offline_'.length));
       if (value !== null) entries.push({ key: key.slice('mathan_erp_offline_'.length), value });
     }
@@ -217,8 +272,10 @@ export async function writeOffline<T>(key: string, value: T): Promise<void> {
   return queueWrite([key], async () => {
     try {
       if (isJsonSerializable(value) && await getNativeStoreReady()) {
+        await replayAtomicRecoveryToNative();
         await writeNativeRecord(key, value);
         removeFallback(key);
+        removeAtomicRecovery([key]);
         return;
       }
       await writeIndexedDb(key, value);
@@ -256,6 +313,7 @@ export async function deleteOffline(key: string): Promise<void> {
       if (await getNativeStoreReady()) await deleteNativeRecord(key);
       await deleteIndexedDb(key);
       removeFallback(key);
+      removeAtomicRecovery([key]);
       memoryCache.delete(key);
     } catch (error) {
       if (previous !== null && previous !== undefined) {
@@ -276,48 +334,39 @@ export async function listOfflineKeys(): Promise<string[]> {
       request.onsuccess = () => resolve(request.result.map(String));
       request.onerror = () => reject(request.error);
     });
-    const fallbackKeys = Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length));
-    return [...new Set([...nativeKeys, ...indexedKeys, ...fallbackKeys])];
+    const fallbackKeys = Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_') && key !== ATOMIC_RECOVERY_KEY).map((key) => key.slice('mathan_erp_offline_'.length));
+    return [...new Set([...nativeKeys, ...indexedKeys, ...fallbackKeys, ...Object.keys(readAtomicRecovery())])];
   } catch {
-    return [...new Set([...nativeKeys, ...Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length))])];
+    return [...new Set([...nativeKeys, ...Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_') && key !== ATOMIC_RECOVERY_KEY).map((key) => key.slice('mathan_erp_offline_'.length)), ...Object.keys(readAtomicRecovery())])];
   }
 }
 
 /** Atomically persist related cache records (for example an entity and its queue entry). */
 export async function writeOfflineAtomic(entries: Array<{ key: string; value: unknown }>): Promise<void> {
+  const previousMemory = entries.map(({ key }) => ({ key, hadValue: memoryCache.has(key), value: memoryCache.get(key) }));
   entries.forEach(({ key, value }) => memoryCache.set(key, value));
   return queueWrite(entries.map(({ key }) => key), async () => {
     try {
       if (entries.every(({ value }) => isJsonSerializable(value)) && await getNativeStoreReady()) {
+        await replayAtomicRecoveryToNative();
         await writeNativeRecordsAtomic(entries);
         entries.forEach(({ key }) => removeFallback(key));
+        removeAtomicRecovery(entries.map(({ key }) => key));
         return;
       }
-      const database = await getDatabase();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        entries.forEach(({ key, value }) => store.put(value, key));
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error ?? new Error('Offline cache transaction aborted'));
-      });
+      await writeIndexedDbAtomic(entries);
       entries.forEach(({ key }) => removeFallback(key));
     } catch (primaryError) {
-      const previousFallback = entries.map(({ key }) => ({ key, value: (() => { try { return localStorage.getItem(fallbackKey(key)); } catch { return null; } })() }));
       try {
-        entries.forEach(({ key, value }) => localStorage.setItem(fallbackKey(key), JSON.stringify(value)));
+        // One localStorage assignment is the recovery commit boundary. The
+        // complete batch therefore becomes visible together and wins over a
+        // stale native row after restart; a later native write replays it.
+        writeAtomicRecovery(entries);
       } catch (fallbackError) {
-        // localStorage has no transaction primitive. Restore every previous
-        // value if one item fails so a snapshot and its queue entry cannot be
-        // left half-written in the fallback store.
-        previousFallback.forEach(({ key, value }) => {
-          try {
-            if (value === null) localStorage.removeItem(fallbackKey(key));
-            else localStorage.setItem(fallbackKey(key), value);
-          } catch { /* preserve the original storage error */ }
+        previousMemory.forEach(({ key, hadValue, value }) => {
+          if (hadValue) memoryCache.set(key, value);
+          else memoryCache.delete(key);
         });
-        entries.forEach(({ key }) => memoryCache.delete(key));
         throw fallbackError instanceof Error ? fallbackError : primaryError;
       }
     }
