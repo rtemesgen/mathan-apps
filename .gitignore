@@ -18,6 +18,10 @@ frontend/test-results/
 *.tsbuildinfo
 .vite/
 
+# Local agent tooling
+.agents/
+skills-lock.json
+
 # Capacitor / Android generated files
 mobile/android/.gradle/
 mobile/android/build/
