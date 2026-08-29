@@ -43,3 +43,4 @@ backend/supabase/.branches/
 *.mobileprovision
 *.log
 .DS_Store
+.worktrees/
