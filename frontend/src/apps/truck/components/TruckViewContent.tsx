@@ -10,7 +10,7 @@ import { CashReportView } from './Pages/CashReportView';
 import { DashboardView } from './Pages/DashboardView';
 import { PartnersPage } from './Pages/PartnersPage';
 import { CustomersPage } from './Pages/CustomersPage';
-import { transactionsAsOf } from '../utils/formatters';
+import { operationalTransactions } from '../utils/formatters';
 
 type TruckTransactionInput = {
   truckId: string;
@@ -63,7 +63,6 @@ export type TruckViewContentProps = {
   loading: boolean;
   error: string;
   dataError: string;
-  calculationDate: string;
   onExportReport: (reportId: string, reportName: string, filters?: { startDate?: string; endDate?: string; transactionType?: string; query?: string }) => void;
 };
 
@@ -104,10 +103,9 @@ export function TruckViewContent({
   loading,
   error,
   dataError,
-  calculationDate,
   onExportReport,
 }: TruckViewContentProps) {
-  const activeTransactions = transactionsAsOf(transactions.filter((transaction) => transaction.truckId === activeTruck.id), calculationDate);
+  const activeTransactions = operationalTransactions(transactions.filter((transaction) => transaction.truckId === activeTruck.id));
   const openExpenses = () => {
     setExpensesTab('expense');
     setCurrentView('expenses');
@@ -119,8 +117,7 @@ export function TruckViewContent({
       {loading && <div className="mx-auto mt-3 max-w-3xl rounded-xl bg-white p-3 text-xs text-zinc-500">Loading Truck data…</div>}
       {!loading && !error && !dataError && !navigator.onLine && trucks.length === 0 && transactions.length === 0 && <div className="mx-auto mt-3 max-w-3xl rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">No offline Truck data available. Connect to the internet once to load this company.</div>}
 
-      <p className="mx-auto max-w-3xl px-3 pt-2 text-[10px] font-semibold text-zinc-500 sm:px-5">Financials and activity shown as of {calculationDate}.</p>
-      {currentView === 'dashboard' && <DashboardView trucks={trucks} currentTruckId={currentTruckId} onSelectTruck={setCurrentTruckId} allOwners={owners} allTransactions={transactions} calculationDate={calculationDate} onOpenManageTrucks={() => setCurrentView('manage-trucks')} />}
+      {currentView === 'dashboard' && <DashboardView trucks={trucks} currentTruckId={currentTruckId} onSelectTruck={setCurrentTruckId} allOwners={owners} allTransactions={transactions} onOpenManageTrucks={() => setCurrentView('manage-trucks')} />}
 
       {currentView === 'partners' && <PartnersPage
         activeTruck={activeTruck}
@@ -137,7 +134,7 @@ export function TruckViewContent({
         onEditTransaction={setEditingTransaction}
       />}
 
-      {currentView === 'customers' && <CustomersPage truck={activeTruck} customers={customers} transactions={activeTransactions} balances={truckFinancials.counterpartyBalances} onSave={onAddOrUpdateCustomer} onDelete={onDeleteCustomer} />}
+      {currentView === 'customers' && <CustomersPage truck={activeTruck} customers={customers} transactions={activeTransactions} balances={truckFinancials.counterpartyBalances} onSave={onAddOrUpdateCustomer} onDelete={onDeleteCustomer} onReceivePayment={handleAddTransaction} />}
 
       {currentView === 'cash-report' && <CashReportView
         truck={activeTruck}

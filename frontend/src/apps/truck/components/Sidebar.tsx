@@ -24,8 +24,6 @@ interface SidebarProps {
   currentView: string;
   setCurrentView: (view: string) => void;
   summary: TruckFinancialSummary;
-  calculationDate: string;
-  setCalculationDate: (date: string) => void;
   onResetDemoData: () => void;
   onOpenAddOwner: () => void;
   onOpenCustomers: () => void;

@@ -19,7 +19,6 @@ interface DashboardViewProps {
   allOwners: Owner[];
   allTransactions: Transaction[];
   onOpenManageTrucks: () => void;
-  calculationDate?: string;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -29,7 +28,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   allOwners,
   allTransactions,
   onOpenManageTrucks,
-  calculationDate,
 }) => {
   // Calculate high-level stats for ALL trucks across the fleet
   const fleetTotals = useMemo(() => {
@@ -42,7 +40,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
     trucks.forEach(truck => {
       const truckTx = allTransactions.filter(t => t.truckId === truck.id);
-      const summary = calculateTruckFinancials(truck, allOwners.filter((owner) => owner.truckId === truck.id || (!owner.truckId && truck.id === 'truck-1')), truckTx, calculationDate);
+      const summary = calculateTruckFinancials(truck, allOwners.filter((owner) => owner.truckId === truck.id || (!owner.truckId && truck.id === 'truck-1')), truckTx);
       totalCash += summary.cashOnHand;
       totalRevenue += summary.grossIncome;
       totalExpenses += summary.operatingExpenses;
@@ -71,7 +69,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const truckTx = allTransactions.filter(t => t.truckId === truck.id);
       const truckOwners = allOwners.filter(o => o.truckId === truck.id || (!o.truckId && truck.id === 'truck-1'));
       
-      const summary = calculateTruckFinancials(truck, truckOwners, truckTx, calculationDate);
+      const summary = calculateTruckFinancials(truck, truckOwners, truckTx);
       const totalEquity = truckOwners.reduce((sum, o) => sum + o.equityPercentage, 0);
 
       return {

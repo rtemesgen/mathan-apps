@@ -39,6 +39,37 @@ export const transactionsAsOf = (transactions: Transaction[], calculationDate?: 
   calculationDate ? transactions.filter((transaction) => transaction.date <= calculationDate) : transactions
 );
 
+/** Operational screens are a live ledger, not a historical report. */
+export const operationalTransactions = (transactions: Transaction[]) => transactions;
+
+export type OutstandingSettlementItem = {
+  id: string;
+  date: string;
+  type: 'receivable' | 'payable';
+  amount: number;
+  name: string;
+  customerId?: string;
+  ownerId?: string;
+  counterpartyType?: Transaction['counterpartyType'];
+};
+
+/**
+ * Settlements that are not explicitly linked to an entry are applied oldest
+ * first. Stable customer ids prevent two same-named customers being mixed;
+ * the name fallback keeps old records readable.
+ */
+export const orderOutstandingForSettlement = (
+  items: OutstandingSettlementItem[],
+  type: OutstandingSettlementItem['type'],
+  customerId?: string,
+  counterpartyName?: string,
+) => items
+  .filter((item) => item.type === type)
+  .filter((item) => customerId
+    ? item.customerId === customerId
+    : item.name.trim().toLowerCase() === (counterpartyName ?? '').trim().toLowerCase())
+  .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+
 /**
  * Calculates complete financial metrics for a truck given its owners and transactions
  */
@@ -103,12 +134,14 @@ export const calculateTruckFinancials = (
   // Cash on hand = Initial cash + Income - Expenses + Injections - Repayments - Profit Distributed
   const computedCashOnHand = truck.cashOnHand + cashIncome - cashExpenses;
 
-  const outstanding = new Map<string, { type: 'receivable' | 'payable'; amount: number; name: string; customerId?: string; ownerId?: string; counterpartyType?: Transaction['counterpartyType'] }>();
+  const outstanding = new Map<string, OutstandingSettlementItem>();
   filteredTx.forEach((tx) => {
     const legacyCustomerCredit = (tx.type === 'INCOME' || tx.type === 'EXPENSE') && (Boolean(tx.customerId) || tx.counterpartyType === 'CUSTOMER');
     if (tx.type === 'RECEIVABLE' || tx.type === 'PAYABLE' || legacyCustomerCredit) {
       const receivable = tx.type === 'RECEIVABLE' || tx.type === 'INCOME';
       outstanding.set(tx.id, {
+        id: tx.id,
+        date: tx.date,
         type: receivable ? 'receivable' : 'payable',
         amount: tx.amount,
         name: tx.counterpartyName || 'Unassigned',
@@ -125,13 +158,11 @@ export const calculateTruckFinancials = (
     } else if (tx.type === 'RECEIVABLE_SETTLEMENT' || tx.type === 'PAYABLE_SETTLEMENT') {
       const expectedType = tx.type === 'RECEIVABLE_SETTLEMENT' ? 'receivable' : 'payable';
       let remaining = tx.amount;
-      for (const item of outstanding.values()) {
+      for (const item of orderOutstandingForSettlement([...outstanding.values()], expectedType, tx.customerId, tx.counterpartyName)) {
         if (remaining <= 0) break;
-        if (item.type === expectedType && item.name.toLowerCase() === (tx.counterpartyName || '').trim().toLowerCase()) {
-          const applied = Math.min(item.amount, remaining);
-          item.amount -= applied;
-          remaining -= applied;
-        }
+        const applied = Math.min(item.amount, remaining);
+        item.amount -= applied;
+        remaining -= applied;
       }
     }
   });
