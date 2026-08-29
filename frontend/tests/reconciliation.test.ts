@@ -45,5 +45,10 @@ assert.equal(statuses.get('truck_transactions:tx-1')?.state, 'pending');
 assert.equal(statuses.get('truck_owners:owner-1')?.state, 'sending');
 assert.equal(statuses.get('app_state_snapshots:book-1')?.state, 'needs_attention');
 assert.equal(statuses.get('app_state_snapshots:cash-1')?.state, 'needs_attention');
+const failed = deriveEntitySyncStatuses([
+  { mutationId: 'm4', table: 'truck_transactions', entityId: 'tx-failed', syncStatus: 'error', payload: {}, errorMessage: 'Permission denied', updatedAt: '2026-08-29T12:00:00.000Z' },
+]).get('truck_transactions:tx-failed');
+assert.equal(failed?.message, 'Permission denied', 'an actionable badge must expose a safe failure reason');
+assert.equal(failed?.updatedAt, '2026-08-29T12:00:00.000Z', 'an actionable badge must expose its last update time');
 
 console.log('Confirmed/effective reconciliation tests passed.');

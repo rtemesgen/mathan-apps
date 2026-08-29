@@ -19,7 +19,6 @@ type TruckMutationArgs = {
   transactions: Transaction[];
   activeTruck: Truck;
   editingTransaction: Transaction | null;
-  calculationDate: string;
   refresh: () => Promise<void>;
   setCurrentTruckId: Dispatch<SetStateAction<string>>;
   setEditingTransaction: Dispatch<SetStateAction<Transaction | null>>;
@@ -27,7 +26,7 @@ type TruckMutationArgs = {
   openDelete: (request: TruckDeleteRequest) => void;
 };
 
-export function useTruckMutations({ workspaceId, userId, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete }: TruckMutationArgs) {
+export function useTruckMutations({ workspaceId, userId, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete }: TruckMutationArgs) {
   const handleAddTransaction = async (txData: {
     truckId: string;
     date: string;
@@ -54,14 +53,14 @@ export function useTruckMutations({ workspaceId, userId, isGuest, editable, truc
 
   const handlePayOwnerSubmit = async (ownerId: string, amount: number, memo: string) => {
     const targetOwner = owners.find((owner) => owner.id === ownerId);
-    await handleAddTransaction({ truckId: activeTruck.id, date: calculationDate || localDateString(), type: 'CAPITAL_REPAYMENT', category: 'Owner Debt Clearance', amount, ownerId, description: memo || `Debt repayment to ${targetOwner?.name || 'Owner'}`, referenceNo: `PAY-${Math.floor(1000 + Math.random() * 9000)}` });
+    await handleAddTransaction({ truckId: activeTruck.id, date: localDateString(), type: 'CAPITAL_REPAYMENT', category: 'Owner Debt Clearance', amount, ownerId, description: memo || `Debt repayment to ${targetOwner?.name || 'Owner'}`, referenceNo: `PAY-${Math.floor(1000 + Math.random() * 9000)}` });
   };
 
   const handleExecuteProfitDistribution = async (allocations: { ownerId: string; amount: number }[]) => {
     const batch: Omit<Transaction, 'id'>[] = allocations.flatMap(({ ownerId, amount }) => {
       if (amount <= 0) return [];
       const owner = owners.find((item) => item.id === ownerId);
-      return [{ truckId: activeTruck.id, date: calculationDate || localDateString(), type: 'PROFIT_DISTRIBUTION', category: 'Profit Equity Dividend', amount, ownerId, description: `${owner?.name || 'Owner'} ${owner?.equityPercentage}% Net Profit Distribution`, referenceNo: `DIV-${Math.floor(1000 + Math.random() * 9000)}` }];
+      return [{ truckId: activeTruck.id, date: localDateString(), type: 'PROFIT_DISTRIBUTION', category: 'Profit Equity Dividend', amount, ownerId, description: `${owner?.name || 'Owner'} ${owner?.equityPercentage}% Net Profit Distribution`, referenceNo: `DIV-${Math.floor(1000 + Math.random() * 9000)}` }];
     });
     if (!workspaceId || !editable) throw new Error('You do not have permission to edit Truck data.');
     try { await createTruckTransactionBatch(workspaceId, batch, isGuest, userId); await refresh(); setError(''); }

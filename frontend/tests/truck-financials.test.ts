@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { calculateTruckFinancials } from '../src/apps/truck/utils/formatters';
+import { calculateTruckFinancials, transactionsAsOf } from '../src/apps/truck/utils/formatters';
 import type { Owner, Transaction, Truck } from '../src/apps/truck/types';
 import { customersForTruck } from '../src/apps/truck/utils/customerScope';
 import { sortTruckActivityNewestFirst } from '../src/apps/truck/components/LedgerHistoryView';
@@ -23,6 +23,21 @@ assert.equal(result.netProfit, 800);
 assert.equal(result.cashOnHand, 1150);
 assert.equal(result.ownerSummaries[0].unpaidBalance, 250);
 assert.equal(result.ownerSummaries[0].earnedProfitShare, 400);
+
+// The dashboard, partner card, and customer card must be driven by the same
+// as-of transaction set. The partner history can otherwise show loans that
+// the summary silently excludes.
+const screenshotOwnerTransactions: Transaction[] = [
+  { id: 'loan-1', truckId: 't1', date: '2026-08-29', type: 'CAPITAL_INJECTION', category: 'Owner Loan to Truck', amount: 1, ownerId: 'o1', description: '' },
+  { id: 'loan-100', truckId: 't1', date: '2026-08-29', type: 'CAPITAL_INJECTION', category: 'Owner Loan to Truck', amount: 100, ownerId: 'o1', description: '' },
+  { id: 'loan-1000', truckId: 't1', date: '2026-08-29', type: 'CAPITAL_INJECTION', category: 'Owner Loan to Truck', amount: 1000, ownerId: 'o1', description: '' },
+  { id: 'repayment-11', truckId: 't1', date: '2026-08-29', type: 'CAPITAL_REPAYMENT', category: 'Owner Debt Clearance', amount: 11, ownerId: 'o1', description: '' },
+];
+const screenshotSummary = calculateTruckFinancials(truck, [owner], screenshotOwnerTransactions, '2026-08-29');
+assert.equal(screenshotSummary.ownerSummaries[0].totalInjected, 1101);
+assert.equal(screenshotSummary.ownerSummaries[0].totalRepaid, 11);
+assert.equal(screenshotSummary.ownerSummaries[0].totalUnpaidMoneyOwed, 1090, 'Owner Loan entries minus Owner Debt Clearance must produce the visible money owed');
+assert.deepEqual(transactionsAsOf(screenshotOwnerTransactions, '2026-08-28'), [], 'all Truck views must receive the same as-of transaction collection');
 
 const creditTransactions: Transaction[] = [
   { id: 'ar', truckId: 't1', date: '2026-01-01', type: 'RECEIVABLE', category: 'Freight', amount: 500, counterpartyType: 'CUSTOMER', counterpartyName: 'ABC Customer', description: '' },
