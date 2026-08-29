@@ -4,11 +4,10 @@ import { useLocation } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { requestNotificationPermission, sendNativeNotification, type AppNotification } from '../lib/notifications';
-import { supabase } from '../lib/supabase';
+import { listMyNotifications, listMyWorkspaceInvitations, markAllNotificationsRead, markNotificationRead, type DurableNotification } from '../lib/repositories/workspaceRepository';
 import { useAuth } from '../auth/AuthProvider';
 
 type Invitation = { invitation_id: string; workspace_name: string; invited_by_name: string };
-type DurableNotification = { id: string; title: string; body: string; route?: string | null; read_at?: string | null; created_at: string };
 
 export function AppNotificationCenter() {
   const location = useLocation();
@@ -19,7 +18,7 @@ export function AppNotificationCenter() {
   const [inboxOpen, setInboxOpen] = useState(false);
   const inboxRef = useRef<HTMLDivElement>(null);
   const knownNotificationIds = useRef<Set<string> | null>(null);
-  const loadDurable = async () => { if (!user) { setDurable([]); knownNotificationIds.current = null; window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: 0 } })); return; } const { data } = await supabase.rpc('list_my_notifications', { target_limit: 50 }); const next = (data as DurableNotification[] | null) ?? []; if (knownNotificationIds.current) next.filter((item) => !knownNotificationIds.current?.has(item.id) && !item.read_at).forEach((item) => window.dispatchEvent(new CustomEvent('mathan:notification', { detail: { title: item.title, body: item.body, url: item.route ?? undefined } }))); knownNotificationIds.current = new Set(next.map((item) => item.id)); setDurable(next); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: next.filter((item) => !item.read_at).length } })); };
+  const loadDurable = async () => { if (!user) { setDurable([]); knownNotificationIds.current = null; window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: 0 } })); return; } try { const next = await listMyNotifications(); if (knownNotificationIds.current) next.filter((item) => !knownNotificationIds.current?.has(item.id) && !item.read_at).forEach((item) => window.dispatchEvent(new CustomEvent('mathan:notification', { detail: { title: item.title, body: item.body, url: item.route ?? undefined } }))); knownNotificationIds.current = new Set(next.map((item) => item.id)); setDurable(next); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: next.filter((item) => !item.read_at).length } })); } catch { /* optional notifications should not block the app */ } };
   useEffect(() => {
     let timer: number | undefined;
     const handle = (event: Event) => { const next = (event as CustomEvent<AppNotification>).detail; setNotification(next); if (timer) window.clearTimeout(timer); timer = window.setTimeout(() => setNotification(null), 6500); void sendNativeNotification(next); };
@@ -35,9 +34,7 @@ export function AppNotificationCenter() {
     let known = new Set<string>();
     let firstLoad = true;
     const checkInvitations = async () => {
-      const { data, error } = await supabase.rpc('list_my_workspace_invitations');
-      if (error) return;
-      const next = (data as Invitation[] | null) ?? [];
+      let next: Invitation[]; try { next = await listMyWorkspaceInvitations(); } catch { return; }
       if (!firstLoad) next.filter((item) => !known.has(item.invitation_id)).forEach((item) => { const event = { title: 'New company invitation', body: `${item.invited_by_name} invited you to join ${item.workspace_name}.` }; window.dispatchEvent(new CustomEvent('mathan:notification', { detail: event })); });
       known = new Set(next.map((item) => item.invitation_id));
       window.dispatchEvent(new Event('mathan:invitations-changed'));
@@ -59,8 +56,8 @@ export function AppNotificationCenter() {
     return () => { active = false; void listener.then((handle) => handle.remove()); };
   }, []);
   const unread = durable.filter((item) => !item.read_at).length;
-  const markRead = async (item: DurableNotification) => { await supabase.rpc('mark_notification_read', { target_id: item.id }); setDurable((current) => { const next = current.map((entry) => entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: next.filter((entry) => !entry.read_at).length } })); return next; }); };
-  const markAllRead = async () => { await supabase.rpc('mark_all_notifications_read'); setDurable((current) => { const next = current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: 0 } })); return next; }); };
+  const markRead = async (item: DurableNotification) => { try { await markNotificationRead(item.id); setDurable((current) => { const next = current.map((entry) => entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: next.filter((entry) => !entry.read_at).length } })); return next; }); } catch { /* leave unread on failure */ } };
+  const markAllRead = async () => { try { await markAllNotificationsRead(); setDurable((current) => { const next = current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })); window.dispatchEvent(new CustomEvent('mathan:notification-count', { detail: { unread: 0 } })); return next; }); } catch { /* leave unread on failure */ } };
   useEffect(() => { if (!inboxOpen) return; const closeOutside = (event: MouseEvent) => { if (inboxRef.current && !inboxRef.current.contains(event.target as Node)) setInboxOpen(false); }; document.addEventListener('mousedown', closeOutside); return () => document.removeEventListener('mousedown', closeOutside); }, [inboxOpen]);
   if (!notification && !permissionMessage && !user) return null;
   return <>

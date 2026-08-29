@@ -75,7 +75,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
     }
 
     const raise: SalaryChange = {
-      id: `sc-${Date.now().toString().slice(-6)}`,
+      id: crypto.randomUUID(),
       effectiveDate,
       newMonthlySalary: numNewSalary,
       reason: reason.trim() || 'Salary adjustment',

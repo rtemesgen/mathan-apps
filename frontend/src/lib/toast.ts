@@ -7,6 +7,7 @@ export type ToastEvent =
 export type ToastTone = 'success' | 'error' | 'info';
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'retry' | 'conflicted' | 'error';
 export type SyncConflictDetail = { domain: string; remote: unknown; revision: number; mutationId: string };
+export type SyncProgressDetail = { workspaceId?: string; total: number; completed: number; pending: number; errors: number; status: SyncStatus };
 
 export function emitToast(event: ToastEvent) {
   if (typeof window !== 'undefined') {
@@ -20,4 +21,8 @@ export function emitSyncStatus(status: SyncStatus, queued?: number, detail: Reco
 
 export function emitSyncConflict(detail: SyncConflictDetail) {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<SyncConflictDetail>('mathan:sync-conflict', { detail }));
+}
+
+export function emitSyncProgress(detail: SyncProgressDetail) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<SyncProgressDetail>('mathan:sync-progress', { detail }));
 }

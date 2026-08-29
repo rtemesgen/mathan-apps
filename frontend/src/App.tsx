@@ -1,5 +1,4 @@
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
-import { useEffect } from 'react';
 import { AppLauncher } from './components/AppLauncher';
 import { AppShell } from './components/AppShell';
 import { BookApp } from './apps/book';
@@ -20,6 +19,7 @@ import { AdminPage } from './admin/AdminPage';
 import { AppDialog } from './components/AppDialog';
 import { AppButton } from './components/AppButton';
 import { LogOut } from 'lucide-react';
+import { DataLayerGate } from './components/DataLayerGate';
 
 function InviteRoute() {
   const { token = '' } = useParams();
@@ -27,8 +27,7 @@ function InviteRoute() {
 }
 
 function AppAccessGate({ app, children }: { app: AppId; children: React.ReactNode }) {
-  const { canViewApp, workspaceLoading, refreshAccess } = useAuth();
-  useEffect(() => { void refreshAccess(); }, []);
+  const { canViewApp, workspaceLoading } = useAuth();
   if (workspaceLoading) return <div className="flex min-h-[70vh] items-center justify-center text-sm font-semibold text-zinc-500">Checking app access…</div>;
   if (!canViewApp(app)) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -42,9 +41,10 @@ function SystemAdminGate({ children }: { children: React.ReactNode }) {
 }
 
 function AndroidNavigationBridge() {
-  const { exitConfirmationOpen, cancelExit, confirmExit } = useAndroidBackButton();
-  return <AppDialog open={exitConfirmationOpen} title="Exit Mathan ERP?" onClose={cancelExit} footer={<><AppButton type="button" onClick={cancelExit}>Stay</AppButton><AppButton type="button" variant="primary" onClick={() => void confirmExit()}><LogOut className="h-4 w-4" />Exit app</AppButton></>}>
+  const { exitConfirmationOpen, exitBusy, exitError, cancelExit, confirmExit } = useAndroidBackButton();
+  return <AppDialog open={exitConfirmationOpen} title="Exit Mathan ERP?" onClose={cancelExit} footer={<><AppButton type="button" disabled={exitBusy} onClick={cancelExit}>Stay</AppButton><AppButton type="button" disabled={exitBusy} variant="primary" onClick={() => void confirmExit()}><LogOut className="h-4 w-4" />{exitBusy ? 'Finishing local saves…' : 'Exit app'}</AppButton></>}>
     <p className="text-sm leading-6 text-[#5f5d58]">Your saved records will stay on this device. Do you want to close the app?</p>
+    {exitError && <p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-xs font-semibold leading-5 text-red-800">{exitError}</p>}
   </AppDialog>;
 }
 
@@ -55,7 +55,7 @@ function SettingsRoute() {
 
 export default function App() {
   return (
-    <AuthProvider>
+    <DataLayerGate><AuthProvider>
       <BrowserRouter>
         <AppUpdateProvider>
           <AndroidNavigationBridge />
@@ -80,6 +80,6 @@ export default function App() {
           </AuthGate>
         </AppUpdateProvider>
       </BrowserRouter>
-    </AuthProvider>
+    </AuthProvider></DataLayerGate>
   );
 }

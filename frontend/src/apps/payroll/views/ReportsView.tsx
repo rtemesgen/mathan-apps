@@ -12,6 +12,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { ExportButton } from '../../../components/ExportButton';
+import { EntitySyncBadge } from '../../../components/EntitySyncBadge';
 
 interface ReportsViewProps {
   employees: Employee[];
@@ -127,7 +128,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                       title={`Open ${emp.name}`}
                     >
                       <td className="py-3.5 px-6">
-                        <div className="font-bold text-zinc-900">{emp.name}</div>
+                        <div className="flex items-center gap-1.5 font-bold text-zinc-900">{emp.name}<EntitySyncBadge table="app_state_snapshots" entityId={emp.id} /></div>
                       </td>
                       <td className="py-3.5 px-4 font-mono text-zinc-600 font-semibold">{emp.startDate}</td>
                       <td className="py-3.5 px-4 text-right font-mono font-bold text-zinc-900">

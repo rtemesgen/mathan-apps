@@ -38,7 +38,7 @@ export const AddOwnerModal: React.FC<AddOwnerModalProps> = ({
       startDate: draft.startDate,
       equityPercentage: parseFloat(draft.equityPercentage) || 0,
       monthlyDrawRate: parseFloat(draft.monthlyDrawRate) || 0,
-    }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onClose);
+    }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your form has been kept open.' }).then(onClose);
   };
 
   return (

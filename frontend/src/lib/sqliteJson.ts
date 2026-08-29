@@ -14,9 +14,21 @@ export function isJsonSafe(value: unknown, seen = new WeakSet<object>()): boolea
   if (typeof value !== 'object' || isCryptoKey(value)) return false;
   if (seen.has(value)) return false;
   seen.add(value);
-  if (Array.isArray(value)) return value.every((item) => isJsonSafe(item, seen));
-  if (!isPlainObject(value)) return false;
-  return Object.values(value).every((item) => isJsonSafe(item, seen));
+  try {
+    if (Array.isArray(value)) return value.every((item) => isJsonSafe(item, seen));
+    if (!isPlainObject(value)) return false;
+    // JSON.stringify intentionally omits undefined object properties. Optional
+    // fields are common in persisted business records, so accepting them keeps
+    // the object on SQLite while producing the same canonical JSON that will be
+    // read after restart. Undefined array entries remain rejected because JSON
+    // would change their meaning to null.
+    return Object.values(value).every((item) => item === undefined || isJsonSafe(item, seen));
+  } finally {
+    // `seen` represents the active recursion path, not every object visited.
+    // JSON can safely serialize the same object from multiple sibling paths;
+    // only a reference back into the current path is a real cycle.
+    seen.delete(value);
+  }
 }
 
 export function jsonValue(value: unknown): string | null {

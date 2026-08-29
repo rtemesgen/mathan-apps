@@ -1,6 +1,43 @@
 import { expect, test } from 'playwright/test';
+import { chromium } from 'playwright';
+import type { Page } from 'playwright';
+import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
 import { E2E_USERS } from './globalSetup';
+import { localSupabaseStatus } from './supabaseLocal';
+
+const e2eService = () => {
+  const status = localSupabaseStatus();
+  return createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+};
+
+async function inspectIndexedDbCashContract(page: Page, remarks: string[]) {
+  return page.evaluate(async (expectedRemarks) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('mathan-erp-offline', 2);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const entries = await new Promise<Array<{ key: string; value: unknown }>>((resolve, reject) => {
+      const transaction = database.transaction('records', 'readonly');
+      const store = transaction.objectStore('records');
+      const keysRequest = store.getAllKeys();
+      const valuesRequest = store.getAll();
+      transaction.oncomplete = () => resolve(keysRequest.result.map((key, index) => ({ key: String(key), value: valuesRequest.result[index] })));
+      transaction.onerror = () => reject(transaction.error);
+    });
+    database.close();
+    const transactionRecords = entries
+      .filter((entry) => entry.key.endsWith(':cash_book:state'))
+      .flatMap((entry) => ((entry.value as { transactions?: Array<{ remark?: string }> } | null)?.transactions ?? []));
+    const queue = entries.find((entry) => entry.key === 'sync-queue-v1')?.value;
+    const queuedMutations = Array.isArray(queue) ? queue : [];
+    return {
+      paymentCounts: Object.fromEntries(expectedRemarks.map((remark) => [remark, transactionRecords.filter((record) => record.remark === remark).length])),
+      matchingOutboxCount: queuedMutations.filter((mutation) => expectedRemarks.every((remark) => JSON.stringify(mutation).includes(remark))).length,
+    };
+  }, remarks);
+}
 
 test('ordinary users cannot discover or open system administration', async ({ page }) => {
   await signIn(page, 'member');
@@ -28,7 +65,7 @@ test('existing Cash Book, Payroll, and Settings flows still load and save', asyn
   await signIn(page, 'member');
   await page.getByLabel('Cash Book').click();
   await expect(page.getByText('Cash Book Overview')).toBeVisible();
-  await page.getByRole('button', { name: /Create Book/ }).first().click();
+  await page.getByRole('button', { name: /Create Book|New Book/ }).first().click();
   await page.getByPlaceholder(/Retail Shop Cashbook/).fill('Playwright Regression Book');
   await page.getByRole('button', { name: 'Save Book' }).click();
   await expect(page.getByRole('heading', { name: 'Playwright Regression Book' })).toBeVisible();
@@ -41,11 +78,60 @@ test('existing Cash Book, Payroll, and Settings flows still load and save', asyn
   await expect(page.getByText('Password', { exact: true }).first()).toBeVisible();
 });
 
+test('app data settings expose sync progress and the popup preference', async ({ page }) => {
+  await signIn(page, 'member');
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'App data', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Sync and notifications', exact: true })).toBeVisible();
+  await expect(page.getByText('Pending', { exact: true })).toBeVisible();
+  await expect(page.getByText('Errors', { exact: true })).toBeVisible();
+  const retry = page.getByRole('button', { name: 'Retry pending sync' });
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect(retry).toBeEnabled();
+
+  const popups = page.getByLabel('Show sync popups');
+  await expect(popups).toBeChecked();
+  await popups.uncheck();
+  await expect(popups).not.toBeChecked();
+  await popups.check();
+  await expect(popups).toBeChecked();
+});
+
+test('Cash Book and Payroll snapshot saves appear in company activity', async ({ page }) => {
+  await signIn(page, 'admin');
+  await page.getByLabel('Cash Book').click();
+  await expect(page.getByText('Cash Book Overview')).toBeVisible();
+  await page.getByRole('button', { name: /Create Book|New Book/ }).first().click();
+  await page.getByPlaceholder(/Retail Shop Cashbook/).fill('Audit Regression Book');
+  await page.getByRole('button', { name: 'Save Book' }).click();
+  await expect(page.getByRole('heading', { name: 'Audit Regression Book' })).toBeVisible();
+
+  await page.goto('/payroll');
+  await expect(page.getByText('Payroll Tracker').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Add Employee', exact: true }).first().click();
+  await page.getByPlaceholder('e.g. Sarah Jenkins').fill('Audit Regression Employee');
+  await page.getByPlaceholder('Enter amount').fill('5000');
+  await page.getByRole('button', { name: 'Save Employee' }).click();
+  await expect(page.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
+
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(page.getByText('Company activity')).toBeVisible();
+  const auditCount = async (recordType: string) => {
+    await page.reload();
+    await page.getByRole('button', { name: 'Activity', exact: true }).click();
+    return page.getByText(new RegExp(recordType)).count();
+  };
+  await expect.poll(() => auditCount('Cash Book'), { timeout: 20_000 }).toBeGreaterThan(0);
+  await expect.poll(() => auditCount('Payroll'), { timeout: 20_000 }).toBeGreaterThan(0);
+});
+
 test('Cash Book records survive switching apps and an offline reload', async ({ page, context }) => {
   await signIn(page, 'member');
   await page.getByLabel('Cash Book').click();
   await expect(page.getByText('Cash Book Overview')).toBeVisible();
-  await page.getByRole('button', { name: /Create Book/ }).first().click();
+  await page.getByRole('button', { name: /Create Book|New Book/ }).first().click();
   await page.getByPlaceholder(/Retail Shop Cashbook/).fill('Persistence Regression Book');
   await page.getByRole('button', { name: 'Save Book' }).click();
   await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
@@ -71,7 +157,6 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await page.getByPlaceholder('Enter amount').fill('5000');
   await page.getByRole('button', { name: 'Save Employee' }).click();
   await expect(page.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
-
   await page.goto('/book');
   await expect(page.getByText('Cash Book Overview')).toBeVisible();
   await page.goto('/payroll');
@@ -86,6 +171,247 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await context.setOffline(false);
 });
 
+test('durable web state survives closing and reopening the browser process offline', async ({}, testInfo) => {
+  const profile = testInfo.outputPath('persistent-browser-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  try {
+    const firstPage = await persistent.newPage();
+    await signIn(firstPage, 'member');
+    await firstPage.getByLabel('Cash Book').click();
+    await expect(firstPage.getByText('Cash Book Overview')).toBeVisible();
+    await persistent.setOffline(true);
+    const bookName = `Persistent browser book ${Date.now()}`;
+    await firstPage.getByRole('button', { name: /Create Book|New Book/ }).first().click();
+    await firstPage.getByPlaceholder(/Retail Shop Cashbook/).fill(bookName);
+    await firstPage.getByRole('button', { name: 'Save Book' }).click();
+    await expect(firstPage.getByRole('heading', { name: bookName })).toBeVisible();
+
+    await firstPage.getByRole('button', { name: 'Cash In', exact: true }).last().click();
+    await firstPage.locator('input[type=number]').fill('555');
+    await firstPage.getByPlaceholder('e.g. Counter sale, Payment received').fill('Offline Cash In');
+    await firstPage.getByRole('button', { name: 'Save Entry', exact: true }).click();
+    await expect(firstPage.getByText('Offline Cash In', { exact: true })).toBeVisible();
+    await firstPage.getByRole('button', { name: 'Cash Out', exact: true }).last().click();
+    await firstPage.locator('input[type=number]').fill('100');
+    await firstPage.getByPlaceholder('e.g. Rent, Restock, Vendor payout').fill('Offline Cash Out');
+    await firstPage.getByRole('button', { name: 'Save Entry', exact: true }).click();
+    await expect(firstPage.getByText('Offline Cash Out', { exact: true })).toBeVisible();
+
+    // Adapter contract, stages 1-2: the same offline operation must reach the
+    // effective business cache and durable outbox before any restart occurs.
+    const beforeRestart = await inspectIndexedDbCashContract(firstPage, ['Offline Cash In', 'Offline Cash Out']);
+    expect(beforeRestart.paymentCounts).toEqual({ 'Offline Cash In': 1, 'Offline Cash Out': 1 });
+    expect(beforeRestart.matchingOutboxCount).toBe(1);
+
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/book');
+    await persistent.setOffline(true);
+    await reopenedPage.reload();
+    await expect(reopenedPage.getByRole('heading', { name: bookName })).toBeVisible();
+    await reopenedPage.getByRole('heading', { name: bookName }).click();
+    await expect(reopenedPage.locator('main')).toContainText('Offline Cash In');
+    await expect(reopenedPage.locator('main')).toContainText('Offline Cash Out');
+    // Adapter contract, stages 3-4: a new browser process reads the same
+    // business data and outbox directly from IndexedDB while offline.
+    const afterRestart = await inspectIndexedDbCashContract(reopenedPage, ['Offline Cash In', 'Offline Cash Out']);
+    expect(afterRestart).toEqual(beforeRestart);
+    await persistent.setOffline(false);
+    await reopenedPage.reload();
+    const service = e2eService();
+    await expect.poll(async () => {
+      const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Member Company').single();
+      if (!workspace) return false;
+      const { data: snapshot } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'cash_book:state').maybeSingle();
+      const state = snapshot?.payload as { books?: Array<{ name?: string }>; transactions?: Array<{ remark?: string }> } | undefined;
+      const books = state?.books ?? [];
+      const transactions = state?.transactions ?? [];
+      return books.filter((book) => book.name === bookName).length === 1
+        && transactions.filter((transaction) => transaction.remark === 'Offline Cash In').length === 1
+        && transactions.filter((transaction) => transaction.remark === 'Offline Cash Out').length === 1;
+    }, { timeout: 20_000 }).toBe(true);
+    // Adapter contract, stage 5: acknowledgement clears the matching outbox
+    // mutation while retaining exactly one local copy of each payment.
+    await expect.poll(() => inspectIndexedDbCashContract(reopenedPage, ['Offline Cash In', 'Offline Cash Out']), { timeout: 20_000 }).toEqual({
+      paymentCounts: { 'Offline Cash In': 1, 'Offline Cash Out': 1 },
+      matchingOutboxCount: 0,
+    });
+  } finally {
+    await persistent.close();
+  }
+});
+
+test('Payroll data survives closing and reopening the browser process offline', async ({}, testInfo) => {
+  const profile = testInfo.outputPath('persistent-payroll-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  try {
+    const firstPage = await persistent.newPage();
+    await signIn(firstPage, 'member');
+    await firstPage.getByLabel('Payroll').click();
+    await expect(firstPage.getByText('Payroll Tracker').first()).toBeVisible();
+    await persistent.setOffline(true);
+    await firstPage.getByRole('button', { name: 'Add Employee', exact: true }).first().click();
+    const employeeName = `Persistent payroll employee ${Date.now()}`;
+    await firstPage.getByPlaceholder('e.g. Sarah Jenkins').fill(employeeName);
+    await firstPage.getByPlaceholder('Enter amount').fill('5000');
+    await firstPage.getByRole('button', { name: 'Save Employee' }).click();
+    await expect(firstPage.getByText('Employee Successfully Registered!', { exact: true })).toBeVisible();
+    await firstPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
+    await expect(firstPage.getByText(employeeName, { exact: true })).toBeVisible();
+
+    await firstPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
+    await firstPage.getByRole('button', { name: /Choose employee|Persistent payroll employee/ }).first().click();
+    await firstPage.getByRole('button', { name: new RegExp(employeeName) }).last().click();
+    const paymentNote = `Restart payroll payment ${Date.now()}`;
+    await firstPage.locator('input[type=number]').first().fill('100');
+    await firstPage.getByPlaceholder('e.g. Mid-month salary withdrawal').fill(paymentNote);
+    await firstPage.getByRole('button', { name: 'Save Payout' }).click();
+    await expect(firstPage.getByText('Payout Recorded Successfully!')).toBeVisible();
+    const paidBeforeRestart = await firstPage.getByText('Previously Paid:').locator('..').textContent();
+    const balanceBeforeRestart = await firstPage.getByText('Available Balance:').locator('..').textContent();
+    await firstPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
+    await firstPage.getByText(employeeName, { exact: true }).last().click();
+    await expect(firstPage.getByText(paymentNote, { exact: true })).toBeVisible();
+
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    await persistent.setOffline(false);
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/payroll');
+    await persistent.setOffline(true);
+    await reopenedPage.reload();
+    await expect(reopenedPage.getByText('Loading Payroll data…')).toBeHidden({ timeout: 20_000 });
+    await reopenedPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
+    await expect(reopenedPage.getByText(employeeName, { exact: true })).toBeVisible();
+    await reopenedPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
+    await reopenedPage.getByRole('button', { name: /Choose employee|Persistent payroll employee/ }).first().click();
+    await reopenedPage.getByRole('button', { name: new RegExp(employeeName) }).last().click();
+    await expect(reopenedPage.getByText('Previously Paid:').locator('..')).toHaveText(paidBeforeRestart ?? '');
+    await expect(reopenedPage.getByText('Available Balance:').locator('..')).toHaveText(balanceBeforeRestart ?? '');
+    await reopenedPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
+    await reopenedPage.getByText(employeeName, { exact: true }).last().click();
+    await expect(reopenedPage.getByText(paymentNote, { exact: true })).toBeVisible();
+    await persistent.setOffline(false);
+    await reopenedPage.reload();
+    const service = e2eService();
+    await expect.poll(async () => {
+      const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Member Company').single();
+      if (!workspace) return 0;
+      const { data: snapshot } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace.id).eq('domain', 'payroll:state').maybeSingle();
+      const state = snapshot?.payload as { employees?: Array<{ name?: string }>; transactions?: Array<{ notes?: string }> } | null;
+      return state?.employees?.filter((employee) => employee.name === employeeName).length === 1
+        && state?.transactions?.filter((transaction) => transaction.notes === paymentNote).length === 1 ? 1 : 0;
+    }, { timeout: 20_000 }).toBe(1);
+  } finally {
+    await persistent.close();
+  }
+});
+
+test('legacy split Payroll workspace upgrades to canonical state and survives offline restart', async ({}, testInfo) => {
+  const status = localSupabaseStatus();
+  const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const creator = createClient(status.API_URL, status.ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  await creator.auth.signInWithPassword({ email: E2E_USERS.admin.email, password: E2E_USERS.admin.password });
+  const workspaceName = `Legacy Payroll ${Date.now()}`;
+  const { data: createdWorkspace, error: createError } = await creator.rpc('create_workspace', { workspace_name: workspaceName });
+  expect(createError).toBeNull();
+  const workspaceId = createdWorkspace!.id as string;
+  const employeeId = crypto.randomUUID();
+  const legacyEmployeeName = `Legacy employee ${Date.now()}`;
+  const legacyEmployee = { id: employeeId, name: legacyEmployeeName, startDate: '2026-01-01', initialSalary: 5000, salaryHistory: [], status: 'active', createdAt: '2026-01-01T00:00:00.000Z' };
+  const legacyPayment = { id: crypto.randomUUID(), employeeId, employeeName: legacyEmployeeName, amount: 50, date: '2026-08-01', type: 'withdrawal', notes: 'Pre-upgrade payment', createdAt: '2026-08-01T00:00:00.000Z' };
+  await service.from('app_state_snapshots').insert([
+    { workspace_id: workspaceId, domain: 'payroll:employees', revision: 3, payload: [legacyEmployee] },
+    { workspace_id: workspaceId, domain: 'payroll:transactions', revision: 4, payload: [legacyPayment] },
+  ]);
+
+  const profile = testInfo.outputPath('legacy-payroll-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  const newPaymentNote = `Post-upgrade payment ${Date.now()}`;
+  try {
+    const firstPage = await persistent.newPage();
+    await signIn(firstPage, 'admin');
+    await firstPage.goto('/companies');
+    await firstPage.getByRole('button').filter({ has: firstPage.getByText(workspaceName, { exact: true }) }).first().click();
+    await firstPage.getByRole('button', { name: 'Switch company' }).click();
+    await firstPage.getByLabel('Payroll').click();
+    await firstPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
+    await expect(firstPage.getByText(legacyEmployeeName, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await firstPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
+    await firstPage.getByText(legacyEmployeeName, { exact: true }).last().click();
+    await expect(firstPage.getByText('Pre-upgrade payment', { exact: true })).toBeVisible();
+
+    await persistent.setOffline(true);
+    await firstPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
+    await firstPage.getByRole('button', { name: /Choose employee|Legacy employee/ }).first().click();
+    await firstPage.getByRole('button', { name: new RegExp(legacyEmployeeName) }).last().click();
+    await firstPage.locator('input[type=number]').first().fill('75');
+    await firstPage.getByPlaceholder('e.g. Mid-month salary withdrawal').fill(newPaymentNote);
+    await firstPage.getByRole('button', { name: 'Save Payout' }).click();
+    await expect(firstPage.getByText('Payout Recorded Successfully!')).toBeVisible();
+    const paidBeforeRestart = await firstPage.getByText('Previously Paid:').locator('..').textContent();
+    const balanceBeforeRestart = await firstPage.getByText('Available Balance:').locator('..').textContent();
+
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/payroll');
+    await persistent.setOffline(true);
+    await reopenedPage.reload();
+    await expect(reopenedPage.getByText('Loading Payroll data…')).toBeHidden({ timeout: 20_000 });
+    await reopenedPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
+    await reopenedPage.getByRole('button', { name: /Choose employee|Legacy employee/ }).first().click();
+    await reopenedPage.getByRole('button', { name: new RegExp(legacyEmployeeName) }).last().click();
+    await expect(reopenedPage.getByText('Previously Paid:').locator('..')).toHaveText(paidBeforeRestart ?? '');
+    await expect(reopenedPage.getByText('Available Balance:').locator('..')).toHaveText(balanceBeforeRestart ?? '');
+    await reopenedPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
+    await reopenedPage.getByPlaceholder('Search payment records...').fill(newPaymentNote);
+    await reopenedPage.getByText(legacyEmployeeName, { exact: true }).last().click();
+    await expect(reopenedPage.getByText(newPaymentNote, { exact: true })).toBeVisible();
+
+    await persistent.setOffline(false);
+    await reopenedPage.reload();
+    await expect.poll(async () => {
+      const { data } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspaceId).eq('domain', 'payroll:state').maybeSingle();
+      const state = data?.payload as { employees?: Array<{ id?: string }>; transactions?: Array<{ notes?: string }> } | undefined;
+      return state?.employees?.filter((employee) => employee.id === employeeId).length === 1
+        && state?.transactions?.filter((transaction) => transaction.notes === 'Pre-upgrade payment').length === 1
+        && state?.transactions?.filter((transaction) => transaction.notes === newPaymentNote).length === 1;
+    }, { timeout: 20_000 }).toBe(true);
+  } finally {
+    await persistent.close();
+    await service.from('workspaces').delete().eq('id', workspaceId);
+  }
+});
+
+test('a second company member retrieves a record from the shared Supabase workspace', async ({ page, browser }) => {
+  const bookName = `Shared multi-device book ${Date.now()}`;
+  await signIn(page, 'admin');
+  await page.getByLabel('Cash Book').click();
+  await expect(page.getByText('Cash Book Overview')).toBeVisible();
+  await page.getByRole('button', { name: /Create Book|New Book/ }).first().click();
+  await page.getByPlaceholder(/Retail Shop Cashbook/).fill(bookName);
+  await page.getByRole('button', { name: 'Save Book' }).click();
+  await expect(page.getByRole('heading', { name: bookName })).toBeVisible();
+
+  const secondContext = await browser.newContext();
+  const secondPage = await secondContext.newPage();
+  try {
+    await signIn(secondPage, 'member');
+    await secondPage.goto('/companies');
+    await secondPage.getByRole('button').filter({ has: secondPage.getByText('Admin Company', { exact: true }) }).first().click();
+    await secondPage.getByRole('button', { name: 'Switch company' }).click();
+    await secondPage.getByLabel('Cash Book').click();
+    await expect(secondPage.getByRole('heading', { name: bookName })).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await secondContext.close();
+  }
+});
+
 test('all synced companies and their app data remain accessible offline', async ({ page, context }) => {
   await signIn(page, 'member');
   await page.waitForFunction(async () => {
@@ -95,7 +421,7 @@ test('all synced companies and their app data remain accessible offline', async 
     const cacheKey = keys.find((key) => String(key).startsWith('workspaces:'));
     if (!cacheKey) return false;
     const cache = await new Promise<{ memberships?: unknown[] } | undefined>((resolve, reject) => { const read = database.transaction('records', 'readonly').objectStore('records').get(cacheKey); read.onsuccess = () => resolve(read.result); read.onerror = () => reject(read.error); });
-    const appDataReady = keys.some((key) => String(key).endsWith(':cash_book:books:revision'));
+    const appDataReady = keys.some((key) => String(key).endsWith(':cash_book:state:revision'));
     return (cache?.memberships?.length ?? 0) >= 2 && appDataReady;
   });
   await page.goto('/companies');

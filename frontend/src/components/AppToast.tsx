@@ -3,6 +3,8 @@ import { useLocation } from 'react-router-dom';
 import { CheckCircle2, CircleAlert, CloudOff, LoaderCircle } from 'lucide-react';
 import { persistenceLabels, type PersistenceState } from '../lib/repositories/types';
 import type { SyncConflictDetail, ToastEvent } from '../lib/toast';
+import { syncNotificationsEnabled } from '../lib/syncPreferences';
+import { useAuth } from '../auth/AuthProvider';
 
 type VisibleToast = { message: string; state?: PersistenceState; tone?: 'success' | 'error' | 'info'; conflict?: SyncConflictDetail };
 
@@ -14,6 +16,7 @@ function appForPath(pathname: string) {
 }
 
 export function AppToast() {
+  const { user } = useAuth();
   const location = useLocation();
   const [toast, setToast] = useState<VisibleToast | null>(null);
   const lastKey = useRef('');
@@ -32,6 +35,7 @@ export function AppToast() {
         next = { message: detail.message, tone: detail.tone ?? 'success' };
       }
       if (detail?.kind === 'persistence' && detail.notice.app === appForPath(location.pathname)) {
+        if ((detail.notice.state === 'sync pending' || detail.notice.state === 'sync conflict') && !syncNotificationsEnabled(user?.id)) return;
         if (detail.notice.state !== 'saving') recentPersistence.current = { at: Date.now(), app: detail.notice.app };
         next = { state: detail.notice.state, message: detail.notice.message ?? persistenceLabels[detail.notice.state] };
         if (detail.notice.state === 'sync pending' || detail.notice.state === 'sync conflict') {
@@ -46,9 +50,10 @@ export function AppToast() {
       lastKey.current = key;
       setToast(next);
       if (timeout) window.clearTimeout(timeout);
-      timeout = window.setTimeout(() => { setToast(null); lastKey.current = ''; }, next.state === 'storage error' || next.state === 'sync conflict' ? 5000 : 1800);
+      timeout = window.setTimeout(() => { setToast(null); lastKey.current = ''; }, next.state === 'storage error' || next.state === 'load error' || next.state === 'sync conflict' ? 5000 : 1800);
     };
     const handleSyncStatus = (event: Event) => {
+      if (!syncNotificationsEnabled(user?.id)) return;
       const status = (event as CustomEvent<{ status?: 'synced' | 'syncing' | 'offline' | 'retry' | 'conflicted' | 'error' }>).detail?.status;
       // Routine background syncing/offline checks are represented by the
       // connectivity banner and per-save persistence notice. Toast only when
@@ -71,6 +76,7 @@ export function AppToast() {
       timeout = window.setTimeout(() => { setToast(null); lastKey.current = ''; }, next.state === 'sync conflict' ? 5000 : 1800);
     };
     const handleSyncConflict = (event: Event) => {
+      if (!syncNotificationsEnabled(user?.id)) return;
       const detail = (event as CustomEvent<SyncConflictDetail>).detail;
       const app = detail?.domain?.startsWith('cash_book:') ? 'cash_book' : detail?.domain?.startsWith('payroll:') ? 'payroll' : null;
       if (app && appForPath(location.pathname) !== app) return;
@@ -89,10 +95,10 @@ export function AppToast() {
       window.removeEventListener('mathan:sync-conflict', handleSyncConflict);
       if (timeout) window.clearTimeout(timeout);
     };
-  }, [location.pathname]);
+  }, [location.pathname, user?.id]);
 
   if (!toast) return null;
-  const critical = toast.state === 'storage error' || toast.state === 'sync conflict' || toast.tone === 'error';
+  const critical = toast.state === 'storage error' || toast.state === 'load error' || toast.state === 'sync conflict' || toast.tone === 'error';
   const working = toast.state === 'saving' || toast.state === 'sync pending';
   const Icon = critical ? CircleAlert : working ? (toast.state === 'saving' ? LoaderCircle : CloudOff) : CheckCircle2;
   const info = toast.tone === 'info';

@@ -1,17 +1,62 @@
 import { Capacitor } from '@capacitor/core';
-import { deleteNativeRecord, isJsonSerializable, isNativeMigrationComplete, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
+import { deleteNativeRecord, getNativeDatabaseHealth, isJsonSerializable, isNativeMigrationComplete, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
+import { diagnostic } from './diagnostics';
+import { persistenceActivity } from './persistenceActivity';
+import type { OfflineFlushResult } from './androidExit';
+import { planSplitStoreRecovery, type RecoverableQueuedMutation } from './splitStoreRecovery';
 
 const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
 const META_STORE_NAME = 'metadata';
 const DB_VERSION = 2;
+const ATOMIC_RECOVERY_KEY = 'mathan_erp_offline_atomic_recovery_v1';
+const SPLIT_STORE_RECOVERY_KEY = '__offline_sqlite_split_store_recovery_v1__';
 const memoryCache = new Map<string, unknown>();
 const fallbackKey = (key: string) => `mathan_erp_offline_${key}`;
 let nativeStoreReady: Promise<boolean> | null = null;
-let writeTail: Promise<void> = Promise.resolve();
+// Once the marker has been verified, avoid a SQLite metadata query for every
+// local read/write during this app session. A failed check is deliberately not
+// cached so a transient native error can still fall back to IndexedDB.
+let nativeMigrationState: boolean | null = null;
+let nativeMigrationCheck: Promise<boolean> | null = null;
+const writeTails = new Map<string, Promise<void>>();
+
+type AtomicRecoveryRecord = Record<string, unknown>;
+
+function readAtomicRecovery(): AtomicRecoveryRecord {
+  try {
+    const raw = localStorage.getItem(ATOMIC_RECOVERY_KEY);
+    const parsed = raw === null ? null : JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as AtomicRecoveryRecord : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAtomicRecovery(entries: Array<{ key: string; value: unknown }>) {
+  const next = { ...readAtomicRecovery() };
+  entries.forEach(({ key, value }) => { next[key] = value; });
+  localStorage.setItem(ATOMIC_RECOVERY_KEY, JSON.stringify(next));
+}
+
+function removeAtomicRecovery(keys: string[]) {
+  const current = readAtomicRecovery();
+  let changed = false;
+  keys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(current, key)) {
+      delete current[key];
+      changed = true;
+    }
+  });
+  if (!changed) return;
+  if (Object.keys(current).length) localStorage.setItem(ATOMIC_RECOVERY_KEY, JSON.stringify(current));
+  else localStorage.removeItem(ATOMIC_RECOVERY_KEY);
+}
 
 function readFallback<T>(key: string): T | null {
   try {
+    const recovery = readAtomicRecovery();
+    if (Object.prototype.hasOwnProperty.call(recovery, key)) return recovery[key] as T;
     const raw = localStorage.getItem(fallbackKey(key));
     return raw === null ? null : JSON.parse(raw) as T;
   } catch {
@@ -19,14 +64,40 @@ function readFallback<T>(key: string): T | null {
   }
 }
 
+async function writeIndexedDbAtomic(entries: Array<{ key: string; value: unknown }>) {
+  const database = await getDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    entries.forEach(({ key, value }) => store.put(value, key));
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error('Offline cache transaction aborted'));
+  });
+}
+
+async function replayAtomicRecoveryToNative() {
+  const recovery = readAtomicRecovery();
+  const entries = Object.entries(recovery).map(([key, value]) => ({ key, value }));
+  if (!entries.length) return;
+  await writeNativeRecordsAtomic(entries);
+  removeAtomicRecovery(entries.map(({ key }) => key));
+}
+
 function removeFallback(key: string) {
   try { localStorage.removeItem(fallbackKey(key)); } catch { /* localStorage may be disabled */ }
 }
 
-function queueWrite<T>(operation: () => Promise<T>) {
-  const result = writeTail.then(operation, operation);
-  writeTail = result.then(() => undefined, () => undefined);
-  return result;
+function queueWrite<T>(keys: string[], operation: () => Promise<T>) {
+  // Writes for unrelated companies/apps should not wait behind one another,
+  // but a snapshot and its queue record must still share one ordered lock.
+  const uniqueKeys = [...new Set(keys)].sort();
+  const previous = Promise.all(uniqueKeys.map((key) => writeTails.get(key) ?? Promise.resolve()));
+  const trackedOperation = () => persistenceActivity.track(operation());
+  const result = previous.then(trackedOperation, trackedOperation);
+  const tail = result.then(() => undefined, () => undefined);
+  uniqueKeys.forEach((key) => writeTails.set(key, tail));
+  return result.finally(() => uniqueKeys.forEach((key) => { if (writeTails.get(key) === tail) writeTails.delete(key); }));
 }
 
 function getDatabase() {
@@ -73,7 +144,7 @@ async function readLegacyStore(storeName: string) {
 async function readLegacyLocalStorage() {
   const entries: Array<{ key: string; value: unknown }> = [];
   try {
-    for (const key of Object.keys(localStorage).filter((item) => item.startsWith('mathan_erp_offline_'))) {
+    for (const key of Object.keys(localStorage).filter((item) => item.startsWith('mathan_erp_offline_') && item !== ATOMIC_RECOVERY_KEY)) {
       const value = readFallback(key.slice('mathan_erp_offline_'.length));
       if (value !== null) entries.push({ key: key.slice('mathan_erp_offline_'.length), value });
     }
@@ -81,12 +152,49 @@ async function readLegacyLocalStorage() {
   return entries;
 }
 
+async function readNativeMigrationState() {
+  if (nativeMigrationState !== null) return nativeMigrationState;
+  nativeMigrationCheck ??= isNativeMigrationComplete()
+    .then((complete) => {
+      nativeMigrationState = complete;
+      return complete;
+    })
+    .catch((error) => {
+      nativeMigrationCheck = null;
+      throw error;
+    });
+  return nativeMigrationCheck;
+}
+
+async function recoverSplitIndexedDbStore() {
+  if (await readNativeMetadata<boolean>(SPLIT_STORE_RECOVERY_KEY)) return;
+  const legacyEntries = await readLegacyStore(STORE_NAME);
+  if (legacyEntries === null) return;
+  const legacyRecords = new Map(legacyEntries.map(({ key, value }) => [key, value]));
+  const legacyQueue = legacyRecords.get('sync-queue-v1');
+  const nativeQueue = await readNativeRecord<RecoverableQueuedMutation[]>('sync-queue-v1');
+  const plan = planSplitStoreRecovery(
+    Array.isArray(nativeQueue) ? nativeQueue : [],
+    Array.isArray(legacyQueue) ? legacyQueue as RecoverableQueuedMutation[] : [],
+    legacyRecords,
+  );
+  if (plan.entries.length) await writeNativeRecordsAtomic(plan.entries);
+  await writeNativeMetadata(SPLIT_STORE_RECOVERY_KEY, true);
+  diagnostic('split-store-recovered', { adapter: 'sqlite', recoveredMutationCount: plan.recoveredMutationCount, recoveredRecordCount: Math.max(0, plan.entries.length - 1) });
+}
+
 async function getNativeStoreReady() {
-  if (!Capacitor.isNativePlatform()) return false;
+  // SQLite is intentionally an Android-only adapter for this release. Web
+  // and any future non-Android native target continue using IndexedDB and the
+  // existing fallback path until they have their own verified adapter.
+  if (Capacitor.getPlatform() !== 'android') return false;
   nativeStoreReady ??= (async () => {
     // Reopening an already migrated Android database must not rescan every
     // legacy IndexedDB record before the first read or save.
-    if (await isNativeMigrationComplete()) return true;
+    if (await readNativeMigrationState()) {
+      await recoverSplitIndexedDbStore();
+      return true;
+    }
     const [records, metadata, localStorageRecords] = await Promise.all([
       readLegacyStore(STORE_NAME),
       readLegacyStore(META_STORE_NAME),
@@ -99,12 +207,19 @@ async function getNativeStoreReady() {
       // newest value and must win if both stores contain the same key.
       localStorageRecords.forEach((entry) => mergedRecords.set(entry.key, entry));
       await migrateLegacyRecords([...mergedRecords.values()], metadata);
+      await writeNativeMetadata(SPLIT_STORE_RECOVERY_KEY, true);
+      nativeMigrationState = true;
       return true;
-    } catch {
+    } catch (error) {
       // Keep IndexedDB active until a complete verified migration succeeds.
+      nativeMigrationState = false;
+      diagnostic('migration-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
       return false;
     }
-  })().catch(() => false);
+  })().catch((error) => {
+    diagnostic('migration-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
+    return false;
+  });
   return nativeStoreReady;
 }
 
@@ -130,56 +245,151 @@ async function deleteIndexedDb(key: string): Promise<void> {
   });
 }
 
+async function readIndexedDbRecord<T>(key: string): Promise<T | null> {
+  const store = await getStore('readonly');
+  return await new Promise<T | null>((resolve, reject) => {
+    const request = store.get(key);
+    request.onsuccess = () => {
+      // A previous IndexedDB failure may have placed the newest value in the
+      // fallback store. Prefer it whenever present: IndexedDB may still have
+      // the older value because the failed write left that record untouched.
+      const fallback = readFallback<T>(key);
+      const value = fallback ?? (request.result as T | undefined) ?? null;
+      if (value !== null) memoryCache.set(key, value);
+      resolve(value);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function readOffline<T>(key: string): Promise<T | null> {
   if (memoryCache.has(key)) return memoryCache.get(key) as T;
   try {
+    // On the first Android launch, legacy IndexedDB is already a valid local
+    // source while the verified SQLite migration is running. Return it now
+    // and let the migration continue in the background; writes still await
+    // getNativeStoreReady(), so a new edit cannot be missed by the migration.
+    if (Capacitor.getPlatform() === 'android') {
+      let migrationComplete = false;
+      let migrationCheckFailed = false;
+      try { migrationComplete = await readNativeMigrationState(); } catch { migrationCheckFailed = true; }
+      if (migrationCheckFailed || !migrationComplete) {
+        if (!migrationCheckFailed) void getNativeStoreReady();
+        return await readIndexedDbRecord<T>(key);
+      }
+    }
     if (await getNativeStoreReady()) {
+      // A failed native write may have left the newest value in the fallback
+      // store while SQLite still contains the previous value. Prefer that
+      // recovery value before consulting SQLite.
+      const fallback = readFallback<T>(key);
+      if (fallback !== null) { memoryCache.set(key, fallback); return fallback; }
       const nativeValue = await readNativeRecord<T>(key);
       if (nativeValue !== null) { memoryCache.set(key, nativeValue); return nativeValue; }
     }
-    const store = await getStore('readonly');
-    return await new Promise<T | null>((resolve, reject) => {
-      const request = store.get(key);
-      request.onsuccess = () => {
-        // A previous IndexedDB failure may have placed the newest value in the
-        // fallback store. Prefer it whenever present: IndexedDB may still have
-        // the older value because the failed write left that record untouched.
-        const fallback = readFallback<T>(key);
-        const value = fallback ?? (request.result as T | undefined) ?? null;
-        if (value !== null) memoryCache.set(key, value);
-        resolve(value);
-      };
-      request.onerror = () => reject(request.error);
-    });
+    return await readIndexedDbRecord<T>(key);
   } catch {
     return readFallback<T>(key);
   }
 }
 
-export async function writeOffline<T>(key: string, value: T): Promise<void> {
-  memoryCache.set(key, value);
-  return queueWrite(async () => {
+/** Read the backing store without consulting the in-memory cache. Android
+ * Exit uses this to prove that accepted changes survived the JS process. */
+export async function readDurableOffline<T>(key: string): Promise<T | null> {
+  if (Capacitor.getPlatform() === 'android' && await getNativeStoreReady()) return readNativeRecord<T>(key);
+  return readIndexedDbRecord<T>(key);
+}
+
+export async function flushOfflineWrites(timeoutMs = 15_000): Promise<OfflineFlushResult> {
+  const deadline = Date.now() + timeoutMs;
+  while (writeTails.size) {
+    const tails = [...new Set(writeTails.values())];
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('Timed out while flushing local storage. The app was kept open.');
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      if (isJsonSerializable(value) && await getNativeStoreReady()) {
+      await Promise.race([
+        Promise.all(tails),
+        new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Timed out while flushing local storage. The app was kept open.')), remaining); }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+  return { pendingMutationCount: 0, verifiedRecordCount: 0 };
+}
+
+export async function writeOffline<T>(key: string, value: T): Promise<void> {
+  const previousMemory = { hadValue: memoryCache.has(key), value: memoryCache.get(key) };
+  memoryCache.set(key, value);
+  return queueWrite([key], async () => {
+    if (Capacitor.getPlatform() === 'android' && isJsonSerializable(value)) {
+      try {
+        if (!await getNativeStoreReady()) throw new Error('Encrypted SQLite is unavailable.');
+        await replayAtomicRecoveryToNative();
         await writeNativeRecord(key, value);
         removeFallback(key);
+        removeAtomicRecovery([key]);
+        return;
+      } catch (error) {
+        if (previousMemory.hadValue) memoryCache.set(key, previousMemory.value);
+        else memoryCache.delete(key);
+        diagnostic('native-write-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
+        throw new Error('Android SQLite rejected the durable write. The change was not saved.', { cause: error });
+      }
+    }
+    try {
+      if (isJsonSerializable(value) && await getNativeStoreReady()) {
+        await replayAtomicRecoveryToNative();
+        await writeNativeRecord(key, value);
+        removeFallback(key);
+        removeAtomicRecovery([key]);
         return;
       }
       await writeIndexedDb(key, value);
       removeFallback(key);
     } catch {
-      try { await writeIndexedDb(key, value); removeFallback(key); }
-      catch { localStorage.setItem(fallbackKey(key), JSON.stringify(value)); }
+      try {
+        await writeIndexedDb(key, value);
+        // Keep a recovery copy so a stale native record cannot win on the
+        // next read while SQLite is temporarily unavailable.
+        try { localStorage.setItem(fallbackKey(key), JSON.stringify(value)); } catch { /* IndexedDB is still durable. */ }
+      }
+      catch (indexedDbError) {
+        try { localStorage.setItem(fallbackKey(key), JSON.stringify(value)); }
+        catch (fallbackError) {
+          // Do not leave a value in memory that the next app launch cannot
+          // recover. Callers need the rejection so the UI can report a real
+          // storage error instead of claiming that the save succeeded.
+          memoryCache.delete(key);
+          throw fallbackError instanceof Error ? fallbackError : indexedDbError;
+        }
+      }
     }
   });
 }
 
 export async function deleteOffline(key: string): Promise<void> {
-  memoryCache.delete(key);
-  return queueWrite(async () => {
-    removeFallback(key);
-    try { if (await getNativeStoreReady()) await deleteNativeRecord(key); } catch { /* continue with legacy stores */ }
-    try { await deleteIndexedDb(key); } catch { /* fallback was already removed */ }
+  return queueWrite([key], async () => {
+    // Keep the previous value available until every backing store has been
+    // deleted. Android may have both a migrated SQLite copy and a legacy
+    // IndexedDB copy; deleting only one would otherwise resurrect a record on
+    // the next launch. If either deletion fails, restore a fallback copy and
+    // reject so the UI can report a real storage error.
+    const previous = memoryCache.has(key) ? memoryCache.get(key) : await readOffline<unknown>(key);
+    try {
+      if (await getNativeStoreReady()) await deleteNativeRecord(key);
+      await deleteIndexedDb(key);
+      removeFallback(key);
+      removeAtomicRecovery([key]);
+      memoryCache.delete(key);
+    } catch (error) {
+      if (previous !== null && previous !== undefined) {
+        memoryCache.set(key, previous);
+        try { localStorage.setItem(fallbackKey(key), JSON.stringify(previous)); } catch { /* preserve the original storage error */ }
+      }
+      throw error;
+    }
   });
 }
 
@@ -192,38 +402,58 @@ export async function listOfflineKeys(): Promise<string[]> {
       request.onsuccess = () => resolve(request.result.map(String));
       request.onerror = () => reject(request.error);
     });
-    const fallbackKeys = Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length));
-    return [...new Set([...nativeKeys, ...indexedKeys, ...fallbackKeys])];
+    const fallbackKeys = Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_') && key !== ATOMIC_RECOVERY_KEY).map((key) => key.slice('mathan_erp_offline_'.length));
+    return [...new Set([...nativeKeys, ...indexedKeys, ...fallbackKeys, ...Object.keys(readAtomicRecovery())])];
   } catch {
-    return [...new Set([...nativeKeys, ...Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_')).map((key) => key.slice('mathan_erp_offline_'.length))])];
+    return [...new Set([...nativeKeys, ...Object.keys(localStorage).filter((key) => key.startsWith('mathan_erp_offline_') && key !== ATOMIC_RECOVERY_KEY).map((key) => key.slice('mathan_erp_offline_'.length)), ...Object.keys(readAtomicRecovery())])];
   }
 }
 
 /** Atomically persist related cache records (for example an entity and its queue entry). */
 export async function writeOfflineAtomic(entries: Array<{ key: string; value: unknown }>): Promise<void> {
+  const previousMemory = entries.map(({ key }) => ({ key, hadValue: memoryCache.has(key), value: memoryCache.get(key) }));
   entries.forEach(({ key, value }) => memoryCache.set(key, value));
-  return queueWrite(async () => {
-    try {
-      if (entries.every(({ value }) => isJsonSerializable(value)) && await getNativeStoreReady()) {
+  return queueWrite(entries.map(({ key }) => key), async () => {
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        if (!entries.every(({ value }) => isJsonSerializable(value))) throw new Error('The offline transaction contains a value that SQLite cannot serialize.');
+        if (!await getNativeStoreReady()) throw new Error('Encrypted SQLite is unavailable.');
+        await replayAtomicRecoveryToNative();
         await writeNativeRecordsAtomic(entries);
         entries.forEach(({ key }) => removeFallback(key));
+        removeAtomicRecovery(entries.map(({ key }) => key));
+        return;
+      } catch (error) {
+        previousMemory.forEach(({ key, hadValue, value }) => {
+          if (hadValue) memoryCache.set(key, value);
+          else memoryCache.delete(key);
+        });
+        diagnostic('native-write-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
+        throw new Error('Android SQLite rejected the durable write. The change was not saved.', { cause: error });
+      }
+    }
+    try {
+      if (entries.every(({ value }) => isJsonSerializable(value)) && await getNativeStoreReady()) {
+        await replayAtomicRecoveryToNative();
+        await writeNativeRecordsAtomic(entries);
+        entries.forEach(({ key }) => removeFallback(key));
+        removeAtomicRecovery(entries.map(({ key }) => key));
         return;
       }
-      const database = await getDatabase();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        entries.forEach(({ key, value }) => store.put(value, key));
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error ?? new Error('Offline cache transaction aborted'));
-      });
+      await writeIndexedDbAtomic(entries);
       entries.forEach(({ key }) => removeFallback(key));
     } catch (primaryError) {
       try {
-        entries.forEach(({ key, value }) => localStorage.setItem(fallbackKey(key), JSON.stringify(value)));
-      } catch {
-        throw primaryError;
+        // One localStorage assignment is the recovery commit boundary. The
+        // complete batch therefore becomes visible together and wins over a
+        // stale native row after restart; a later native write replays it.
+        writeAtomicRecovery(entries);
+      } catch (fallbackError) {
+        previousMemory.forEach(({ key, hadValue, value }) => {
+          if (hadValue) memoryCache.set(key, value);
+          else memoryCache.delete(key);
+        });
+        throw fallbackError instanceof Error ? fallbackError : primaryError;
       }
     }
   });
@@ -255,15 +485,17 @@ export async function readOfflineMetadata<T>(key: string): Promise<T | null> {
 }
 
 export async function writeOfflineMetadata<T>(key: string, value: T): Promise<void> {
-  try { if (isJsonSerializable(value) && await getNativeStoreReady()) { await writeNativeMetadata(key, value); return; } } catch { /* continue with IndexedDB */ }
-  try {
-    const store = await getStore('readwrite', META_STORE_NAME);
-    await new Promise<void>((resolve, reject) => {
-      const request = store.put(value, key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  } catch { /* metadata is best effort */ }
+  await queueWrite([`metadata:${key}`], async () => {
+    try { if (isJsonSerializable(value) && await getNativeStoreReady()) { await writeNativeMetadata(key, value); return; } } catch { /* continue with IndexedDB */ }
+    try {
+      const store = await getStore('readwrite', META_STORE_NAME);
+      await new Promise<void>((resolve, reject) => {
+        const request = store.put(value, key);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    } catch { /* metadata is best effort */ }
+  });
 }
 
 export async function getOfflineStorageEstimate() {
@@ -271,6 +503,47 @@ export async function getOfflineStorageEstimate() {
 }
 
 export function clearOfflineMemory() { memoryCache.clear(); }
+
+export type OfflineStorageHealth = {
+  healthy: boolean;
+  adapter: 'sqlite' | 'indexeddb';
+  schemaVersion: number;
+  message?: string;
+};
+
+/** Startup health gate. It is read-only apart from the normal deterministic
+ * SQLite/IndexedDB upgrade transaction and never clears or recreates data. */
+export async function validateOfflineStorage(): Promise<OfflineStorageHealth> {
+  if (Capacitor.getPlatform() === 'android') {
+    const ready = await getNativeStoreReady();
+    if (!ready) {
+      const result = { healthy: false, adapter: 'sqlite' as const, schemaVersion: 0, message: 'The encrypted offline database could not be migrated. Existing data was preserved.' };
+      diagnostic('local-schema-health', result);
+      return result;
+    }
+    try {
+      const health = await getNativeDatabaseHealth();
+      return { healthy: health.healthy, adapter: 'sqlite', schemaVersion: health.actualVersion, message: health.healthy ? undefined : 'The encrypted offline database schema is incomplete. Existing data was preserved.' };
+    } catch (error) {
+      return { healthy: false, adapter: 'sqlite', schemaVersion: 0, message: error instanceof Error ? error.message : 'The encrypted offline database could not be validated.' };
+    }
+  }
+
+  try {
+    const database = await getDatabase();
+    const missing = [STORE_NAME, META_STORE_NAME].filter((store) => !database.objectStoreNames.contains(store));
+    const result = {
+      healthy: missing.length === 0,
+      adapter: 'indexeddb' as const,
+      schemaVersion: database.version,
+      message: missing.length ? `Offline database is missing object stores: ${missing.join(', ')}` : undefined,
+    };
+    diagnostic('local-schema-health', { adapter: result.adapter, schemaVersion: result.schemaVersion, healthy: result.healthy });
+    return result;
+  } catch (error) {
+    return { healthy: false, adapter: 'indexeddb', schemaVersion: 0, message: error instanceof Error ? error.message : 'The offline database could not be opened.' };
+  }
+}
 
 /** Shared storage contract used by repositories and synchronization. The implementation selects encrypted SQLite on Android and IndexedDB/localStorage fallback on web. */
 export interface OfflineStore {
@@ -281,6 +554,7 @@ export interface OfflineStore {
   readMetadata<T>(key: string): Promise<T | null>;
   writeMetadata<T>(key: string, value: T): Promise<void>;
   writeAtomic(entries: Array<{ key: string; value: unknown }>): Promise<void>;
+  flush(): Promise<OfflineFlushResult>;
 }
 
 export const offlineStore: OfflineStore = {
@@ -291,4 +565,5 @@ export const offlineStore: OfflineStore = {
   readMetadata: <T,>(key: string) => readOfflineMetadata<T>(key),
   writeMetadata: <T,>(key: string, value: T) => writeOfflineMetadata(key, value),
   writeAtomic: (entries) => writeOfflineAtomic(entries),
+  flush: () => flushOfflineWrites(),
 };

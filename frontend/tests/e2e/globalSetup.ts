@@ -20,7 +20,10 @@ async function removeExistingFixtureData(service: SupabaseClient) {
     // Delete audited child rows while their workspace still exists. PostgreSQL
     // cascade ordering otherwise makes the audit trigger reference a parent
     // row that is already being removed.
-    for (const table of ['workspace_member_app_permissions', 'workspace_invitations', 'workspace_members', 'audit_events']) {
+    // Delete audited Truck rows while their workspace still exists. Their
+    // delete triggers write audit_events, so removing the parent first makes
+    // fixture resets fail with a workspace foreign-key violation.
+    for (const table of ['truck_transactions', 'truck_customers', 'truck_owners', 'trucks', 'workspace_member_app_permissions', 'workspace_invitations', 'workspace_members', 'audit_events']) {
       const { error } = await service.from(table).delete().in('workspace_id', workspaceIds);
       if (error) throw error;
     }

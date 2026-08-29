@@ -4,6 +4,7 @@ import { Truck } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
 import { TruckFormFields, type TruckDraft } from '../TruckFormFields';
+import { EntitySyncBadge } from '../../../../components/EntitySyncBadge';
 
 interface ManageTrucksPageProps {
   trucks: Truck[];
@@ -59,7 +60,7 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
       if (editingTruck) await onUpdateTruck({ ...editingTruck, ...payload });
       else await onAddTruck(payload);
       resetForm();
-    }, errorMessage: 'Could not save the Truck. Your entries were kept.' });
+    }, errorMessage: 'Could not save the Truck. Your form has been kept open.' });
   };
 
   return (
@@ -136,6 +137,7 @@ export const ManageTrucksPage: React.FC<ManageTrucksPageProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h4 className="font-bold text-xs sm:text-sm text-[#1c1d1f]">{truck.name}</h4>
+                    <EntitySyncBadge table="trucks" entityId={truck.id} />
                     <span className="bg-[#f0ebd9] text-[#4a4843] text-[10px] font-bold px-1.5 py-0.5 rounded">
                       Unit {truck.unitNumber}
                     </span>

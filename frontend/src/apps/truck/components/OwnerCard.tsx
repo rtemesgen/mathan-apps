@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { OwnerFinancialSummary, Transaction } from '../types';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { EntitySyncBadge } from '../../../components/EntitySyncBadge';
 
 interface OwnerCardProps {
   summary: OwnerFinancialSummary;
@@ -49,6 +50,7 @@ export const OwnerCard: React.FC<OwnerCardProps> = ({
           <h2 className="text-sm sm:text-base font-bold text-[#1c1d1f] truncate">
             {owner.name}
           </h2>
+          <EntitySyncBadge table="truck_owners" entityId={owner.id} />
           <span className="bg-[#f0ebd9] text-[#4a4843] border border-[#ded6c4] text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shrink-0">
             <PieChart className="w-2 h-2 text-[#a3683a]" />
             {owner.equityPercentage}%
@@ -189,6 +191,7 @@ export const OwnerCard: React.FC<OwnerCardProps> = ({
                         <div className="font-bold text-xs text-[#1c1d1f]">
                           {tx.category || tx.description}
                         </div>
+                        <EntitySyncBadge table="truck_transactions" entityId={tx.id} />
                         <div className="text-[10px] text-[#787672]">
                           {formatDate(tx.date)}
                         </div>

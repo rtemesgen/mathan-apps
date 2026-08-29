@@ -74,7 +74,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
     if (!selectedEmp || numAmount <= 0) return;
 
     const newTx: Transaction = {
-      id: `tx-${Date.now().toString().slice(-6)}`,
+      id: crypto.randomUUID(),
       employeeId: selectedEmp.id,
       employeeName: selectedEmp.name,
       amount: numAmount,
@@ -85,7 +85,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    await runAction({ operation: () => onRecordWithdrawal(newTx), successMessage: 'Salary payment saved successfully.', errorMessage: 'Could not save the salary payment. Your entries were kept.' });
+    await runAction({ operation: () => onRecordWithdrawal(newTx), successMessage: 'Salary payment saved successfully.', errorMessage: 'Could not save the salary payment. Your form has been kept open.' });
     setLastTx(newTx);
     setIsSuccess(true);
     setAmount('');

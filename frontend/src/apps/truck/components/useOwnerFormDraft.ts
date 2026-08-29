@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Owner } from '../types';
+import { localDateString } from '../../../lib/localDate';
 
 export type OwnerFormDraft = {
   name: string;
@@ -8,7 +9,7 @@ export type OwnerFormDraft = {
   monthlyDrawRate: string;
 };
 
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => localDateString();
 
 function draftFromOwner(owner?: Owner | null): OwnerFormDraft {
   return owner

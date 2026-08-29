@@ -13,6 +13,7 @@ export type CounterpartyType = 'CUSTOMER' | 'OWNER' | 'OTHER';
 
 export interface Owner {
   id: string;
+  updatedAt?: string;
   truckId: string;
   name: string;
   startDate: string;
@@ -23,6 +24,7 @@ export interface Owner {
 
 export interface Customer {
   id: string;
+  updatedAt?: string;
   truckId: string;
   name: string;
   phone?: string;
@@ -32,6 +34,7 @@ export interface Customer {
 
 export interface Truck {
   id: string;
+  updatedAt?: string;
   name: string;
   unitNumber: string;
   makeModel: string;
@@ -42,6 +45,9 @@ export interface Truck {
 
 export interface Transaction {
   id: string;
+  /** Server creation time. Used for a stable latest-activity ordering. */
+  createdAt?: string;
+  updatedAt?: string;
   truckId: string;
   date: string;
   type: TransactionType;
@@ -82,5 +88,8 @@ export interface TruckFinancialSummary {
   operatingExpenses: number;
   totalReceivable: number;
   totalPayable: number;
-  counterpartyBalances: Array<{ type: 'receivable' | 'payable'; name: string; ownerId?: string; amount: number }>;
+  /** Customer/other-party balances only; owner obligations stay in owner summaries. */
+  totalCustomerReceivable: number;
+  totalCustomerPayable: number;
+  counterpartyBalances: Array<{ type: 'receivable' | 'payable'; name: string; customerId?: string; ownerId?: string; counterpartyType?: 'OWNER'; amount: number }>;
 }

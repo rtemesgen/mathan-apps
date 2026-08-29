@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff, LogIn, Mail, Power, RefreshCw, Share2, ShieldCheck, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { useAuth, type AppId, type AppPermission } from '../auth/AuthProvider';
-import { supabase } from '../lib/supabase';
+import { acceptWorkspaceInvitation, createWorkspaceInvitation, decideApprovalRequest, getWorkspaceProfile, listAccountSessions, listApprovalRequests, listMemberCompanyAccess, listWorkspaceInvitationsForOwner, removeWorkspaceMember, revokeOtherSessions, revokeWorkspaceInvitation, sendInvitationOtp, setMemberWorkspaceAccess, setWorkspaceAppEnabled, transferWorkspaceOwnership, updateAuthUser, updateMemberPermission as updateMemberPermissionRemote, updatePassword as updatePasswordRemote, updateProfile, updateWorkspace } from '../lib/repositories/settingsRepository';
+import { listWorkspaceMembers } from '../lib/repositories/workspaceRepository';
 import { shareInvite } from '../lib/mobile';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ContactMemberCard } from './ContactMemberCard';
@@ -16,9 +17,14 @@ import { AppButton } from './AppButton';
 import { AppDialog } from './AppDialog';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { clearGuestWorkspaceData } from '../auth/guestWorkspaces';
-import { getOfflineStorageEstimate, resetUserOfflineCache } from '../lib/localStore';
+import { getOfflineStorageEstimate } from '../lib/localStore';
+import { rebuildWorkspaceCache } from '../lib/offlinePrefetch';
 import { loadPersonalDataArchive } from '../lib/repositories/personalDataRepository';
 import { WorkspaceAuditCard } from './WorkspaceAuditCard';
+import { getQueuedMutations, getWorkspaceMutationStatus, retryQueuedMutations } from '../lib/syncQueue';
+import { syncWorkspaceQueues } from '../lib/offlineSync';
+import { syncNotificationsEnabled, setSyncNotificationsEnabled } from '../lib/syncPreferences';
+import type { SyncProgressDetail } from '../lib/toast';
 
 type Member = { user_id: string; email: string; role: 'owner' | 'member'; display_name: string; book_permission: AppPermission; payroll_permission: AppPermission; truck_permission: AppPermission };
 type Invitation = { id: string; email: string; status: string; expires_at: string; book_permission: AppPermission; payroll_permission: AppPermission; truck_permission: AppPermission; created_at: string };
@@ -62,13 +68,48 @@ function PermissionSelect({ value, onChange, disabled = false }: { value: AppPer
   </div>;
 }
 
-function OfflineCacheCard({ userId, online, onNotice, onError }: { userId?: string; online: boolean; onNotice: (value: string) => void; onError: (value: string) => void }) {
+function OfflineCacheCard({ userId, workspaceId, online, onNotice, onError }: { userId?: string; workspaceId?: string; online: boolean; onNotice: (value: string) => void; onError: (value: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [usage, setUsage] = useState<string>('Checking storage…');
   useEffect(() => { void getOfflineStorageEstimate().then((estimate) => { if (!estimate?.usage) { setUsage('Storage usage unavailable'); return; } setUsage(`${(estimate.usage / 1024 / 1024).toFixed(1)} MB used${estimate.quota ? ` of ${(estimate.quota / 1024 / 1024).toFixed(0)} MB` : ''}`); }); }, []);
-  const reset = async () => { if (!userId) return; setBusy(true); try { const count = await resetUserOfflineCache(userId); onNotice(`${count} cached records cleared. ${online ? 'Your companies will download again in the background.' : 'Reconnect to download them again.'}`); setResetOpen(false); } catch (reason) { onError(reason instanceof Error ? reason.message : 'Could not reset offline cache.'); } finally { setBusy(false); } };
-  return <><section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-serif text-xl font-bold text-blue-950">Offline data</h2><p className="mt-1 text-xs leading-5 text-blue-900">Companies and app records are read from this device first. Cloud synchronization continues in the background when connected.</p></div><RefreshCw className="h-5 w-5 text-blue-700" /></div><p className="mt-3 text-[11px] font-semibold text-blue-800">{usage}</p><button type="button" disabled={busy} onClick={() => setResetOpen(true)} className="mt-3 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-bold text-blue-900 disabled:opacity-50">{busy ? 'Resetting…' : 'Reset and download again'}</button></section><DeleteConfirmModal isOpen={resetOpen} title="Reset offline data?" message="Clear downloaded company data from this device and download it again? Unsynchronized edits stay queued." onClose={() => setResetOpen(false)} onConfirm={reset} confirmLabel="Reset offline data" successMessage="Offline cache reset successfully." /></>;
+  const reset = async () => { if (!userId || !workspaceId || !online) { onError('Reconnect to Supabase before rebuilding this company cache.'); return; } setBusy(true); try { const result = await rebuildWorkspaceCache(workspaceId, userId); onNotice(`${result.cleared} settled cache records rebuilt from Supabase.${result.pendingPreserved ? ` ${result.pendingPreserved} cache records with pending edits were preserved.` : ''}`); setResetOpen(false); } catch (reason) { onError(reason instanceof Error ? reason.message : 'Could not rebuild offline cache.'); } finally { setBusy(false); } };
+  return <><SyncSettingsCard workspaceId={workspaceId} /><section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-serif text-xl font-bold text-blue-950">Offline data</h2><p className="mt-1 text-xs leading-5 text-blue-900">Supabase is authoritative while connected. This device keeps a local cache and pending offline edits for resilience.</p></div><RefreshCw className="h-5 w-5 text-blue-700" /></div><p className="mt-3 text-[11px] font-semibold text-blue-800">{usage}</p><button type="button" disabled={busy || !online} onClick={() => setResetOpen(true)} className="mt-3 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-bold text-blue-900 disabled:opacity-50">{busy ? 'Rebuilding…' : 'Rebuild cache from Supabase'}</button></section><DeleteConfirmModal isOpen={resetOpen} title="Rebuild offline cache?" message="Rebuild settled company data from Supabase? Unsynchronized edits will remain protected and queued." onClose={() => setResetOpen(false)} onConfirm={reset} confirmLabel="Rebuild cache" successMessage="Offline cache rebuilt successfully." /></>;
+}
+
+function SyncSettingsCard({ workspaceId }: { workspaceId?: string }) {
+  const auth = useAuth();
+  const activeWorkspaceId = workspaceId ?? auth.workspace?.id;
+  const [notifications, setNotifications] = useState(() => syncNotificationsEnabled(auth.user?.id));
+  const [retrying, setRetrying] = useState(false);
+  const [progress, setProgress] = useState<SyncProgressDetail>({ total: 0, completed: 0, pending: 0, errors: 0, status: 'synced' });
+  useEffect(() => {
+    setNotifications(syncNotificationsEnabled(auth.user?.id));
+    void getQueuedMutations().then((queue) => {
+      const relevant = queue.filter((item) => !activeWorkspaceId || item.companyId === activeWorkspaceId);
+      setProgress({ total: relevant.length, completed: 0, pending: relevant.length, errors: relevant.filter((item) => item.syncStatus === 'error' || item.syncStatus === 'conflicted').length, status: relevant.length ? 'retry' : 'synced' });
+    });
+    const onProgress = (event: Event) => {
+      const detail = (event as CustomEvent<SyncProgressDetail>).detail;
+      if (detail.workspaceId && activeWorkspaceId && detail.workspaceId !== activeWorkspaceId) return;
+      setProgress(detail);
+    };
+    const onPreference = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled: boolean; userId?: string }>).detail;
+      if (detail?.userId === auth.user?.id) setNotifications(Boolean(detail.enabled));
+    };
+    window.addEventListener('mathan:sync-progress', onProgress);
+    window.addEventListener('mathan:sync-preferences', onPreference);
+    return () => { window.removeEventListener('mathan:sync-progress', onProgress); window.removeEventListener('mathan:sync-preferences', onPreference); };
+  }, [activeWorkspaceId, auth.user?.id]);
+  const retry = async () => {
+    if (!activeWorkspaceId || retrying) return;
+    setRetrying(true);
+    try { await retryQueuedMutations(activeWorkspaceId); await syncWorkspaceQueues(activeWorkspaceId); } catch { /* the queue and sync status remain visible for another retry */ }
+    finally { setRetrying(false); }
+  };
+  const percent = progress.total ? Math.min(100, Math.round((progress.completed / progress.total) * 100)) : progress.status === 'synced' ? 100 : 0;
+  return <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-serif text-xl font-bold text-blue-950">Sync and notifications</h2><p className="mt-1 text-xs leading-5 text-blue-900">Supabase is authoritative while connected. Pending offline changes sync automatically when the connection returns.</p></div><label className="flex items-center gap-2 text-[11px] font-bold text-blue-950"><span>Show sync popups</span><input type="checkbox" checked={notifications} onChange={(event) => { setNotifications(event.target.checked); setSyncNotificationsEnabled(event.target.checked, auth.user?.id); }} /></label></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="rounded-xl bg-white p-3"><p className="text-[10px] font-bold uppercase text-zinc-500">Pending</p><p className="mt-1 text-lg font-bold text-blue-950">{progress.pending}</p></div><div className="rounded-xl bg-white p-3"><p className="text-[10px] font-bold uppercase text-zinc-500">Errors</p><p className="mt-1 text-lg font-bold text-red-700">{progress.errors}</p></div><div className="col-span-2 rounded-xl bg-white p-3"><div className="flex justify-between text-[10px] font-bold text-zinc-500"><span>{progress.status === 'syncing' ? 'Syncing…' : progress.status === 'synced' ? 'Up to date' : 'Needs attention'}</span><span>{percent}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-blue-700 transition-all" style={{ width: `${percent}%` }} /></div></div></div><button type="button" disabled={!activeWorkspaceId || retrying || progress.status === 'syncing'} onClick={() => void retry()} className="mt-3 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-bold text-blue-900 disabled:opacity-50">{retrying ? 'Retrying…' : 'Retry pending sync'}</button></section>;
 }
 
 function AppToggle({ enabled, onChange }: { enabled: boolean; onChange: () => void }) {
@@ -106,9 +147,9 @@ function SecuritySettingsCard({ password, editing, showPassword, busy, onEdit, o
 type ApprovalRequest = { id: string; action_type: string; target_record_type: string; reason: string; status: string; created_at: string; requester_id: string; decision_comment?: string | null };
 function ApprovalQueue({ workspaceId, userId, isOwner, onNotice, onError }: { workspaceId?: string; userId?: string; isOwner: boolean; onNotice: (value: string) => void; onError: (value: string) => void }) {
   const [items, setItems] = useState<ApprovalRequest[]>([]);
-  const load = async () => { if (!workspaceId) return; const { data, error } = await supabase.from('approval_requests').select('id,action_type,target_record_type,reason,status,created_at,requester_id,decision_comment').eq('workspace_id', workspaceId).order('created_at', { ascending: false }).limit(50); if (error) onError(error.message); else setItems((data as ApprovalRequest[] | null) ?? []); };
+  const load = async () => { if (!workspaceId) return; try { setItems((await listApprovalRequests(workspaceId)) as ApprovalRequest[]); } catch (reason) { onError(reason instanceof Error ? reason.message : 'Could not load approval requests.'); } };
   useEffect(() => { void load(); }, [workspaceId]);
-  const decide = async (id: string, decision: 'approved' | 'rejected') => { const { error } = await supabase.rpc('decide_approval_request', { target_request: id, target_decision: decision }); if (error) onError(error.message); else { onNotice(`Request ${decision}.`); await load(); } };
+  const decide = async (id: string, decision: 'approved' | 'rejected') => { try { await decideApprovalRequest(id, decision); onNotice(`Request ${decision}.`); await load(); } catch (reason) { onError(reason instanceof Error ? reason.message : 'Could not decide approval request.'); } };
   return <section className="rounded-2xl border border-[#e6e2d6] bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="font-serif text-xl font-bold">Approvals</h2><p className="mt-1 text-xs text-zinc-500">Review protected workspace actions. Workspace owners can approve or reject requests.</p></div><ShieldCheck className="h-5 w-5 text-emerald-700" /></div><div className="mt-4 space-y-2">{items.length ? items.map((item) => <div key={item.id} className="rounded-xl border border-[#eeeae0] p-3"><div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><p className="text-xs font-bold capitalize">{item.action_type.replaceAll('_', ' ')}</p><p className="mt-1 text-[11px] text-zinc-500">{item.reason}</p><p className="mt-1 text-[10px] text-zinc-400">{new Date(item.created_at).toLocaleString()} · {item.status}</p></div>{isOwner && item.status === 'pending' && <div className="flex gap-1"><button type="button" onClick={() => void decide(item.id, 'approved')} className="rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[10px] font-bold text-white">Approve</button><button type="button" onClick={() => void decide(item.id, 'rejected')} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[10px] font-bold text-red-700">Reject</button></div>}</div></div>) : <p className="text-xs text-zinc-500">No approval requests.</p>}</div></section>;
 }
 
@@ -140,8 +181,8 @@ function OwnershipTransferCard({ members, busy, onTransfer }: { members: Member[
 
 function SessionSecurityCard({ onNotice, onError }: { onNotice: (value: string) => void; onError: (value: string) => void }) {
   const [device, setDevice] = useState(''); const [busy, setBusy] = useState(false);
-  useEffect(() => { void supabase.functions.invoke('account-sessions', { body: { action: 'list' } }).then(({ data, error }) => { if (!error) setDevice(String(data?.sessions?.[0]?.user_agent ?? 'Current device')); }); }, []);
-  const revokeOthers = async () => { setBusy(true); const { error } = await supabase.functions.invoke('account-sessions', { body: { action: 'revoke-others' } }); setBusy(false); if (error) onError(error.message); else onNotice('All other sessions have been signed out.'); };
+  useEffect(() => { void listAccountSessions().then((data) => setDevice(String((data as { sessions?: Array<{ user_agent?: string }> })?.sessions?.[0]?.user_agent ?? 'Current device'))).catch(() => undefined); }, []);
+  const revokeOthers = async () => { setBusy(true); try { await revokeOtherSessions(); onNotice('All other sessions have been signed out.'); } catch (reason) { onError(reason instanceof Error ? reason.message : 'Could not sign out other devices.'); } finally { setBusy(false); } };
   return <section className="rounded-2xl border border-[#e6e2d6] bg-white p-5 shadow-sm"><h2 className="font-serif text-xl font-bold">Sessions and devices</h2><p className="mt-1 text-xs text-zinc-500">Manage access to your account from other devices.</p><p className="mt-4 rounded-xl bg-[#faf9f5] p-3 text-xs font-semibold">Current device: <span className="font-normal text-zinc-600">{device || 'Checking…'}</span></p><button type="button" disabled={busy} onClick={() => void revokeOthers()} className="mt-3 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50">{busy ? 'Signing out…' : 'Sign out other devices'}</button></section>;
 }
 
@@ -187,12 +228,10 @@ export function SettingsPage() {
 
   const loadOwnerData = async () => {
     if (!workspace || !isOwner || !online) return;
-    const [{ data: memberRows }, { data: invitationRows }] = await Promise.all([
-      supabase.rpc('list_workspace_members', { target_workspace: workspace.id }),
-      supabase.from('workspace_invitations').select('id,email,status,expires_at,book_permission,payroll_permission,truck_permission,created_at').eq('workspace_id', workspace.id).order('created_at', { ascending: false }),
-    ]);
-    setMembers((memberRows as Member[] | null) ?? []);
-    setInvitations((invitationRows as Invitation[] | null) ?? []);
+    try {
+      const [memberRows, invitationRows] = await Promise.all([listWorkspaceMembers(workspace.id), listWorkspaceInvitationsForOwner(workspace.id)]);
+      setMembers(memberRows as Member[]); setInvitations(invitationRows as Invitation[]);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load company access.'); }
   };
 
   useEffect(() => { setCompanyName(workspace?.name ?? ''); setAccentColor(workspace?.accent_color ?? '#54623E'); setEditingCompany(false); void loadOwnerData(); }, [workspace?.id, isOwner, online]);
@@ -201,7 +240,7 @@ export function SettingsPage() {
     if (!user) return;
     setDisplayName((user.user_metadata?.name as string | undefined) ?? '');
     setEmail(user.email ?? '');
-    void supabase.from('workspace_profiles').select('display_name,phone').eq('user_id', user.id).maybeSingle().then(({ data }) => {
+    void getWorkspaceProfile(user.id).then((data) => {
       setDisplayName(data?.display_name ?? (user.user_metadata?.name as string | undefined) ?? '');
       const savedPhoneValue = data?.phone ?? (user.user_metadata?.phone as string | undefined) ?? '';
       const matchedCountry = PHONE_COUNTRIES.find((country) => savedPhoneValue.startsWith(country.code));
@@ -222,8 +261,7 @@ export function SettingsPage() {
     event.preventDefault();
     if (!workspace || companyName.trim().length < 2 || !requireOnline()) return;
     setBusy(true); setError(''); setNotice('');
-    const { error: saveError } = await supabase.from('workspaces').update({ name: companyName.trim(), accent_color: accentColor }).eq('id', workspace.id);
-    if (saveError) setError(saveError.message); else { await refreshWorkspace(); setEditingCompany(false); setNotice('Company name saved.'); }
+    try { await updateWorkspace(workspace.id, { name: companyName.trim(), accent_color: accentColor }); await refreshWorkspace(); setEditingCompany(false); setNotice('Company name saved.'); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save company profile.'); }
     setBusy(false);
   };
 
@@ -233,11 +271,7 @@ export function SettingsPage() {
     const normalizedPhone = normalizePhone(phone, countryCode);
     if (!isValidPhone(normalizedPhone)) { setError('Enter a valid phone number with a country code.'); return; }
     setBusy(true); setError(''); setNotice('');
-    const [{ error: profileError }, { error: authError }] = await Promise.all([
-      supabase.from('workspace_profiles').upsert({ user_id: user.id, display_name: displayName.trim(), phone: normalizedPhone }),
-      supabase.auth.updateUser({ data: { name: displayName.trim(), phone: normalizedPhone }, ...(email.trim() !== user.email ? { email: email.trim() } : {}) }),
-    ]);
-    if (profileError || authError) setError(profileError?.message ?? authError?.message ?? 'Could not save profile.'); else { setPhone(normalizedPhone.slice(countryCode.length)); setSavedPhone(normalizedPhone.slice(countryCode.length)); setSavedCountryCode(countryCode); setEditingProfile(false); setNotice(email.trim() !== user.email ? 'Profile saved. Check your new email for confirmation.' : 'Profile saved.'); }
+    try { await Promise.all([updateProfile(user.id, { display_name: displayName.trim(), phone: normalizedPhone }), updateAuthUser({ name: displayName.trim(), phone: normalizedPhone, ...(email.trim() !== user.email ? { email: email.trim() } : {}) })]); setPhone(normalizedPhone.slice(countryCode.length)); setSavedPhone(normalizedPhone.slice(countryCode.length)); setSavedCountryCode(countryCode); setEditingProfile(false); setNotice(email.trim() !== user.email ? 'Profile saved. Check your new email for confirmation.' : 'Profile saved.'); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not save profile.'); }
     setBusy(false);
   };
 
@@ -246,8 +280,7 @@ export function SettingsPage() {
     if (!requireOnline()) return;
     if (password.length < 8) { setError('Use at least 8 characters for your password.'); return; }
     setBusy(true); setError(''); setNotice('');
-    const { error: passwordError } = await supabase.auth.updateUser({ password });
-    if (passwordError) setError(passwordError.message); else { setPassword(''); setShowPassword(false); setEditingSecurity(false); setNotice('Password updated.'); }
+    try { await updatePasswordRemote(password); setPassword(''); setShowPassword(false); setEditingSecurity(false); setNotice('Password updated.'); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update password.'); }
     setBusy(false);
   };
 
@@ -256,15 +289,14 @@ export function SettingsPage() {
     if (!workspace || !inviteEmail.trim() || !requireOnline()) return;
     const invitedAddress = inviteEmail.trim();
     setBusy(true); setError(''); setNotice(''); setInviteLink('');
-    const { data, error: inviteError } = await supabase.rpc('create_workspace_invitation', { target_workspace: workspace.id, target_email: inviteEmail.trim(), target_book_permission: invitePermissions.book, target_payroll_permission: invitePermissions.payroll, target_truck_permission: invitePermissions.truck, expires_in_days: 7 });
-    if (inviteError) setError(inviteError.message);
-    else {
+    try {
+      const data = await createWorkspaceInvitation(workspace.id, inviteEmail.trim(), invitePermissions);
       const row = (data as Array<{ invite_token: string }> | null)?.[0];
       const link = row ? `${window.location.origin}/invite/${row.invite_token}` : '';
       setInviteLink(link); setInviteEmail('');
-      const { error: emailError } = await supabase.auth.signInWithOtp({ email: invitedAddress, options: { emailRedirectTo: link, shouldCreateUser: true } });
-      setNotice(emailError ? 'Invitation created. Copy the secure link to send it.' : 'Invitation email sent. You can also copy the secure link.'); await loadOwnerData();
-    }
+      let emailSent = true; try { await sendInvitationOtp(invitedAddress, link); } catch { emailSent = false; }
+      setNotice(emailSent ? 'Invitation email sent. You can also copy the secure link.' : 'Invitation created. Copy the secure link to send it.'); await loadOwnerData();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not create invitation.'); }
     setBusy(false);
   };
 
@@ -272,40 +304,35 @@ export function SettingsPage() {
     if (!requireOnline()) return;
     if (!workspace || !inviteEmail.trim()) { setError('Enter the member email first so the link can be tied to an invitation.'); return; }
     setBusy(true); setError(''); setNotice(''); setInviteLink('');
-    const { data, error: inviteError } = await supabase.rpc('create_workspace_invitation', { target_workspace: workspace.id, target_email: inviteEmail.trim(), target_book_permission: invitePermissions.book, target_payroll_permission: invitePermissions.payroll, target_truck_permission: invitePermissions.truck, expires_in_days: 7 });
-    if (inviteError) setError(inviteError.message);
-    else {
+    try {
+      const data = await createWorkspaceInvitation(workspace.id, inviteEmail.trim(), invitePermissions);
       const row = (data as Array<{ invite_token: string }> | null)?.[0];
       setInviteLink(row ? `${window.location.origin}/invite/${row.invite_token}` : '');
       setNotice('Shareable invitation link created.');
-    }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not create invitation link.'); }
     setBusy(false);
   };
 
   const updateMemberPermission = async (member: Member, app: AppId, permission: AppPermission) => {
     if (!workspace || !requireOnline()) return;
     setBusy(true); setError(''); setNotice('');
-    const { error: updateError } = await supabase.from('workspace_member_app_permissions').upsert({ workspace_id: workspace.id, user_id: member.user_id, app_id: app, permission });
-    if (updateError) setError(updateError.message); else { setMembers((current) => current.map((item) => item.user_id === member.user_id ? { ...item, [`${app}_permission`]: permission } : item)); setNotice(`${appNames[app]} access updated for ${member.display_name || member.email}.`); }
+    try { await updateMemberPermissionRemote(workspace.id, member.user_id, app, permission); setMembers((current) => current.map((item) => item.user_id === member.user_id ? { ...item, [`${app}_permission`]: permission } : item)); setNotice(`${appNames[app]} access updated for ${member.display_name || member.email}.`); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update member access.'); }
     setBusy(false);
   };
 
   const toggleApp = async (app: AppId) => {
     if (!workspace || !requireOnline()) return;
-    const { error: updateError } = await supabase.from('workspace_apps').upsert({ workspace_id: workspace.id, app_id: app, enabled: !appAccess[app].enabled });
-    if (updateError) setError(updateError.message); else { await refreshAccess(); setNotice(`${appNames[app]} ${appAccess[app].enabled ? 'disabled' : 'enabled'}.`); }
+    try { await setWorkspaceAppEnabled(workspace.id, app, !appAccess[app].enabled); await refreshAccess(); setNotice(`${appNames[app]} ${appAccess[app].enabled ? 'disabled' : 'enabled'}.`); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update app access.'); }
   };
 
   const revokeInvite = async (id: string) => {
     if (!requireOnline()) return;
-    const { error: revokeError } = await supabase.rpc('revoke_workspace_invitation', { target_invitation: id });
-    if (revokeError) setError(revokeError.message); else await loadOwnerData();
+    try { await revokeWorkspaceInvitation(id); await loadOwnerData(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not revoke invitation.'); }
   };
 
   const confirmRemoveMember = async (id: string) => {
     if (!workspace || !requireOnline()) return;
-    const { error: removeError } = await supabase.rpc('remove_workspace_member', { target_workspace: workspace.id, target_user: id });
-    if (removeError) setError(removeError.message); else { setMemberToRemove(null); await loadOwnerData(); }
+    try { await removeWorkspaceMember(workspace.id, id); setMemberToRemove(null); await loadOwnerData(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not remove member.'); }
   };
   const removeMember = (id: string) => {
     const member = members.find((item) => item.user_id === id);
@@ -315,25 +342,43 @@ export function SettingsPage() {
   const loadCompanyAccess = async (member: Member) => {
     if (!requireOnline()) return;
     if (companyAccess[member.user_id]) return;
-    const { data, error: accessError } = await supabase.rpc('list_member_company_access', { target_user: member.user_id });
-    if (accessError) setError(accessError.message.includes('schema cache') ? 'Company access is not available yet. Apply the latest Supabase migrations, then retry.' : accessError.message); else setCompanyAccess((current) => ({ ...current, [member.user_id]: (data as CompanyAccess[] | null) ?? [] }));
+    try { const data = await listMemberCompanyAccess(member.user_id); setCompanyAccess((current) => ({ ...current, [member.user_id]: data as CompanyAccess[] })); } catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not load company access.'; setError(message.includes('schema cache') ? 'Company access is not available yet. Apply the latest Supabase migrations, then retry.' : message); }
   };
 
   const toggleCompanyAccess = async (member: Member, company: CompanyAccess) => {
     if (!requireOnline()) return;
     setBusy(true); setError('');
-    const { error: accessError } = await supabase.rpc('set_member_workspace_access', { target_workspace: company.workspace_id, target_user: member.user_id, enabled: !company.is_member });
-    if (accessError) setError(accessError.message); else {
+    try { await setMemberWorkspaceAccess(company.workspace_id, member.user_id, !company.is_member); {
       setCompanyAccess((current) => ({ ...current, [member.user_id]: (current[member.user_id] ?? []).map((item) => item.workspace_id === company.workspace_id ? { ...item, is_member: !company.is_member, member_role: !company.is_member ? 'member' : null } : item) }));
       setNotice(`${member.display_name || member.email} ${company.is_member ? 'was removed from' : 'was added to'} ${company.workspace_name}.`);
-    }
+    }} catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not update company access.'); }
     setBusy(false);
   };
   const transferOwnership = async (targetUser: string) => {
     if (!workspace || !requireOnline()) return;
     setBusy(true); setError('');
-    const { error: transferError } = await supabase.rpc('transfer_workspace_ownership', { target_workspace: workspace.id, target_user: targetUser });
-    if (transferError) setError(transferError.message); else { setNotice('Ownership transferred. Your access is now a member account.'); await refreshWorkspace(); await loadOwnerData(); }
+    // Ownership changes are cloud-only. Flush this device's offline changes
+    // first so a stale local snapshot cannot be left behind or later overwrite
+    // the company after the new owner signs in.
+    try { await syncWorkspaceQueues(workspace.id); } catch {
+      setError('Ownership cannot be transferred because offline changes could not be checked. Your data was kept.');
+      setBusy(false);
+      return;
+    }
+    let pendingStatus: Awaited<ReturnType<typeof getWorkspaceMutationStatus>>;
+    try { pendingStatus = await getWorkspaceMutationStatus(workspace.id); } catch {
+      setError('Ownership cannot be transferred because offline changes could not be checked. Your data was kept.');
+      setBusy(false);
+      return;
+    }
+    if (pendingStatus) {
+      setError(pendingStatus === 'conflict'
+        ? 'Ownership cannot be transferred while there is a sync conflict. Resolve the conflict first; your local data was kept.'
+        : 'Ownership cannot be transferred until all offline changes finish syncing. Keep this page open and try again.');
+      setBusy(false);
+      return;
+    }
+    try { await transferWorkspaceOwnership(workspace.id, targetUser); setNotice('Ownership transferred. Your access is now a member account.'); await refreshWorkspace(); await loadOwnerData(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not transfer ownership.'); }
     setBusy(false);
   };
 
@@ -359,7 +404,7 @@ export function SettingsPage() {
         {activeSection === 'trash' && isOwner && <TrashCard workspaceId={workspace?.id} onNotice={setNotice} onError={setError} />}
         {activeSection === 'company' && isOwner && <div className="order-2 mt-4 space-y-4"><PeopleAccessCard members={members} expandedMember={expandedMember} companyAccess={companyAccess} busy={busy} onExpand={(member, expanded) => { setExpandedMember(expanded ? null : member.user_id); if (!expanded) void loadCompanyAccess(member); }} onPermission={(member, app, permission) => void updateMemberPermission(member, app, permission)} onCompanyAccess={(member, company) => void toggleCompanyAccess(member, company)} onRemove={(id) => void removeMember(id)} onTransfer={(id) => void transferOwnership(id)} /><OwnershipTransferCard members={members} busy={busy} onTransfer={(id) => void transferOwnership(id)} />{workspace && <CompanyDeletionCard workspace={workspace} onNotice={setNotice} onError={setError} onRestored={() => void refreshWorkspace(workspace.id)} />}</div>}
         {activeSection === 'profile' && <div className="order-1 space-y-4"><ProfileSettingsCard displayName={displayName} email={email} phone={phone} countryCode={countryCode} editing={editingProfile} busy={busy} onEdit={() => setEditingProfile(true)} onCancel={() => { setDisplayName((user?.user_metadata?.name as string | undefined) ?? ''); setEmail(user?.email ?? ''); setPhone(savedPhone); setCountryCode(savedCountryCode); setEditingProfile(false); }} onSubmit={saveProfile} setDisplayName={setDisplayName} setEmail={setEmail} setPhone={setPhone} setCountryCode={setCountryCode} /><SecuritySettingsCard password={password} editing={editingSecurity} showPassword={showPassword} busy={busy} onEdit={() => setEditingSecurity(true)} onCancel={() => { setPassword(''); setShowPassword(false); setEditingSecurity(false); }} onSubmit={updatePassword} onTogglePassword={() => setShowPassword((current) => !current)} setPassword={setPassword} /></div>}
-        {activeSection === 'appdata' && <div className="order-1 space-y-4"><WorkspaceInvitations /><OfflineCacheCard userId={user?.id} online={online} onNotice={setNotice} onError={setError} /><section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><h2 className="font-serif text-lg font-bold text-emerald-950">Guest data</h2><p className="mt-1 text-xs leading-5 text-emerald-800">If this device has local guest companies, you can merge them into an eligible cloud company without replacing its existing records.</p><button type="button" onClick={() => { sessionStorage.removeItem('mathan_guest_import_deferred'); window.location.href = '/'; }} className="mt-3 rounded-xl bg-emerald-800 px-4 py-2.5 text-xs font-bold text-white">Check for guest data</button></section><SessionSecurityCard onNotice={setNotice} onError={setError} /><BackupRecoveryCard /><PersonalDataCard userId={user?.id} isOwner={isOwner} onTransferCompany={() => setActiveSection('company')} onNotice={setNotice} onError={setError} /><MyCompanyMemberships /></div>}
+        {activeSection === 'appdata' && <div className="order-1 space-y-4"><WorkspaceInvitations /><OfflineCacheCard userId={user?.id} workspaceId={workspace?.id} online={online} onNotice={setNotice} onError={setError} /><section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><h2 className="font-serif text-lg font-bold text-emerald-950">Guest data</h2><p className="mt-1 text-xs leading-5 text-emerald-800">If this device has local guest companies, you can merge them into an eligible cloud company without replacing its existing records.</p><button type="button" onClick={() => { sessionStorage.removeItem('mathan_guest_import_deferred'); window.location.href = '/'; }} className="mt-3 rounded-xl bg-emerald-800 px-4 py-2.5 text-xs font-bold text-white">Check for guest data</button></section><SessionSecurityCard onNotice={setNotice} onError={setError} /><BackupRecoveryCard /><PersonalDataCard userId={user?.id} isOwner={isOwner} onTransferCompany={() => setActiveSection('company')} onNotice={setNotice} onError={setError} /><MyCompanyMemberships /></div>}
         {activeSection === 'audit' && isOwner && <WorkspaceAuditCard workspaceId={workspace?.id} />}
         {activeSection === 'invites' && isOwner && <ContactMemberCard />}
         {activeSection === 'company' && isOwner && <div className="order-1 space-y-4"><WorkspaceInvitations /><CompanySettingsCard companyName={companyName} accentColor={accentColor} editing={editingCompany} busy={busy} onEdit={() => setEditingCompany(true)} onCancel={() => { setCompanyName(workspace?.name ?? ''); setAccentColor(workspace?.accent_color ?? '#54623E'); setEditingCompany(false); }} onSubmit={saveCompany} setCompanyName={setCompanyName} setAccentColor={setAccentColor} /></div>}
@@ -380,6 +425,6 @@ export function SettingsPage() {
 export function InviteAcceptance({ token }: { token: string }) {
   const { user, refreshWorkspace } = useAuth();
   const [status, setStatus] = useState('Accepting invitation…');
-  useEffect(() => { if (!user) return; void (async () => { const { error } = await supabase.rpc('accept_workspace_invitation', { target_token: token }); if (error) setStatus(error.message); else { await refreshWorkspace(); setStatus('Invitation accepted. Redirecting to your company…'); window.setTimeout(() => { window.location.href = '/'; }, 500); } })(); }, [user, token]);
+  useEffect(() => { if (!user) return; void (async () => { try { await acceptWorkspaceInvitation(token); await refreshWorkspace(); setStatus('Invitation accepted. Redirecting to your company…'); window.setTimeout(() => { window.location.href = '/'; }, 500); } catch (reason) { setStatus(reason instanceof Error ? reason.message : 'Could not accept invitation.'); } })(); }, [user, token]);
   return <main className="flex min-h-[70vh] items-center justify-center p-4"><section className="w-full max-w-md rounded-3xl border border-[#e6e2d6] bg-white p-7 text-center shadow-xl"><Check className="mx-auto h-8 w-8 text-emerald-700" /><h1 className="mt-4 font-serif text-2xl font-bold">Company invitation</h1><p className="mt-2 text-sm text-zinc-500">{user ? status : 'Sign in with the invited email address to continue.'}</p></section></main>;
 }

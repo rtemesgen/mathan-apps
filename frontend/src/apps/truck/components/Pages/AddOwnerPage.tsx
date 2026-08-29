@@ -46,7 +46,7 @@ export const AddOwnerPage: React.FC<AddOwnerPageProps> = ({
       startDate: draft.startDate,
       equityPercentage: parseFloat(draft.equityPercentage) || 0,
       monthlyDrawRate: parseFloat(draft.monthlyDrawRate) || 0,
-      }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your entries were kept.' }).then(onBack);
+      }), successMessage: editingOwner ? 'Truck owner updated successfully.' : 'Truck owner saved successfully.', errorMessage: 'Could not save the Truck owner. Your form has been kept open.' }).then(onBack);
   };
 
   return (

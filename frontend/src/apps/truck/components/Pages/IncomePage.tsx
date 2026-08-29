@@ -5,6 +5,8 @@ import { formatCurrency } from '../../utils/formatters';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
+import { customersForTruck } from '../../utils/customerScope';
+import { localDateString } from '../../../../lib/localDate';
 
 interface IncomePageProps {
   owners: Owner[];
@@ -48,12 +50,13 @@ export const IncomePage: React.FC<IncomePageProps> = ({
   const [customerOrCompany, setCustomerOrCompany] = useState('');
   const [description, setDescription] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(localDateString());
   const { submitting, runAction } = useAsyncAction();
   const selectedCustomerId = paymentSelection.startsWith('CUSTOMER:') ? paymentSelection.slice('CUSTOMER:'.length) : '';
-  const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
+  const truckCustomers = customersForTruck(customers, truckId);
+  const selectedCustomer = truckCustomers.find((customer) => customer.id === selectedCustomerId);
 
-  const resetForm = () => { setAmount(''); setCustomerOrCompany(''); setPaymentSelection('CASH'); setDescription(''); setReferenceNo(''); setDate(new Date().toISOString().split('T')[0]); };
+  const resetForm = () => { setAmount(''); setCustomerOrCompany(''); setPaymentSelection('CASH'); setDescription(''); setReferenceNo(''); setDate(localDateString()); };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
@@ -86,7 +89,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
         });
       }
       resetForm();
-    }, successMessage: incomeType === 'TRIP' && selectedCustomerId ? 'Customer receivable saved successfully.' : 'Truck income saved successfully.', errorMessage: 'Could not save the Truck income. Your entries were kept.' });
+    }, successMessage: incomeType === 'TRIP' && selectedCustomerId ? 'Customer receivable saved successfully.' : 'Truck income saved successfully.', errorMessage: 'Could not save the Truck income. Your form has been kept open.' });
   };
 
   return (
@@ -182,7 +185,7 @@ export const IncomePage: React.FC<IncomePageProps> = ({
 
           {incomeType === 'TRIP' && <div>
             <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">Payment method / customer *</label>
-            <TruckSelect value={paymentSelection} onChange={setPaymentSelection} options={[{ value: 'CASH', label: 'Cash received now' }, ...customers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash received now" />
+            <TruckSelect value={paymentSelection} onChange={setPaymentSelection} options={[{ value: 'CASH', label: 'Cash received now' }, ...truckCustomers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash received now" />
           </div>}
 
           {/* Amount & Category */}

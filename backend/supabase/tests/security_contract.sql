@@ -1,5 +1,5 @@
 begin;
-select plan(44);
+select plan(48);
 
 select has_function('public', 'can_view_workspace_app', ARRAY['uuid', 'text']);
 select has_function('public', 'can_edit_workspace_app', ARRAY['uuid', 'text']);
@@ -45,6 +45,10 @@ select has_function('public', 'system_admin_schedule_user_deletion', ARRAY['uuid
 select has_function('public', 'system_admin_restore_user_deletion', ARRAY['uuid', 'uuid']);
 select has_function('public', 'list_my_workspaces', ARRAY[]::text[]);
 select has_function('public', 'set_member_workspace_access', ARRAY['uuid', 'uuid', 'boolean', 'uuid']);
+select has_column('public', 'trucks', 'last_mutation_id', 'trucks persist mutation receipts');
+select has_column('public', 'truck_owners', 'last_mutation_id', 'truck owners persist mutation receipts');
+select has_column('public', 'truck_customers', 'last_mutation_id', 'truck customers persist mutation receipts');
+select has_column('public', 'truck_transactions', 'last_mutation_id', 'truck transactions persist mutation receipts');
 
 select * from finish();
 rollback;

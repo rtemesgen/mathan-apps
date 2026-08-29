@@ -17,7 +17,7 @@ async function removeWorkspaceFiles(workspaceId: string) {
 async function cleanupTrash() {
   const cutoff = new Date(Date.now() - 30 * 24 * 3600000).toISOString();
   const removed: Record<string, number> = {};
-  for (const table of ['truck_transactions', 'truck_owners', 'trucks', 'cash_transactions', 'cash_books', 'employees', 'payroll_transactions', 'salary_changes', 'record_attachments', 'workspace_invitations'] as const) {
+  for (const table of ['truck_transactions', 'truck_customers', 'truck_owners', 'trucks', 'cash_transactions', 'cash_books', 'employees', 'payroll_transactions', 'salary_changes', 'record_attachments', 'workspace_invitations'] as const) {
     if (table === 'record_attachments') {
       const { data } = await service.from(table).select('storage_path').lt('deleted_at', cutoff);
       if (data?.length) await service.storage.from('workspace-attachments').remove(data.map((file) => file.storage_path));

@@ -9,6 +9,7 @@ import { Transaction, Owner, TransactionType } from '../types';
 import { formatCurrency, formatDate, transactionDetails } from '../utils/formatters';
 import { AppDatePicker } from '../../../components/AppDatePicker';
 import { ExportButton } from '../../../components/ExportButton';
+import { EntitySyncBadge } from '../../../components/EntitySyncBadge';
 
 interface LedgerHistoryViewProps {
   transactions: Transaction[];
@@ -18,6 +19,17 @@ interface LedgerHistoryViewProps {
   onOpenIncome?: () => void;
   onOpenExpense?: () => void;
   onExport?: (filters: { startDate?: string; endDate?: string; transactionType?: string; query?: string }) => void;
+}
+
+/** Latest activity is based on when the entry was recorded or edited, not a
+ * user-entered accounting date. Older records without timestamps retain a
+ * deterministic date/id fallback. */
+export function sortTruckActivityNewestFirst(transactions: Transaction[]) {
+  const recordedAt = (transaction: Transaction) => {
+    const timestamp = Date.parse(transaction.updatedAt ?? transaction.createdAt ?? '');
+    return Number.isFinite(timestamp) ? timestamp : Date.parse(`${transaction.date}T00:00:00Z`) || 0;
+  };
+  return [...transactions].sort((a, b) => recordedAt(b) - recordedAt(a) || b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
 }
 
 export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
@@ -33,7 +45,7 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
   const [toDate, setToDate] = useState<string>('');
 
   const filteredTx = useMemo(() => {
-    return transactions.filter((tx) => {
+    const filtered = transactions.filter((tx) => {
       const matchesSearch =
         tx.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
         tx.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -45,19 +57,20 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
       const matchesToDate = !toDate || tx.date <= toDate;
 
       return matchesSearch && matchesType && matchesFromDate && matchesToDate;
-    }).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    });
+    return sortTruckActivityNewestFirst(filtered);
   }, [transactions, searchTerm, selectedType, fromDate, toDate]);
 
   // Filtered Totals
   const totalInflow = useMemo(() => {
     return filteredTx
-      .filter((t) => t.type === 'INCOME' || t.type === 'CAPITAL_INJECTION')
+      .filter((t) => ['INCOME', 'CAPITAL_INJECTION', 'RECEIVABLE', 'RECEIVABLE_SETTLEMENT'].includes(t.type))
       .reduce((sum, t) => sum + t.amount, 0);
   }, [filteredTx]);
 
   const totalOutflow = useMemo(() => {
     return filteredTx
-      .filter((t) => t.type !== 'INCOME' && t.type !== 'CAPITAL_INJECTION')
+      .filter((t) => ['EXPENSE', 'CAPITAL_REPAYMENT', 'PROFIT_DISTRIBUTION', 'PAYABLE', 'PAYABLE_SETTLEMENT'].includes(t.type))
       .reduce((sum, t) => sum + t.amount, 0);
   }, [filteredTx]);
 
@@ -205,7 +218,7 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
                       <td className="whitespace-nowrap px-4 py-3">
                         {getTypeBadge(tx.type)}
                       </td>
-                      <td className="px-4 py-3 align-top"><div className="font-bold text-xs">{tx.category}</div></td>
+                      <td className="px-4 py-3 align-top"><div className="flex items-center gap-1 font-bold text-xs">{tx.category}<EntitySyncBadge table="truck_transactions" entityId={tx.id} /></div></td>
                       <td className="px-4 py-3 align-top"><div className="break-words text-[11px] leading-5 text-[#787672]">{transactionDetails(tx) || '—'}</div></td>
                       <td className="whitespace-nowrap px-4 py-3 text-[#4a4843]">
                         {getOwnerName(tx.ownerId)}

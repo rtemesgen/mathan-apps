@@ -64,7 +64,7 @@ export const AddPartnerModal: React.FC<AddPartnerModalProps> = ({
       equityPercentage: parseFloat(draft.equityPercentage) || 0,
       monthlyDrawRate: parseFloat(draft.monthlyDrawRate) || 0,
       userId: linkedUserId || null,
-    }), errorMessage: 'Could not save the Truck owner. Your entries were kept.' });
+    }), errorMessage: 'Could not save the Truck owner. Your form has been kept open.' });
 
     onClose();
   };

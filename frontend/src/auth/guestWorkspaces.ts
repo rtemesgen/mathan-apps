@@ -107,7 +107,12 @@ async function digest(value: unknown) {
 
 export async function exportGuestWorkspace(workspace: GuestWorkspace): Promise<GuestWorkspaceExport> {
   const snapshots: Record<string, unknown[]> = {};
-  for (const [domain, key] of GUEST_DATA_DOMAINS) snapshots[`${domain}:${key}`] = (await offlineStore.read<unknown[]>(snapshotKey(workspace.id, domain, key))) ?? [];
+  const cashState = await offlineStore.read<{ books?: unknown[]; transactions?: unknown[] }>(snapshotKey(workspace.id, 'cash_book', 'state'));
+  const payrollState = await offlineStore.read<{ employees?: unknown[]; transactions?: unknown[] }>(snapshotKey(workspace.id, 'payroll', 'state'));
+  for (const [domain, key] of GUEST_DATA_DOMAINS) {
+    const canonical = domain === 'cash_book' ? cashState?.[key as 'books' | 'transactions'] : domain === 'payroll' && key !== 'custom-apps' ? payrollState?.[key as 'employees' | 'transactions'] : undefined;
+    snapshots[`${domain}:${key}`] = canonical ?? (await offlineStore.read<unknown[]>(snapshotKey(workspace.id, domain, key))) ?? [];
+  }
   const truck = (await offlineStore.read<GuestWorkspaceExport['truck']>(truckKey(workspace.id))) ?? { trucks: [], owners: [], transactions: [] };
   const payload = { snapshots, truck };
   const fingerprint = await digest(payload);
@@ -131,6 +136,10 @@ export async function clearGuestWorkspaceData(id: string) {
   for (const [domain, key] of GUEST_DATA_DOMAINS) {
     await offlineStore.delete(snapshotKey(id, domain, key));
     await offlineStore.delete(`${snapshotKey(id, domain, key)}:revision`);
+  }
+  for (const domain of ['cash_book', 'payroll']) {
+    await offlineStore.delete(snapshotKey(id, domain, 'state'));
+    await offlineStore.delete(`${snapshotKey(id, domain, 'state')}:revision`);
   }
   await offlineStore.delete(truckKey(id));
   localStorage.removeItem(`mathan_truck_preferences_${id}`);

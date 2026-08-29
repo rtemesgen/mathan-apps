@@ -46,7 +46,7 @@ export async function validateWorkspaceBackup(backup: unknown): Promise<Workspac
   if (candidate.schema_version !== '1' || !Array.isArray(candidate.snapshots) || !candidate.checksum) throw new Error('Unsupported or incomplete backup file.');
   const { checksum, ...unsigned } = candidate as WorkspaceBackup;
   if (await digest(unsigned) !== checksum) throw new Error('Backup checksum does not match.');
-  const domains = new Set(['cash_book:books', 'cash_book:transactions', 'payroll:employees', 'payroll:transactions', 'payroll:custom-apps']);
+  const domains = new Set(['cash_book:state', 'cash_book:books', 'cash_book:transactions', 'payroll:state', 'payroll:employees', 'payroll:transactions', 'payroll:custom-apps']);
   if (candidate.snapshots.some((item) => !domains.has(item.domain) || !Number.isInteger(item.revision) || item.revision < 1)) throw new Error('Backup contains an invalid snapshot.');
   return candidate as WorkspaceBackup;
 }

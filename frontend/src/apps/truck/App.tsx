@@ -18,8 +18,8 @@ import { useDeleteConfirmation } from '../../hooks/useDeleteConfirmation';
 import './index.css';
 
 export default function App() {
-  const { workspace, canEditApp, isGuest } = useAuth();
-  const { trucks, setTrucks, owners, setOwners, customers, setCustomers, transactions, setTransactions, currentTruckId, setCurrentTruckId, members, loading, dataError, refresh } = useTruckData(workspace?.id, isGuest);
+  const { workspace, user, canEditApp, isGuest } = useAuth();
+  const { trucks, setTrucks, owners, setOwners, customers, setCustomers, transactions, setTransactions, currentTruckId, setCurrentTruckId, members, loading, dataError, refresh } = useTruckData(workspace?.id, isGuest, user?.id);
 
   const { currentView, setCurrentView, sortBy, setSortBy, calculationDate, setCalculationDate, isSidebarOpen, setIsSidebarOpen } = useTruckPreferences(workspace?.id, currentTruckId, setCurrentTruckId);
 
@@ -39,7 +39,7 @@ export default function App() {
 
   const deleteConfirmation = useDeleteConfirmation('Truck record deleted successfully.');
   const openDelete = (request: TruckDeleteRequest) => deleteConfirmation.open(request);
-  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddOrUpdateCustomer, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner, handleDeleteCustomer } = useTruckMutations({ workspaceId: workspace?.id, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
+  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddOrUpdateCustomer, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner, handleDeleteCustomer } = useTruckMutations({ workspaceId: workspace?.id, userId: user?.id, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
 
   const handleResetDemoData = () => setError('Demo reset is unavailable for cloud workspaces.');
 
@@ -166,6 +166,7 @@ export default function App() {
         isOpen={!!editingTransaction}
         editingTransaction={editingTransaction}
         owners={activeTruckOwners}
+        customers={customers}
         trucks={trucks}
         currentTruckId={currentTruckId}
           onSubmit={(data) => handleUpdateTransaction(data)}

@@ -3,7 +3,7 @@ import { Building2, Eye, EyeOff, LoaderCircle, PhoneCall } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { standaloneMode, useAuth, type AppId } from './AuthProvider';
-import { supabase } from '../lib/supabase';
+import { createWorkspace, getProfilePhone, importGuestWorkspace, saveUserPhone, sendPasswordReset, signInWithGoogle, signInWithPassword, signUp, updatePassword } from './authRepository';
 import { isValidPhone, normalizePhone, PHONE_COUNTRIES } from './phone';
 import { AppCard } from '../components/AppCard';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
@@ -42,13 +42,30 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     if (!auth.user || standaloneMode || auth.isGuest) { setPhoneStatus('complete'); return () => { cancelled = true; }; }
-    setPhoneStatus('checking');
-    void supabase.from('workspace_profiles').select('phone').eq('user_id', auth.user.id).maybeSingle().then(({ data }) => {
+    const cacheKey = `mathan_profile_phone_verified_${auth.user.id}`;
+    let cachedVerified = false;
+    try {
+      cachedVerified = localStorage.getItem(cacheKey) === 'true';
+    } catch { /* storage may be unavailable */ }
+    const metadataPhone = auth.user.user_metadata?.phone as string | undefined;
+    const metadataVerified = isValidPhone(metadataPhone ?? '');
+    if (!navigator.onLine) {
+      setPhoneStatus(cachedVerified || metadataVerified ? 'complete' : 'required');
+      return () => { cancelled = true; };
+    }
+    setPhoneStatus(cachedVerified || metadataVerified ? 'complete' : 'checking');
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setPhoneStatus(cachedVerified || metadataVerified ? 'complete' : 'required');
+    }, 3500);
+    void getProfilePhone(auth.user.id).then((phoneValue) => {
       if (cancelled) return;
-      const phoneValue = data?.phone ?? (auth.user?.user_metadata?.phone as string | undefined) ?? '';
-      setPhoneStatus(isValidPhone(phoneValue) ? 'complete' : 'required');
-    });
-    return () => { cancelled = true; };
+      const valid = isValidPhone(phoneValue ?? metadataPhone ?? '');
+      setPhoneStatus(valid ? 'complete' : 'required');
+      try { if (valid) localStorage.setItem(cacheKey, 'true'); else localStorage.removeItem(cacheKey); } catch { /* storage may be unavailable */ }
+    }).catch(() => {
+      if (!cancelled) setPhoneStatus(cachedVerified || metadataVerified ? 'complete' : 'required');
+    }).finally(() => window.clearTimeout(timeout));
+    return () => { cancelled = true; window.clearTimeout(timeout); };
   }, [auth.user?.id, auth.isGuest]);
   if (standaloneMode || auth.isGuest) return <>{children}</>;
   if (!auth.configured) return <Panel><Building2 className="h-8 w-8 text-emerald-700" /><h1 className="mt-4 font-serif text-2xl font-bold">Connect Supabase</h1><p className="mt-2 text-sm text-zinc-500">Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env, then restart the web app.</p><button onClick={auth.continueAsGuest} className="mt-6 w-full rounded-xl border border-zinc-300 p-3 text-sm font-bold text-zinc-800">Continue as guest</button><p className="mt-2 text-center text-[11px] text-zinc-400">Guest data stays on this device.</p></Panel>;
@@ -71,10 +88,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           return;
         }
         const response = mode === 'sign-in'
-          ? await supabase.auth.signInWithPassword({ email, password })
+          ? await signInWithPassword(email, password)
           : mode === 'sign-up'
-            ? await supabase.auth.signUp({ email, password, options: { data: { phone: normalizedPhone } } })
-            : await supabase.auth.resetPasswordForEmail(email, { redirectTo: Capacitor.isNativePlatform() ? 'com.mathan.erp://auth/reset-password' : `${window.location.origin}/auth/reset-password` });
+            ? await signUp(email, password, normalizedPhone)
+            : await sendPasswordReset(email, Capacitor.isNativePlatform() ? 'com.mathan.erp://auth/reset-password' : `${window.location.origin}/auth/reset-password`);
         if (response.error) {
           setError(readableError(response.error.message));
           setLoginFailed(mode === 'sign-in');
@@ -94,7 +111,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       try {
         const native = Capacitor.isNativePlatform();
         const redirectTo = native ? 'com.mathan.erp://auth/callback' : `${window.location.origin}/auth/callback`;
-        const { data, error: oauthError } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo, skipBrowserRedirect: native, queryParams: { prompt: 'select_account' } } });
+        const { data, error: oauthError } = await signInWithGoogle(redirectTo, native);
         if (oauthError) {
           setError(readableError(oauthError.message));
           setLoginFailed(true);
@@ -111,7 +128,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     const changeMode = (nextMode: 'sign-in' | 'sign-up' | 'reset') => { clearFailure(); setMode(nextMode); };
     return <Panel><Building2 className="h-8 w-8 text-emerald-700" /><h1 className="mt-4 font-serif text-2xl font-bold">Mathan ERP</h1><p className="mt-1 text-sm text-zinc-500">Sign in to your company workspace.</p><button type="button" onClick={() => void googleSignIn()} disabled={busy} className="mt-6 w-full rounded-xl border border-zinc-300 p-3 text-sm font-bold text-zinc-800 disabled:opacity-60">{busy ? 'Please wait…' : 'Continue with Google'}</button><div className="my-4 flex items-center gap-3 text-[11px] text-zinc-400"><span className="h-px flex-1 bg-zinc-200" />or use email<span className="h-px flex-1 bg-zinc-200" /></div><form onSubmit={submit} className="space-y-3"><input required type="email" value={email} onChange={e => { setEmail(e.target.value); clearFailure(); }} placeholder="Email address" className="w-full rounded-xl border p-3 text-sm" />{mode === 'sign-up' && <div><label className="mb-1 block text-xs font-bold text-zinc-600">Phone number</label><div className="grid grid-cols-[145px_1fr] gap-2"><select required value={countryCode} onChange={e => setCountryCode(e.target.value)} className="rounded-xl border p-3 text-sm">{PHONE_COUNTRIES.map(country => <option key={country.code} value={country.code}>{country.name} ({country.code})</option>)}</select><input required type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="741 321 674" className="min-w-0 rounded-xl border p-3 text-sm" /></div><p className="mt-1 text-[10px] text-zinc-500">Example: 0741321674 becomes {countryCode}741321674.</p></div>}<div className="relative"><input required={mode !== 'reset'} type={showPassword ? 'text' : 'password'} value={password} onChange={e => { setPassword(e.target.value); clearFailure(); }} placeholder="Password" className="w-full rounded-xl border p-3 pr-11 text-sm" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-500 hover:text-zinc-900">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>{displayedError && (showSupport ? <LoginFailure message={readableError(displayedError)} /> : <p role="status" className="text-xs text-red-700">{displayedError}</p>)}<button disabled={busy} className="w-full rounded-xl bg-zinc-900 p-3 text-sm font-bold text-white">{busy ? 'Please wait…' : mode === 'sign-in' ? 'Sign in' : mode === 'sign-up' ? 'Create account' : 'Send reset email'}</button></form><div className="mt-4 flex justify-between text-xs font-semibold text-emerald-800"><button onClick={() => changeMode(mode === 'sign-in' ? 'sign-up' : 'sign-in')}>{mode === 'sign-in' ? 'Create account' : 'Sign in'}</button><button onClick={() => changeMode('reset')}>Reset password</button></div><button onClick={auth.continueAsGuest} className="mt-5 w-full rounded-xl border border-zinc-300 p-3 text-sm font-bold text-zinc-800">Continue as guest</button><p className="mt-2 text-center text-[11px] text-zinc-400">Guest data stays on this device.</p></Panel>;
   }
-  if (phoneStatus === 'checking') return <Panel><LoaderCircle className="mx-auto h-6 w-6 animate-spin text-emerald-700" /><p className="mt-3 text-center text-sm text-zinc-500">Checking your profile…</p></Panel>;
+  // A previously opened workspace is enough to enter the app immediately.
+  // Profile verification continues in the background; if the account still
+  // needs a phone number, the required page replaces the app once the check
+  // completes. This keeps an offline-first restart from waiting on a network
+  // request that is unrelated to cached business data.
+  if (phoneStatus === 'checking' && !auth.workspace) return <Panel><LoaderCircle className="mx-auto h-6 w-6 animate-spin text-emerald-700" /><p className="mt-3 text-center text-sm text-zinc-500">Checking your profile…</p></Panel>;
   if (phoneStatus === 'required') return <PhoneRequiredPage onSaved={() => setPhoneStatus('complete')} />;
   if (window.location.pathname.startsWith('/invite/') && auth.user) return <>{children}</>;
   if (window.location.pathname.startsWith('/admin')) {
@@ -136,12 +158,10 @@ function PhoneRequiredPage({ onSaved }: { onSaved: () => void }) {
     if (!isValidPhone(normalized)) { setError('Enter a valid phone number with the selected country code.'); return; }
     if (!auth.user) return;
     setBusy(true); setError('');
-    const [{ error: profileError }, { error: authError }] = await Promise.all([
-      supabase.from('workspace_profiles').upsert({ user_id: auth.user.id, phone: normalized }),
-      supabase.auth.updateUser({ data: { phone: normalized } }),
-    ]);
+    let saveError: unknown;
+    try { await saveUserPhone(auth.user.id, normalized); } catch (reason) { saveError = reason; }
     setBusy(false);
-    if (profileError || authError) { setError(profileError?.message ?? authError?.message ?? 'Could not save your phone number.'); return; }
+    if (saveError) { setError(saveError instanceof Error ? saveError.message : 'Could not save your phone number.'); return; }
     onSaved();
   };
   return <Panel><PhoneCall className="h-8 w-8 text-emerald-700" /><h1 className="mt-4 font-serif text-2xl font-bold">Add your phone number</h1><p className="mt-2 text-sm leading-6 text-zinc-500">A valid phone number is required so companies can invite you quickly using their contact list. It is stored securely with your account.</p><form onSubmit={save} className="mt-6 space-y-3"><label className="block text-xs font-bold text-zinc-600">Phone number</label><div className="grid min-w-0 grid-cols-[minmax(120px,145px)_minmax(0,1fr)] gap-2"><select required value={countryCode} onChange={(event) => setCountryCode(event.target.value)} className="min-w-0 rounded-xl border p-3 text-sm">{PHONE_COUNTRIES.map((country) => <option key={country.code} value={country.code}>{country.name} ({country.code})</option>)}</select><input required autoFocus inputMode="tel" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="741 321 674" className="min-w-0 rounded-xl border p-3 text-sm" /></div><p className="text-[10px] text-zinc-500">Example: 0741321674 becomes {countryCode}741321674.</p>{error && <p role="alert" className="text-xs text-red-700">{error}</p>}<button disabled={busy} className="w-full rounded-xl bg-zinc-900 p-3 text-sm font-bold text-white disabled:opacity-60">{busy ? 'Saving…' : 'Save phone number'}</button></form><button type="button" onClick={() => void auth.signOut()} className="mt-3 w-full rounded-xl border border-zinc-300 p-3 text-sm font-bold text-zinc-700">Sign out</button></Panel>;
@@ -158,16 +178,17 @@ function PasswordRecovery() {
     if (password.length < 8) { setMessage('Use at least 8 characters.'); return; }
     if (password !== confirm) { setMessage('The passwords do not match.'); return; }
     setBusy(true); setMessage('');
-    const { error } = await supabase.auth.updateUser({ password });
+    let saveError: unknown;
+    try { await updatePassword(password); } catch (reason) { saveError = reason; }
     setBusy(false);
-    if (error) { setMessage(readableError(error.message)); return; }
+    if (saveError) { setMessage(readableError(saveError instanceof Error ? saveError.message : 'Could not update password.')); return; }
     auth.finishPasswordRecovery();
     setMessage('Password updated. You are signed in.');
   };
   return <Panel><Building2 className="h-8 w-8 text-emerald-700" /><h1 className="mt-4 font-serif text-2xl font-bold">Choose a new password</h1><p className="mt-2 text-sm text-zinc-500">Set a new password for your Mathan ERP account.</p><form onSubmit={submit} className="mt-6 space-y-3"><input required minLength={8} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="New password" className="w-full rounded-xl border p-3 text-sm" /><input required minLength={8} type="password" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Confirm new password" className="w-full rounded-xl border p-3 text-sm" />{message && <p className="text-xs text-zinc-600">{message}</p>}<button disabled={busy} className="w-full rounded-xl bg-zinc-900 p-3 text-sm font-bold text-white">{busy ? 'Saving…' : 'Save new password'}</button></form></Panel>;
 }
 
-function WorkspaceSetup() { const auth = useAuth(); const online = useOnlineStatus(); const [name, setName] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const create = async (event: FormEvent) => { event.preventDefault(); if (!online) { setError('Connect to the internet once to download your companies for offline use.'); return; } const cleanedName = name.trim(); if (cleanedName.length < 2) { setError('Enter a company name with at least 2 characters.'); return; } setBusy(true); setError(''); try { const { data: userCheck, error: userError } = await supabase.auth.getUser(); if (userError || !userCheck.user) { await auth.signOut(); setError('Your sign-in session is no longer valid. Please sign in again.'); return; } const { error: rpcError } = await supabase.rpc('create_workspace', { workspace_name: cleanedName }); if (rpcError) { if (rpcError.code === '23503' || rpcError.message.toLowerCase().includes('created_by_fkey')) { await auth.signOut(); setError('Your sign-in session is no longer valid. Please sign in again.'); } else setError(readableError(rpcError.message)); return; } const workspace = await auth.refreshWorkspace(); if (!workspace) setError(auth.workspaceError ? readableError(auth.workspaceError) : 'Your workspace was created, but it could not be loaded. Use Retry to continue.'); } catch { setError('Cannot create a workspace because the local backend is unavailable. Start Supabase and try again.'); } finally { setBusy(false); } }; if (!online) return <Panel><Building2 className="h-8 w-8 text-amber-700" /><h1 className="mt-4 font-serif text-2xl font-bold">Connect once to use companies offline</h1><p className="mt-2 text-sm leading-6 text-zinc-500">This device has not downloaded any companies for your account yet. Connect to the internet, then Mathan ERP will save all companies and app records for offline access.</p><button type="button" onClick={() => void auth.refreshWorkspace()} className="mt-6 w-full rounded-xl bg-zinc-900 p-3 text-sm font-bold text-white">Try again</button></Panel>; return <Panel><h1 className="font-serif text-2xl font-bold">Create your workspace</h1><p className="mt-2 text-sm text-zinc-500">Your Cash Book, Payroll, and Truck Equity records stay private to this company.</p>{auth.workspaceError && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">We could not load your existing workspace: {readableError(auth.workspaceError)} <button type="button" onClick={() => void auth.refreshWorkspace()} className="ml-1 font-bold underline">Retry</button></div>}<form onSubmit={create} className="mt-6 space-y-3"><input required minLength={2} value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="Company name" className="w-full rounded-xl border p-3 text-sm" />{error && <p role="alert" className="rounded-lg bg-red-50 p-2 text-xs text-red-700">{error}</p>}<button disabled={busy} className="w-full rounded-xl bg-zinc-900 p-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{busy ? 'Creating workspace…' : 'Create workspace'}</button></form></Panel>; }
+function WorkspaceSetup() { const auth = useAuth(); const online = useOnlineStatus(); const [name, setName] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const create = async (event: FormEvent) => { event.preventDefault(); if (!online) { setError('Connect to the internet once to download your companies for offline use.'); return; } const cleanedName = name.trim(); if (cleanedName.length < 2) { setError('Enter a company name with at least 2 characters.'); return; } setBusy(true); setError(''); try { await createWorkspace(cleanedName); const workspace = await auth.refreshWorkspace(); if (!workspace) setError(auth.workspaceError ? readableError(auth.workspaceError) : 'Your workspace was created, but it could not be loaded. Use Retry to continue.'); } catch (reason) { setError(readableError(reason instanceof Error ? reason.message : 'Cannot create a workspace.')); } finally { setBusy(false); } }; if (!online) return <Panel><Building2 className="h-8 w-8 text-amber-700" /><h1 className="mt-4 font-serif text-2xl font-bold">Connect once to use companies offline</h1><p className="mt-2 text-sm leading-6 text-zinc-500">This device has not downloaded any companies for your account yet. Connect to the internet, then Mathan ERP will save all companies and app records for offline access.</p><button type="button" onClick={() => void auth.refreshWorkspace()} className="mt-6 w-full rounded-xl bg-zinc-900 p-3 text-sm font-bold text-white">Try again</button></Panel>; return <Panel><h1 className="font-serif text-2xl font-bold">Create your workspace</h1><p className="mt-2 text-sm text-zinc-500">Your Cash Book, Payroll, and Truck Equity records stay private to this company.</p>{auth.workspaceError && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">We could not load your existing workspace: {readableError(auth.workspaceError)} <button type="button" onClick={() => void auth.refreshWorkspace()} className="ml-1 font-bold underline">Retry</button></div>}<form onSubmit={create} className="mt-6 space-y-3"><input required minLength={2} value={name} onChange={e => { setName(e.target.value); setError(''); }} placeholder="Company name" className="w-full rounded-xl border p-3 text-sm" />{error && <p role="alert" className="rounded-lg bg-red-50 p-2 text-xs text-red-700">{error}</p>}<button disabled={busy} className="w-full rounded-xl bg-zinc-900 p-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{busy ? 'Creating workspace…' : 'Create workspace'}</button></form></Panel>; }
 
 type PendingGuestImport = { workspace: GuestWorkspace; payload: GuestWorkspaceExport };
 
@@ -194,16 +215,17 @@ export function GuestImportGate({ children, settingsMode = false }: { children: 
     const target = targets[item.workspace.id];
     if (!target || !auth.user || !navigator.onLine) { setMessage(!navigator.onLine ? 'Connect to the internet to import guest data.' : 'Choose an eligible destination company.'); return; }
     setBusy(item.workspace.id); setMessage('');
-    const { data, error } = await supabase.rpc('import_guest_workspace', { target_workspace: target, target_import_id: item.payload.importId, target_payload: item.payload });
-    if (error) setMessage(error.message);
-    else {
+    try {
+      const data = await importGuestWorkspace(target, item.payload.importId, item.payload);
+      {
       const result = data as { imported?: number; skipped?: number; remapped?: number } | null;
       markGuestWorkspaceImported(item.workspace.id, item.payload.fingerprint, item.payload.importId);
       await prefetchWorkspaceData(target, auth.user.id);
       await auth.refreshWorkspace(target);
       setMessage(`Imported ${result?.imported ?? 0} records, skipped ${result?.skipped ?? 0} duplicates, and remapped ${result?.remapped ?? 0} conflicts.`);
       await load();
-    }
+      }
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Could not import guest company.'); }
     setBusy('');
   };
   if (pending === null) return settingsMode ? null : <>{children}</>;

@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { ArrowRight, Building2, Check, Plus, ShieldCheck, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, type AppId } from '../auth/AuthProvider';
-import { supabase } from '../lib/supabase';
+import { createWorkspace } from '../lib/repositories/workspaceRepository';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -45,11 +45,7 @@ export function CompanySelector() {
     if (cleaned.length < 2) { setError('Enter a company name with at least 2 characters.'); return; }
     setError('');
     await run(async () => {
-      const { data: userCheck, error: userError } = await supabase.auth.getUser();
-      if (userError || !userCheck.user) { await signOut(); setError('Your sign-in session is no longer valid. Please sign in again.'); return; }
-      const { data, error: createError } = await supabase.rpc('create_workspace', { workspace_name: cleaned });
-      if (createError) { setError(createError.code === '23503' || createError.message.toLowerCase().includes('created_by_fkey') ? 'Your sign-in session is no longer valid. Please sign in again.' : createError.message); return; }
-      const created = data as { id?: string } | null;
+      let created: { id?: string } | null; try { created = await createWorkspace(cleaned); } catch (reason) { const message = reason instanceof Error ? reason.message : 'Could not create company.'; if (message.toLowerCase().includes('created_by_fkey')) { await signOut(); setError('Your sign-in session is no longer valid. Please sign in again.'); } else setError(message); return; }
       await refreshWorkspace(created?.id);
       navigate('/');
     });

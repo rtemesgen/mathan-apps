@@ -58,11 +58,13 @@ export const calculateTruckFinancials = (
     switch (tx.type) {
       case 'INCOME':
         totalIncome += tx.amount;
-        cashIncome += tx.amount;
+        // Older APKs stored customer trip credit as INCOME plus customer_id.
+        // Preserve that business meaning when rebuilding the ledger.
+        if (!tx.customerId && tx.counterpartyType !== 'CUSTOMER') cashIncome += tx.amount;
         break;
       case 'EXPENSE':
         totalExpenses += tx.amount;
-        cashExpenses += tx.amount;
+        if (!tx.customerId && tx.counterpartyType !== 'CUSTOMER') cashExpenses += tx.amount;
         break;
       case 'RECEIVABLE':
         totalIncome += tx.amount;
@@ -96,10 +98,19 @@ export const calculateTruckFinancials = (
   // Cash on hand = Initial cash + Income - Expenses + Injections - Repayments - Profit Distributed
   const computedCashOnHand = truck.cashOnHand + cashIncome - cashExpenses;
 
-  const outstanding = new Map<string, { type: 'receivable' | 'payable'; amount: number; name: string; ownerId?: string }>();
+  const outstanding = new Map<string, { type: 'receivable' | 'payable'; amount: number; name: string; customerId?: string; ownerId?: string; counterpartyType?: Transaction['counterpartyType'] }>();
   filteredTx.forEach((tx) => {
-    if (tx.type === 'RECEIVABLE' || tx.type === 'PAYABLE') {
-      outstanding.set(tx.id, { type: tx.type === 'RECEIVABLE' ? 'receivable' : 'payable', amount: tx.amount, name: tx.counterpartyName || 'Unassigned', ownerId: tx.ownerId });
+    const legacyCustomerCredit = (tx.type === 'INCOME' || tx.type === 'EXPENSE') && (Boolean(tx.customerId) || tx.counterpartyType === 'CUSTOMER');
+    if (tx.type === 'RECEIVABLE' || tx.type === 'PAYABLE' || legacyCustomerCredit) {
+      const receivable = tx.type === 'RECEIVABLE' || tx.type === 'INCOME';
+      outstanding.set(tx.id, {
+        type: receivable ? 'receivable' : 'payable',
+        amount: tx.amount,
+        name: tx.counterpartyName || 'Unassigned',
+        customerId: tx.customerId,
+        ownerId: tx.ownerId,
+        counterpartyType: tx.counterpartyType,
+      });
     }
   });
   filteredTx.forEach((tx) => {
@@ -119,9 +130,31 @@ export const calculateTruckFinancials = (
       }
     }
   });
-  const counterpartyBalances = [...outstanding.values()].filter((item) => item.amount > 0).map((item) => ({ type: item.type, name: item.name, ownerId: item.ownerId, amount: item.amount }));
-  const totalReceivable = counterpartyBalances.filter((item) => item.type === 'receivable').reduce((sum, item) => sum + item.amount, 0);
-  const totalPayable = counterpartyBalances.filter((item) => item.type === 'payable').reduce((sum, item) => sum + item.amount, 0);
+  // A customer can be both a receivable and a payable. Collapse those open
+  // rows by customer before reporting so the user sees only the net balance.
+  // Use the stable customer id when available; the name fallback preserves
+  // compatibility with older imported rows that predate customer_id.
+  const grouped = new Map<string, { name: string; customerId?: string; ownerId?: string; isOwner: boolean; receivable: number; payable: number }>();
+  for (const item of outstanding.values()) {
+    if (item.amount <= 0) continue;
+    const isOwner = item.counterpartyType === 'OWNER' || Boolean(item.ownerId);
+    const identity = item.customerId && !isOwner ? `customer:${item.customerId}` : isOwner ? `owner:${item.ownerId ?? item.name.trim().toLowerCase()}` : `name:${item.name.trim().toLowerCase()}`;
+    const current = grouped.get(identity) ?? { name: item.name, customerId: isOwner ? undefined : item.customerId, ownerId: item.ownerId, isOwner, receivable: 0, payable: 0 };
+    if (item.type === 'receivable') current.receivable += item.amount;
+    else current.payable += item.amount;
+    grouped.set(identity, current);
+  }
+  const counterpartyBalances = [...grouped.values()].flatMap((item) => {
+    const net = item.receivable - item.payable;
+    if (net === 0) return [];
+    return [{ type: net > 0 ? 'receivable' as const : 'payable' as const, name: item.name, ...(item.customerId ? { customerId: item.customerId } : {}), ...(item.ownerId ? { ownerId: item.ownerId } : {}), ...(item.isOwner ? { counterpartyType: 'OWNER' as const } : {}), amount: Math.abs(net) }];
+  });
+  const totalCustomerReceivable = counterpartyBalances.filter((item) => item.type === 'receivable' && !item.ownerId && item.counterpartyType !== 'OWNER').reduce((sum, item) => sum + item.amount, 0);
+  const totalCustomerPayable = counterpartyBalances.filter((item) => item.type === 'payable' && !item.ownerId && item.counterpartyType !== 'OWNER').reduce((sum, item) => sum + item.amount, 0);
+  // Public receivable/payable totals are customer/other-party balances. Owner
+  // loans and owner obligations are reported through ownerSummaries instead.
+  const totalReceivable = totalCustomerReceivable;
+  const totalPayable = totalCustomerPayable;
 
   // Calculate per-owner metrics
   const ownerSummaries: OwnerFinancialSummary[] = owners.map((owner) => {
@@ -182,6 +215,8 @@ export const calculateTruckFinancials = (
     operatingExpenses: totalExpenses,
     totalReceivable,
     totalPayable,
+    totalCustomerReceivable,
+    totalCustomerPayable,
     counterpartyBalances,
   };
 };

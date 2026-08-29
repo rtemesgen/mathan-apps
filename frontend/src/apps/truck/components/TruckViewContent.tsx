@@ -114,6 +114,7 @@ export function TruckViewContent({
     <main className="mobile-content-safe flex-1 overflow-y-auto pb-16 sm:pb-8">
       {(error || dataError) && <div role="alert" className="mx-auto mt-3 max-w-3xl rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-800">{error || dataError}</div>}
       {loading && <div className="mx-auto mt-3 max-w-3xl rounded-xl bg-white p-3 text-xs text-zinc-500">Loading Truck data…</div>}
+      {!loading && !error && !dataError && !navigator.onLine && trucks.length === 0 && transactions.length === 0 && <div className="mx-auto mt-3 max-w-3xl rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">No offline Truck data available. Connect to the internet once to load this company.</div>}
 
       {currentView === 'dashboard' && <DashboardView trucks={trucks} currentTruckId={currentTruckId} onSelectTruck={setCurrentTruckId} allOwners={owners} allTransactions={transactions} onOpenManageTrucks={() => setCurrentView('manage-trucks')} />}
 

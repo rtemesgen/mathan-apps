@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { downloadCsvFile } from './fileExport';
+import { getQueuedMutations } from './syncQueue';
 
 export type NotificationRecord = { id: string; user_id: string; workspace_id: string | null; notification_type: string; title: string; body: string; route: string | null; metadata: Record<string, unknown>; read_at: string | null; created_at: string };
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired';
@@ -24,14 +25,31 @@ export async function cancelWorkspaceDeletion(workspaceId: string) { const { dat
 export async function getWorkspaceDeletionStatus(workspaceId: string) { const { data, error } = await supabase.rpc('get_workspace_deletion_status', { target_workspace: workspaceId }); if (error) throw error; return ((data as WorkspaceDeletionStatus[] | null)?.[0] ?? { status: 'active', scheduled_for: null, days_remaining: null }) as WorkspaceDeletionStatus; }
 export type WorkspaceAuditEvent = { id: string; actor_id: string | null; record_type: string; record_id: string | null; action: string; previous_data: Record<string, unknown> | null; next_data: Record<string, unknown> | null; created_at: string; actor_name?: string };
 export async function listWorkspaceAuditEvents(workspaceId: string, limit = 100) {
+  const queued = (await getQueuedMutations()).filter((mutation) => {
+    if (mutation.companyId !== workspaceId) return false;
+    if (mutation.table === 'app_state_snapshots') return /^(cash_book|payroll):/.test(String(mutation.payload.domain ?? ''));
+    return ['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'].includes(mutation.table);
+  });
+  const localEvents: WorkspaceAuditEvent[] = queued.map((mutation) => ({
+    id: `offline:${mutation.mutationId}`,
+    actor_id: mutation.userId,
+    record_type: mutation.table === 'app_state_snapshots' ? String(mutation.payload.domain ?? 'app_state_snapshot').split(':')[0] : mutation.table,
+    record_id: String(mutation.payload.domain ?? mutation.entityId ?? ''),
+    action: 'saved_offline_pending_sync',
+    previous_data: null,
+    next_data: { sync_status: mutation.syncStatus, retry_count: mutation.retryCount },
+    created_at: mutation.queuedAt,
+    actor_name: 'This device',
+  }));
   const { data, error } = await supabase.from('audit_events').select('id,actor_id,record_type,record_id,action,previous_data,next_data,created_at').eq('workspace_id', workspaceId).order('created_at', { ascending: false }).limit(limit);
-  if (error) throw error;
+  if (error && !localEvents.length) throw error;
   const events = (data ?? []) as WorkspaceAuditEvent[];
-  const actorIds = [...new Set(events.map((event) => event.actor_id).filter((id): id is string => Boolean(id)))];
-  if (!actorIds.length) return events;
+  const combined = [...localEvents, ...events].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit);
+  const actorIds = [...new Set(combined.map((event) => event.actor_id).filter((id): id is string => Boolean(id)))];
+  if (!actorIds.length) return combined;
   const { data: profiles } = await supabase.from('workspace_profiles').select('user_id,display_name').in('user_id', actorIds);
   const names = new Map((profiles ?? []).map((profile) => [profile.user_id, profile.display_name || 'Company member']));
-  return events.map((event) => ({ ...event, actor_name: event.actor_id ? names.get(event.actor_id) ?? 'Company member' : 'System' }));
+  return combined.map((event) => ({ ...event, actor_name: event.actor_name ?? (event.actor_id ? names.get(event.actor_id) ?? 'Company member' : 'System') }));
 }
 
 export type ReportRow = Record<string, string | number | null>;

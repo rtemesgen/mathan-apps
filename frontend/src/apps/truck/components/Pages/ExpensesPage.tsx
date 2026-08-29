@@ -12,6 +12,8 @@ import { CategoryAutocomplete } from '../CategoryAutocomplete';
 import { TruckSelect } from '../TruckSelect';
 import { AppDatePicker } from '../../../../components/AppDatePicker';
 import { useAsyncAction } from '../../../../hooks/useAsyncAction';
+import { customersForTruck } from '../../utils/customerScope';
+import { localDateString } from '../../../../lib/localDate';
 
 interface ExpensesPageProps {
   summary: TruckFinancialSummary;
@@ -62,7 +64,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   const [expenseVendor, setExpenseVendor] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseRef, setExpenseRef] = useState('');
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expenseDate, setExpenseDate] = useState(localDateString());
   const [expensePaymentSelection, setExpensePaymentSelection] = useState('CASH');
 
   // Tab 2: Pay Owner State
@@ -79,7 +81,8 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
   );
   const { submitting, runAction } = useAsyncAction();
   const expenseCustomerId = expensePaymentSelection.startsWith('CUSTOMER:') ? expensePaymentSelection.slice('CUSTOMER:'.length) : '';
-  const selectedExpenseCustomer = customers.find((customer) => customer.id === expenseCustomerId);
+  const truckCustomers = customersForTruck(customers, truckId);
+  const selectedExpenseCustomer = truckCustomers.find((customer) => customer.id === expenseCustomerId);
 
   useEffect(() => {
     if (defaultTab) {
@@ -122,7 +125,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       counterpartyType: expenseCustomerId ? 'CUSTOMER' : undefined,
       customerId: expenseCustomerId || undefined,
       counterpartyName: expenseCustomerId ? selectedExpenseCustomer?.name : expenseVendor.trim() || undefined,
-    }), successMessage: expenseCustomerId ? 'Customer payable saved successfully.' : 'Truck expense saved successfully.', errorMessage: 'Could not save the Truck expense. Your entries were kept.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); setExpensePaymentSelection('CASH'); });
+    }), successMessage: expenseCustomerId ? 'Customer payable saved successfully.' : 'Truck expense saved successfully.', errorMessage: 'Could not save the Truck expense. Your form has been kept open.' }).then(() => { setExpenseAmount(''); setExpenseVendor(''); setExpenseDesc(''); setExpenseRef(''); setExpensePaymentSelection('CASH'); });
   };
 
   const handlePayOwnerSubmit = async (e: React.FormEvent) => {
@@ -130,7 +133,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
     const num = parseFloat(payAmount);
     if (isNaN(num) || num <= 0 || !currentPaySummary || submitting) return;
 
-    await runAction({ operation: () => onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo), successMessage: 'Owner payment saved successfully.', errorMessage: 'Could not save the owner payment. Your entry was kept.' }).then(() => setPayAmount(''));
+    await runAction({ operation: () => onSubmitPayOwner(currentPaySummary.owner.id, num, payMemo), successMessage: 'Owner payment saved successfully.', errorMessage: 'Could not save the owner payment. Your form has been kept open.' }).then(() => setPayAmount(''));
   };
 
   const handleProfitDividendSubmit = async (e: React.FormEvent) => {
@@ -143,7 +146,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
       amount: Number(((pool * o.equityPercentage) / 100).toFixed(2)),
     }));
 
-    await runAction({ operation: () => onExecuteProfitDistribution(allocations), successMessage: 'Profit distribution saved successfully.', errorMessage: 'Could not save the profit distribution. Your entries were kept.' }).then(() => setDividendPool('0'));
+    await runAction({ operation: () => onExecuteProfitDistribution(allocations), successMessage: 'Profit distribution saved successfully.', errorMessage: 'Could not save the profit distribution. Your form has been kept open.' }).then(() => setDividendPool('0'));
   };
 
   const poolAmount = parseFloat(dividendPool) || 0;
@@ -225,7 +228,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
               <input type="text" value={expenseVendor} onChange={(e) => setExpenseVendor(e.target.value)} placeholder="e.g. Love's, Pilot, Repair Shop" className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none" />
             </div>
 
-            <div><label className="block text-[#787672] uppercase text-[10px] font-bold">Payment method / customer *</label><TruckSelect value={expensePaymentSelection} onChange={setExpensePaymentSelection} options={[{ value: 'CASH', label: 'Cash paid now' }, ...customers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash paid now" /></div>
+            <div><label className="block text-[#787672] uppercase text-[10px] font-bold">Payment method / customer *</label><TruckSelect value={expensePaymentSelection} onChange={setExpensePaymentSelection} options={[{ value: 'CASH', label: 'Cash paid now' }, ...truckCustomers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash paid now" /></div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>

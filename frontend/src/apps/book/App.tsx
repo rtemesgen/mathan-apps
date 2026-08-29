@@ -17,7 +17,7 @@ import { useAuth } from '../../auth/AuthProvider';
 
 export default function App() {
   const { workspace } = useAuth();
-  const { books: [books], transactions: [transactions], actions } = useCashBookRepository();
+  const { books: [books, , booksReady], transactions: [transactions, , transactionsReady], actions } = useCashBookRepository();
 
 
   // Active Selected Book (null = Dashboard, string = Book Detail View)
@@ -148,6 +148,7 @@ export default function App() {
         <CashBookViewContent
           books={books}
           transactions={transactions}
+          dataReady={booksReady && transactionsReady}
           activeBook={activeBook}
           onSelectBook={setActiveBookId}
           onBackToDashboard={() => setActiveBookId(null)}

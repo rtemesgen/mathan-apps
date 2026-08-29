@@ -45,7 +45,7 @@ export const AddTruckModal: React.FC<AddTruckModalProps> = ({
       vin: draft.vin,
       cashOnHand: parseFloat(draft.cashOnHand) || 0,
       licensePlate: draft.licensePlate || 'TRK-NEW',
-    }), successMessage: 'Truck saved successfully.', errorMessage: 'Could not save the Truck. Your entries were kept.' }).then(() => { setShowAddForm(false); setDraft({ name: '', unitNumber: '', makeModel: '', vin: '', cashOnHand: '', licensePlate: '' }); });
+    }), successMessage: 'Truck saved successfully.', errorMessage: 'Could not save the Truck. Your form has been kept open.' }).then(() => { setShowAddForm(false); setDraft({ name: '', unitNumber: '', makeModel: '', vin: '', cashOnHand: '', licensePlate: '' }); });
   };
 
   return (

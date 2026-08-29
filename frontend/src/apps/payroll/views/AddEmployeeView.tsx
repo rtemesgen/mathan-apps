@@ -50,7 +50,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
     if (!name.trim() || !startDate || !initialSalary) return;
 
     const newEmp: Employee = {
-      id: `emp-${Date.now().toString().slice(-5)}`,
+      id: crypto.randomUUID(),
       name: name.trim(),
       startDate,
       initialSalary: monthlySalaryNum,
@@ -62,7 +62,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
     await runAction({
       operation: () => onAddEmployee(newEmp),
       successMessage: 'Employee saved successfully.',
-      errorMessage: 'Could not save the employee. Your entries were kept.',
+      errorMessage: 'Could not save the employee. Your form has been kept open.',
     });
     setCreatedEmpName(name.trim());
     setIsSuccess(true);

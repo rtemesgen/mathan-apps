@@ -4,7 +4,7 @@ import { addEmployee, addRaise, removeEmployee, saveEmployee, savePayrollTransac
 import type { Book, Transaction as BookTransaction } from '../src/apps/book/types';
 import type { Employee, SalaryChange, Transaction as PayrollTransaction } from '../src/apps/payroll/types';
 import { persistBeforeQueue } from '../src/lib/repositories/mutationLifecycle';
-import { shouldApplyRemoteSnapshot } from '../src/lib/repositories/snapshotRepository';
+import { effectiveSnapshotRevision, shouldApplyRemoteSnapshot } from '../src/lib/repositories/snapshotRepository';
 
 const book: Book = { id: 'b1', name: 'Test', currency: 'USD', createdAt: '2026-01-01', updatedAt: '2026-01-01' };
 const bookTx: BookTransaction = { id: 'bt1', bookId: 'b1', type: 'in', amount: 10, remark: 'sale', createdAt: '2026-01-01', dateTime: '2026-01-01T00:00' };
@@ -24,6 +24,7 @@ assert.equal(queuedAfterStorageFailure, false, 'a storage failure must never enq
 
 const createdBook = createBook({ name: 'New', currency: 'USD' }, '2026-01-02T00:00:00.000Z').data;
 assert.equal(createdBook.createdAt, '2026-01-02T00:00:00.000Z');
+assert.match(createdBook.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, 'offline-created records use stable UUIDs');
 assert.equal(createTransaction('b1', 'out', { amount: 5, remark: 'fuel', dateTime: '2026-01-02T00:00' }).data.type, 'out');
 assert.deepEqual(removeBook('b1', [book], [bookTx]).data, { books: [], transactions: [] });
 assert.equal(addEmployee(employee, []).data[0].id, 'e1');
@@ -32,6 +33,8 @@ assert.deepEqual(removeEmployee('e1', [employee], [payrollTx]).data, { employees
 assert.equal(shouldApplyRemoteSnapshot(2, 1, false), true);
 assert.equal(shouldApplyRemoteSnapshot(1, 1, false), false);
 assert.equal(shouldApplyRemoteSnapshot(3, 1, true), false);
+assert.equal(effectiveSnapshotRevision(4, 1), 4, 'a synced durable revision must win over a stale hook revision');
+assert.equal(effectiveSnapshotRevision(undefined, 1), 1, 'the hook revision remains the fallback before the first sync');
 
 const persistedBooks: Book[][] = [];
 const persistBooks = async (next: Book[]) => { persistedBooks.push(next); return 'saved locally' as const; };
@@ -41,6 +44,13 @@ const created = await saveNewBook({ name: 'Persisted', currency: 'USD' }, [book]
 assert.equal(created.data.name, 'Persisted');
 assert.equal(created.persistence, 'saved locally');
 assert.equal(persistedBooks[0][0].id, created.data.id);
+let latestBooks = [book];
+const updateBooks = async (update: (current: Book[]) => Book[]) => { latestBooks = update(latestBooks); return 'saved locally' as const; };
+const rapidBookA = await saveNewBook({ name: 'Rapid A', currency: 'USD' }, latestBooks, persistBooks, updateBooks);
+const rapidBookB = await saveNewBook({ name: 'Rapid B', currency: 'USD' }, latestBooks, persistBooks, updateBooks);
+assert.deepEqual(latestBooks.map((item) => item.name), ['Rapid B', 'Rapid A', 'Test'], 'snapshot updater must derive each save from the latest state');
+assert.equal(rapidBookA.persistence, 'saved locally');
+assert.equal(rapidBookB.persistence, 'saved locally');
 await saveNewTransaction('b1', 'in', { amount: 25, remark: 'invoice', dateTime: '2026-01-02T00:00' }, [bookTx], persistBookTransactions);
 assert.equal(persistedBookTransactions[0][0].remark, 'invoice');
 const persistedOrder: string[] = [];
@@ -62,6 +72,11 @@ await saveEmployee(employee, [], persistEmployees);
 assert.equal(persistedEmployees[0][0].id, employee.id);
 await savePayrollTransaction(payrollTx, [], persistPayrollTransactions);
 assert.equal(persistedPayrollTransactions[0][0].id, payrollTx.id);
+let latestEmployees: Employee[] = [];
+const updateEmployees = async (update: (current: Employee[]) => Employee[]) => { latestEmployees = update(latestEmployees); return 'saved locally' as const; };
+await saveEmployee({ ...employee, id: 'e2', name: 'Second employee' }, latestEmployees, persistEmployees, updateEmployees);
+await saveEmployee({ ...employee, id: 'e3', name: 'Third employee' }, latestEmployees, persistEmployees, updateEmployees);
+assert.deepEqual(latestEmployees.map((item) => item.id), ['e3', 'e2'], 'payroll snapshot updater must retain consecutive employee saves');
 await saveRemovedEmployee('e1', [employee], [payrollTx], persistEmployees, persistPayrollTransactions);
 assert.deepEqual(persistedEmployees.at(-1), []);
 assert.deepEqual(persistedPayrollTransactions.at(-1), []);

@@ -2,6 +2,7 @@ import React from 'react';
 import { Book, Transaction } from '../types';
 import { calculateBookStats, formatCurrency, formatTimeAgo } from '../utils/formatters';
 import { MoreVertical, Plus, Minus, Clock, Pencil, UserPlus, Trash2 } from 'lucide-react';
+import { EntitySyncBadge } from '../../../components/EntitySyncBadge';
 
 interface BookCardProps {
   book: Book;
@@ -49,6 +50,7 @@ export const BookCard: React.FC<BookCardProps> = ({
             <h3 className="text-sm font-bold text-[#121212] group-hover:text-[#15803D] transition-colors truncate">
               {book.name}
             </h3>
+            <EntitySyncBadge table="app_state_snapshots" entityId={book.id} />
             {book.category && (
               <span className="text-[9px] font-semibold text-[#6B7280] uppercase bg-[#FAF9F5] px-1.5 py-0.2 rounded border border-[#E6E2D6] shrink-0">
                 {book.category}
