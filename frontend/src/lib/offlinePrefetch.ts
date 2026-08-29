@@ -1,13 +1,14 @@
 import { supabase } from './supabase';
 import { offlineStore } from './localStore';
-import { getQueuedMutations, type QueuedMutation } from './syncQueue';
+import { getQueuedMutations, reconcilePendingSnapshotMutation, type QueuedMutation } from './syncQueue';
 import { syncWorkspaceQueues } from './offlineSync';
 import { deleteOffline, listOfflineKeys } from './localStore';
 import { shouldApplyRemoteSnapshot, withSnapshotStorageLock } from './repositories/snapshotRepository';
 import { refreshTruckDataFromCloud } from '../apps/truck/truckRepository';
-import { withConnectionTimeout } from './connectivity';
+import { canAttemptBackend, withConnectionTimeout } from './connectivity';
 import { diagnostic } from './diagnostics';
 import { clearCacheRepair } from './cacheRepair';
+import { affectedEntityIds, threeWayMergeSnapshot } from './reconciliation';
 
 type SnapshotRow = { domain: string; payload: unknown; revision: number };
 
@@ -32,7 +33,8 @@ export async function rebuildWorkspaceCache(workspaceId: string, userId: string)
   );
   const deletable = cacheKeysSafeToClear(keys, workspaceId, userId, queued);
   await Promise.all(deletable.map((key) => deleteOffline(key)));
-  if (navigator.onLine) {
+  if (canAttemptBackend()) {
+    await prefetchWorkspaceData(workspaceId, userId);
     await syncWorkspaceQueues(workspaceId).catch(() => undefined);
     await prefetchWorkspaceData(workspaceId, userId);
   }
@@ -41,7 +43,7 @@ export async function rebuildWorkspaceCache(workspaceId: string, userId: string)
 
 /** Warm every app cache for a workspace without requiring the user to open each app. */
 export async function prefetchWorkspaceData(workspaceId: string, userId: string) {
-  if (!navigator.onLine) return;
+  if (!canAttemptBackend()) return;
   const serverRefreshAt = new Date().toISOString();
   const snapshots = await withConnectionTimeout(supabase.from('app_state_snapshots').select('domain,payload,revision').eq('workspace_id', workspaceId));
   if (snapshots.error) throw snapshots.error;
@@ -59,13 +61,30 @@ export async function prefetchWorkspaceData(workspaceId: string, userId: string)
           // considered, and the checks below prevent an older cloud snapshot
           // from replacing the user's durable local state.
           const queued = await getQueuedMutations();
-          const pending = queued.some((mutation) => mutation.companyId === workspaceId
+          const pending = queued.filter((mutation) => mutation.companyId === workspaceId
             && mutation.table === 'app_state_snapshots'
             && mutation.entityId === row.domain);
           const localRevision = (await offlineStore.read<number>(`${storageKey}:revision`)) ?? 0;
-          if (!shouldApplyRemoteSnapshot(row.revision, localRevision, pending)) return;
-          await offlineStore.write(storageKey, row.payload);
-          await offlineStore.write(`${storageKey}:revision`, row.revision);
+          await offlineStore.writeAtomic([
+            { key: `${storageKey}:confirmed`, value: row.payload },
+            { key: `${storageKey}:confirmed:revision`, value: row.revision },
+          ]);
+          if (pending.length) {
+            const latest = pending.at(-1);
+            if (pending.length === 1 && latest?.syncStatus === 'pending' && !latest.lastAttemptAt && latest.payload.base_payload !== undefined) {
+              const merged = threeWayMergeSnapshot(latest.payload.base_payload, row.payload, latest.payload.payload);
+              await reconcilePendingSnapshotMutation(latest.mutationId, merged, row.revision, affectedEntityIds(row.payload, merged), [
+                { key: storageKey, value: merged },
+                { key: `${storageKey}:revision`, value: row.revision },
+              ]);
+            }
+            return;
+          }
+          if (!shouldApplyRemoteSnapshot(row.revision, localRevision, false)) return;
+          await offlineStore.writeAtomic([
+            { key: storageKey, value: row.payload },
+            { key: `${storageKey}:revision`, value: row.revision },
+          ]);
         });
       }
     }

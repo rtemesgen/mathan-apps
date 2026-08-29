@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { emitToast } from '../lib/toast';
+import { persistenceActivity } from '../lib/persistenceActivity';
 
 export type AsyncActionOptions<T> = {
   onSuccess?: (value: T) => void | Promise<void>;
@@ -19,7 +20,7 @@ export function createActionGate() {
     if (active) return undefined;
     active = true;
     try {
-      return await operation();
+      return await persistenceActivity.track(Promise.resolve().then(operation));
     } finally {
       active = false;
     }

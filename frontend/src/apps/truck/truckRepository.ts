@@ -1,12 +1,13 @@
 import { supabase } from '../../lib/supabase';
 import { offlineStore } from '../../lib/localStore';
-import { getWorkspaceMutationStatus } from '../../lib/syncQueue';
+import { getQueuedMutations, getWorkspaceMutationStatus, type QueuedMutation } from '../../lib/syncQueue';
 import { syncQueue, writeTruckMutationOnline } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
-import { isConnectivityFailure, withConnectionTimeout } from '../../lib/connectivity';
+import { canAttemptBackend, isConnectivityFailure, withConnectionTimeout } from '../../lib/connectivity';
 import { diagnostic } from '../../lib/diagnostics';
 import { recordCacheRepair } from '../../lib/cacheRepair';
 import { saveOfflineFallback } from '../../lib/durablePersistence';
+import { replayRowMutations } from '../../lib/reconciliation';
 import type { Customer, Owner, Transaction, Truck } from './types';
 
 export type TruckPersistenceStatus = 'saving' | 'saved' | 'saved locally' | 'offline saved' | 'sync pending' | 'storage error' | 'sync conflict';
@@ -34,6 +35,7 @@ const cacheKey = async (workspaceId: string, userId?: string) => {
   const { data } = await supabase.auth.getSession();
   return `truck:${data.session?.user.id ?? 'guest'}:${workspaceId}`;
 };
+const confirmedCacheKey = (workspaceId: string, userId: string) => `truck:confirmed:${userId}:${workspaceId}`;
 const emptyCache = (): TruckCache => ({ trucks: [], owners: [], customers: [], transactions: [] });
 const cacheTails = new Map<string, Promise<void>>();
 
@@ -47,8 +49,24 @@ function withCacheLock<T>(workspaceId: string, operation: () => Promise<T>) {
 
 async function getCache(workspaceId: string, userId?: string) { const cached = await offlineStore.read<TruckCache>(await cacheKey(workspaceId, userId)); return cached ? { ...emptyCache(), ...cached, customers: cached.customers ?? [] } : emptyCache(); }
 
-async function saveCache(workspaceId: string, value: TruckCache, userId?: string) {
-  await offlineStore.write(await cacheKey(workspaceId, userId), value);
+function activeTruckMutations(queue: QueuedMutation[], workspaceId: string) {
+  return queue.filter((mutation) => mutation.companyId === workspaceId && TRUCK_TABLES.includes(mutation.table) && mutation.syncStatus !== 'completed');
+}
+
+function replayTruckMutations(confirmed: TruckCache, queue: QueuedMutation[]) {
+  const mutationsFor = <T extends { id: string }>(table: string, convert: (row: Record<string, unknown>) => T) => queue
+    .filter((mutation) => mutation.table === table)
+    .map((mutation) => ({
+      entityId: mutation.entityId,
+      operation: mutation.operation,
+      payload: mutation.operation === 'delete' ? { id: mutation.entityId } : convert(mutation.payload) as T & Record<string, unknown>,
+    }));
+  return {
+    trucks: replayRowMutations(confirmed.trucks, mutationsFor('trucks', truckFromDb)),
+    owners: replayRowMutations(confirmed.owners, mutationsFor('truck_owners', ownerFromDb)),
+    customers: replayRowMutations(confirmed.customers, mutationsFor('truck_customers', customerFromDb)),
+    transactions: replayRowMutations(confirmed.transactions, mutationsFor('truck_transactions', transactionFromDb)),
+  };
 }
 
 type TruckQueueWrite = { table: string; payload: Record<string, unknown>; operation: 'create' | 'update' | 'delete' };
@@ -94,7 +112,7 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
       // commits but the response is lost, the fallback queue must retry with
       // the same ID that the server row already acknowledges.
       const durableWrites = writes.map((write) => ({ ...write, mutationId: crypto.randomUUID() }));
-      if (localOnly || !navigator.onLine || !writes.length) {
+      if (localOnly || !canAttemptBackend() || !writes.length) {
         if (localOnly || !writes.length) await offlineStore.write(storageKey, next);
         else {
           await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId }) => ({
@@ -111,6 +129,11 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
           try { await syncQueue(workspaceId); } catch { /* the queue remains the source of truth */ }
           const remainingStatus = await getWorkspaceMutationStatus(workspaceId, TRUCK_TABLES);
           if (remainingStatus) {
+            await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId }) => ({
+              mutationId, userId, companyId: workspaceId,
+              entityType: table, entityId: String(payload.id ?? ''), table,
+              operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
+            })), [{ key: storageKey, value: next }]);
             reportTruckStatus(remainingStatus === 'conflict' ? 'sync conflict' : 'sync pending');
             diagnostic('local-write-queued', { app: 'truck', workspaceId, operation: 'truck', reason: 'earlier-mutation-unresolved' });
             return next;
@@ -120,7 +143,11 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
           diagnostic('online-save-attempt', { app: 'truck', workspaceId, operation: 'truck' });
           const confirmedRows = await Promise.all(durableWrites.map(({ table, payload, operation, mutationId }) => withConnectionTimeout(writeTruckMutationOnline(workspaceId, table, { ...payload, workspace_id: workspaceId }, operation, operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), mutationId))));
           try {
-            await offlineStore.write(storageKey, applyConfirmedTruckRows(next, writes, confirmedRows));
+            const confirmed = applyConfirmedTruckRows(next, writes, confirmedRows);
+            await offlineStore.writeAtomic([
+              { key: storageKey, value: confirmed },
+              { key: confirmedCacheKey(workspaceId, userId), value: confirmed },
+            ]);
           } catch (cacheError) {
             // The relational write is already authoritative. Mark the cache
             // for refresh instead of queuing a second business mutation.
@@ -140,7 +167,7 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
           return next;
         }
       }
-      reportTruckStatus(navigator.onLine ? 'saved' : 'offline saved');
+      reportTruckStatus(canAttemptBackend() ? 'saved' : 'offline saved');
       return next;
     } catch (error) {
       if ((error as { code?: string })?.code === 'CONFLICT') reportTruckStatus('sync conflict');
@@ -176,7 +203,7 @@ async function fetchTruckData(workspaceId: string) {
 export async function loadTruckData(workspaceId: string, localOnly = false, userId?: string) {
   const cached = await getCache(workspaceId, userId);
   if (localOnly) return cached;
-  if (!navigator.onLine) {
+  if (!canAttemptBackend()) {
     const mutationStatus = await getWorkspaceMutationStatus(workspaceId, TRUCK_TABLES);
     if (mutationStatus === 'conflict') reportTruckStatus('sync conflict');
     else if (mutationStatus === 'pending') reportTruckStatus('sync pending');
@@ -201,17 +228,25 @@ export async function loadTruckData(workspaceId: string, localOnly = false, user
 
 export async function refreshTruckDataFromCloud(workspaceId: string, userId?: string) {
   return withCacheLock(workspaceId, async () => {
-    const mutationStatus = await getWorkspaceMutationStatus(workspaceId, TRUCK_TABLES);
-    if (mutationStatus === 'conflict') { reportTruckStatus('sync conflict'); return getCache(workspaceId, userId); }
-    if (mutationStatus === 'pending') { reportTruckStatus('sync pending'); return getCache(workspaceId, userId); }
-    const next = await fetchTruckData(workspaceId);
-    await saveCache(workspaceId, next, userId);
-    return next;
+    const resolvedUserId = userId ?? (await supabase.auth.getSession()).data.session?.user.id ?? 'guest';
+    const confirmed = await fetchTruckData(workspaceId);
+    const pending = activeTruckMutations(await getQueuedMutations(), workspaceId);
+    const effective = pending.length ? replayTruckMutations(confirmed, pending) : confirmed;
+    if (pending.some((mutation) => mutation.syncStatus === 'conflicted' || mutation.syncStatus === 'error')) reportTruckStatus('sync conflict');
+    else if (pending.length) reportTruckStatus('sync pending');
+    await offlineStore.writeAtomic([
+      { key: confirmedCacheKey(workspaceId, resolvedUserId), value: confirmed },
+      { key: `truck:${resolvedUserId}:${workspaceId}`, value: effective },
+    ]);
+    return effective;
   });
 }
 
-/** Synchronize queued Truck mutations, then refresh only when the repository can safely replace local data. */
+/** Fetch current server rows, overlay pending local operations, then send them.
+ * The second fetch replaces pending badges only after server acknowledgement. */
 export async function synchronizeTruckData(workspaceId: string, userId?: string) {
+  if (!canAttemptBackend()) return getCache(workspaceId, userId);
+  await refreshTruckDataFromCloud(workspaceId, userId);
   await syncQueue(workspaceId);
   return refreshTruckDataFromCloud(workspaceId, userId);
 }

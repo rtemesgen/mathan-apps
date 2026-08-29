@@ -1,12 +1,16 @@
 import { Capacitor } from '@capacitor/core';
 import { deleteNativeRecord, getNativeDatabaseHealth, isJsonSerializable, isNativeMigrationComplete, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
 import { diagnostic } from './diagnostics';
+import { persistenceActivity } from './persistenceActivity';
+import type { OfflineFlushResult } from './androidExit';
+import { planSplitStoreRecovery, type RecoverableQueuedMutation } from './splitStoreRecovery';
 
 const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
 const META_STORE_NAME = 'metadata';
 const DB_VERSION = 2;
 const ATOMIC_RECOVERY_KEY = 'mathan_erp_offline_atomic_recovery_v1';
+const SPLIT_STORE_RECOVERY_KEY = '__offline_sqlite_split_store_recovery_v1__';
 const memoryCache = new Map<string, unknown>();
 const fallbackKey = (key: string) => `mathan_erp_offline_${key}`;
 let nativeStoreReady: Promise<boolean> | null = null;
@@ -89,7 +93,8 @@ function queueWrite<T>(keys: string[], operation: () => Promise<T>) {
   // but a snapshot and its queue record must still share one ordered lock.
   const uniqueKeys = [...new Set(keys)].sort();
   const previous = Promise.all(uniqueKeys.map((key) => writeTails.get(key) ?? Promise.resolve()));
-  const result = previous.then(operation, operation);
+  const trackedOperation = () => persistenceActivity.track(operation());
+  const result = previous.then(trackedOperation, trackedOperation);
   const tail = result.then(() => undefined, () => undefined);
   uniqueKeys.forEach((key) => writeTails.set(key, tail));
   return result.finally(() => uniqueKeys.forEach((key) => { if (writeTails.get(key) === tail) writeTails.delete(key); }));
@@ -161,6 +166,23 @@ async function readNativeMigrationState() {
   return nativeMigrationCheck;
 }
 
+async function recoverSplitIndexedDbStore() {
+  if (await readNativeMetadata<boolean>(SPLIT_STORE_RECOVERY_KEY)) return;
+  const legacyEntries = await readLegacyStore(STORE_NAME);
+  if (legacyEntries === null) return;
+  const legacyRecords = new Map(legacyEntries.map(({ key, value }) => [key, value]));
+  const legacyQueue = legacyRecords.get('sync-queue-v1');
+  const nativeQueue = await readNativeRecord<RecoverableQueuedMutation[]>('sync-queue-v1');
+  const plan = planSplitStoreRecovery(
+    Array.isArray(nativeQueue) ? nativeQueue : [],
+    Array.isArray(legacyQueue) ? legacyQueue as RecoverableQueuedMutation[] : [],
+    legacyRecords,
+  );
+  if (plan.entries.length) await writeNativeRecordsAtomic(plan.entries);
+  await writeNativeMetadata(SPLIT_STORE_RECOVERY_KEY, true);
+  diagnostic('split-store-recovered', { adapter: 'sqlite', recoveredMutationCount: plan.recoveredMutationCount, recoveredRecordCount: Math.max(0, plan.entries.length - 1) });
+}
+
 async function getNativeStoreReady() {
   // SQLite is intentionally an Android-only adapter for this release. Web
   // and any future non-Android native target continue using IndexedDB and the
@@ -169,7 +191,10 @@ async function getNativeStoreReady() {
   nativeStoreReady ??= (async () => {
     // Reopening an already migrated Android database must not rescan every
     // legacy IndexedDB record before the first read or save.
-    if (await readNativeMigrationState()) return true;
+    if (await readNativeMigrationState()) {
+      await recoverSplitIndexedDbStore();
+      return true;
+    }
     const [records, metadata, localStorageRecords] = await Promise.all([
       readLegacyStore(STORE_NAME),
       readLegacyStore(META_STORE_NAME),
@@ -182,6 +207,7 @@ async function getNativeStoreReady() {
       // newest value and must win if both stores contain the same key.
       localStorageRecords.forEach((entry) => mergedRecords.set(entry.key, entry));
       await migrateLegacyRecords([...mergedRecords.values()], metadata);
+      await writeNativeMetadata(SPLIT_STORE_RECOVERY_KEY, true);
       nativeMigrationState = true;
       return true;
     } catch (error) {
@@ -267,9 +293,51 @@ export async function readOffline<T>(key: string): Promise<T | null> {
   }
 }
 
+/** Read the backing store without consulting the in-memory cache. Android
+ * Exit uses this to prove that accepted changes survived the JS process. */
+export async function readDurableOffline<T>(key: string): Promise<T | null> {
+  if (Capacitor.getPlatform() === 'android' && await getNativeStoreReady()) return readNativeRecord<T>(key);
+  return readIndexedDbRecord<T>(key);
+}
+
+export async function flushOfflineWrites(timeoutMs = 15_000): Promise<OfflineFlushResult> {
+  const deadline = Date.now() + timeoutMs;
+  while (writeTails.size) {
+    const tails = [...new Set(writeTails.values())];
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('Timed out while flushing local storage. The app was kept open.');
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.all(tails),
+        new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Timed out while flushing local storage. The app was kept open.')), remaining); }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+  return { pendingMutationCount: 0, verifiedRecordCount: 0 };
+}
+
 export async function writeOffline<T>(key: string, value: T): Promise<void> {
+  const previousMemory = { hadValue: memoryCache.has(key), value: memoryCache.get(key) };
   memoryCache.set(key, value);
   return queueWrite([key], async () => {
+    if (Capacitor.getPlatform() === 'android' && isJsonSerializable(value)) {
+      try {
+        if (!await getNativeStoreReady()) throw new Error('Encrypted SQLite is unavailable.');
+        await replayAtomicRecoveryToNative();
+        await writeNativeRecord(key, value);
+        removeFallback(key);
+        removeAtomicRecovery([key]);
+        return;
+      } catch (error) {
+        if (previousMemory.hadValue) memoryCache.set(key, previousMemory.value);
+        else memoryCache.delete(key);
+        diagnostic('native-write-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
+        throw new Error('Android SQLite rejected the durable write. The change was not saved.', { cause: error });
+      }
+    }
     try {
       if (isJsonSerializable(value) && await getNativeStoreReady()) {
         await replayAtomicRecoveryToNative();
@@ -346,6 +414,24 @@ export async function writeOfflineAtomic(entries: Array<{ key: string; value: un
   const previousMemory = entries.map(({ key }) => ({ key, hadValue: memoryCache.has(key), value: memoryCache.get(key) }));
   entries.forEach(({ key, value }) => memoryCache.set(key, value));
   return queueWrite(entries.map(({ key }) => key), async () => {
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        if (!entries.every(({ value }) => isJsonSerializable(value))) throw new Error('The offline transaction contains a value that SQLite cannot serialize.');
+        if (!await getNativeStoreReady()) throw new Error('Encrypted SQLite is unavailable.');
+        await replayAtomicRecoveryToNative();
+        await writeNativeRecordsAtomic(entries);
+        entries.forEach(({ key }) => removeFallback(key));
+        removeAtomicRecovery(entries.map(({ key }) => key));
+        return;
+      } catch (error) {
+        previousMemory.forEach(({ key, hadValue, value }) => {
+          if (hadValue) memoryCache.set(key, value);
+          else memoryCache.delete(key);
+        });
+        diagnostic('native-write-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
+        throw new Error('Android SQLite rejected the durable write. The change was not saved.', { cause: error });
+      }
+    }
     try {
       if (entries.every(({ value }) => isJsonSerializable(value)) && await getNativeStoreReady()) {
         await replayAtomicRecoveryToNative();
@@ -468,6 +554,7 @@ export interface OfflineStore {
   readMetadata<T>(key: string): Promise<T | null>;
   writeMetadata<T>(key: string, value: T): Promise<void>;
   writeAtomic(entries: Array<{ key: string; value: unknown }>): Promise<void>;
+  flush(): Promise<OfflineFlushResult>;
 }
 
 export const offlineStore: OfflineStore = {
@@ -478,4 +565,5 @@ export const offlineStore: OfflineStore = {
   readMetadata: <T,>(key: string) => readOfflineMetadata<T>(key),
   writeMetadata: <T,>(key: string, value: T) => writeOfflineMetadata(key, value),
   writeAtomic: (entries) => writeOfflineAtomic(entries),
+  flush: () => flushOfflineWrites(),
 };

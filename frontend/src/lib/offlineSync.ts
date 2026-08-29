@@ -177,8 +177,12 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
     } else if (result.status === 'written' && result.payload !== undefined) {
       acknowledgedSnapshotRevisions.set(snapshotEntityKey, result.revision);
       const storageKey = `${mutation.userId}:${workspaceId}:${String(mutation.payload.domain ?? mutation.entityId)}`;
-      await offlineStore.write(storageKey, result.payload);
-      await offlineStore.write(`${storageKey}:revision`, result.revision);
+      await offlineStore.writeAtomic([
+        { key: storageKey, value: result.payload },
+        { key: `${storageKey}:revision`, value: result.revision },
+        { key: `${storageKey}:confirmed`, value: result.payload },
+        { key: `${storageKey}:confirmed:revision`, value: result.revision },
+      ]);
     }
     } catch (error) {
       if (mutation.table !== 'app_state_snapshots') reportTruckMutationStatus('sync pending');

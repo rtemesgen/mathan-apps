@@ -36,6 +36,13 @@ async function truckSection(name) {
   await page.getByRole('button', { name }).click();
 }
 
+async function payrollSection(name) {
+  const direct = page.getByRole('button', { name }).first();
+  if (await direct.count() > 0 && await direct.isVisible()) return direct.click();
+  await page.getByTitle('Open Navigation Menu').click();
+  await page.getByRole('button', { name }).first().click();
+}
+
 async function snapshot() {
   return page.evaluate(() => window.__mathanOfflineDiagnostics.snapshot());
 }
@@ -88,14 +95,13 @@ try {
 
     await route('/payroll');
     await page.getByText('Payroll Tracker').first().waitFor();
-    const payrollRecord = (await snapshot()).records.find((record) => record.kind === 'payroll');
-    const payrollAlreadySaved = (payrollRecord?.counts.employees ?? 0) > 0;
-    const payoutAlreadySaved = (payrollRecord?.counts.transactions ?? 0) > 0;
+    const payrollAlreadySaved = await page.getByText(names.employee, { exact: true }).count() > 0;
+    const payoutAlreadySaved = await page.getByText(names.payout, { exact: true }).count() > 0;
     if (payrollAlreadySaved && await page.getByPlaceholder('e.g. Sarah Jenkins').count() > 0) {
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     }
     if (!payrollAlreadySaved) {
-      await page.getByRole('button', { name: /ADD NEW EMPLOYEE|Add Employee/i }).first().click();
+      await payrollSection(/ADD NEW EMPLOYEE|Add Employee/i);
       await page.getByPlaceholder('e.g. Sarah Jenkins').fill(names.employee);
       await page.getByPlaceholder('Enter amount').fill('5000');
       await page.getByRole('button', { name: 'Save Employee' }).click();

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { loadTruckData, loadTruckWorkspaceMembers, synchronizeTruckData } from './truckRepository';
 import type { Customer, Owner, Transaction, Truck } from './types';
+import { canAttemptBackend } from '../../lib/connectivity';
 
 export function useTruckData(workspaceId: string | undefined, isGuest: boolean, userId?: string) {
   const [trucks, setTrucks] = useState<Truck[]>([]);
@@ -30,7 +31,7 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
       // Online sessions use the synchronized cloud view. Offline sessions use
       // the durable local cache; queued local changes are protected from a
       // cloud refresh by the repository.
-      const data = await loadTruckData(workspaceId, !navigator.onLine, userId);
+      const data = await loadTruckData(workspaceId, !canAttemptBackend(), userId);
       applyData(data);
       setDataError('');
     } catch (reason) {
@@ -41,7 +42,7 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
   }, [workspaceId, userId, applyData]);
 
   const synchronize = useCallback(() => {
-    if (!workspaceId || isGuest || !navigator.onLine) return;
+    if (!workspaceId || isGuest || !canAttemptBackend()) return;
     void synchronizeTruckData(workspaceId, userId).then((data) => { applyData(data); setDataError(''); }).catch((reason) => {
       // The browser can report itself online for the first render while the
       // backend request is already unreachable. Fall back to the durable
@@ -66,7 +67,7 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
         setLoading(false);
         // Do not race cloud hydration against the local read: an older cache
         // read must never overwrite a newer cloud result on first render.
-        if (navigator.onLine && !isGuest) void synchronize();
+        if (canAttemptBackend() && !isGuest) void synchronize();
       })
       .catch(() => { if (active) { setLoading(false); setDataError('Could not load local Truck data.'); } });
     if (workspaceId && !isGuest) void loadTruckWorkspaceMembers(workspaceId).then(setMembers).catch(() => undefined);

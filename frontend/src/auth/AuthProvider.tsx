@@ -13,6 +13,7 @@ import { withConnectionTimeout } from '../lib/connectivity';
 import { createGuestWorkspace as createLocalGuestWorkspace, deleteGuestWorkspace as deleteLocalGuestWorkspace, migrateLegacyGuestData, readGuestWorkspaceCache, renameGuestWorkspace as renameLocalGuestWorkspace, selectGuestWorkspace as selectLocalGuestWorkspace, type GuestWorkspaceCache } from './guestWorkspaces';
 import { diagnostic } from '../lib/diagnostics';
 import { migrateLegacySnapshotKeys } from '../lib/legacyLocalMigration';
+import { diagnoseStartupProtection } from '../lib/offlineDiagnostics';
 
 export type AppId = 'book' | 'payroll' | 'truck';
 export type AppPermission = 'none' | 'view' | 'edit';
@@ -188,8 +189,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await offlineStore.writeMetadata(`permissions:${session.user.id}`, { permissionsLastVerifiedAt: new Date().toISOString() });
     if (preferred) { localStorage.setItem(workspaceCacheKey(session.user.id), JSON.stringify(preferred)); await offlineStore.write(`workspace:${session.user.id}`, preferred); }
     const active = memberships.filter((item) => item.deletionStatus !== 'scheduled');
-    await syncWorkspaceQueues(active.map((item) => item.id)).catch(() => undefined);
+    await Promise.allSettled(active.map((item) => diagnoseStartupProtection('before-fetch', item.id, session.user.id)));
     await Promise.allSettled(active.map((item) => prefetchWorkspaceData(item.id, session.user.id)));
+    await Promise.allSettled(active.map((item) => diagnoseStartupProtection('after-overlay', item.id, session.user.id)));
+    await syncWorkspaceQueues(active.map((item) => item.id)).catch(() => undefined);
+    await Promise.allSettled(active.map((item) => diagnoseStartupProtection('after-sync', item.id, session.user.id)));
+    await Promise.allSettled(active.map((item) => prefetchWorkspaceData(item.id, session.user.id)));
+    await Promise.allSettled(active.map((item) => diagnoseStartupProtection('after-final-refresh', item.id, session.user.id)));
     setWorkspaceLoading(false);
     return preferred ? { id: preferred.id, name: preferred.name, accent_color: preferred.accent_color } : cachedSelection;
   };

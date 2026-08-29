@@ -67,6 +67,8 @@ function withQueueLock<T>(operation: () => Promise<T>) {
   return result;
 }
 
+export async function waitForQueueIdle() { await queueTail; }
+
 function queuedMutation(mutation: QueuedMutationInput): QueuedMutation {
   const mutationId = mutation.mutationId ?? crypto.randomUUID();
   const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
@@ -234,6 +236,39 @@ export async function replaceQueue(queue: QueuedMutation[], processedMutationIds
       .map((mutation) => rebase(normalizeQueuedMutation(mutation)));
     const merged = additions.reduce((current, mutation) => mergeQueuedMutation(current, mutation), rebasedQueue);
     await offlineStore.write(KEY, merged);
+  });
+}
+
+/** Rebase a never-attempted snapshot mutation onto a freshly fetched server
+ * revision while committing the merged effective snapshot in the same local
+ * transaction. Attempted mutations are immutable because the server may have
+ * accepted their original mutation ID and payload. */
+export async function reconcilePendingSnapshotMutation(
+  mutationId: string,
+  value: unknown,
+  revision: number,
+  affectedClientIds: string[],
+  records: Array<{ key: string; value: unknown }>,
+) {
+  return withQueueLock(async () => {
+    const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const queue = raw.map((item) => normalizeQueuedMutation(item));
+    const target = queue.find((mutation) => mutation.mutationId === mutationId);
+    if (!target || target.table !== 'app_state_snapshots' || target.syncStatus !== 'pending' || target.lastAttemptAt) return false;
+    const next = queue.map((mutation) => mutation.mutationId === mutationId ? {
+      ...mutation,
+      baseRevision: revision,
+      payload: {
+        ...mutation.payload,
+        payload: value,
+        expected_revision: revision,
+        base_payload: mutation.payload.base_payload,
+        affected_client_ids: affectedClientIds,
+      },
+      updatedAt: new Date().toISOString(),
+    } : mutation);
+    await offlineStore.writeAtomic([...records, { key: KEY, value: next }]);
+    return true;
   });
 }
 

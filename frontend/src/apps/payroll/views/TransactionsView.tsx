@@ -17,6 +17,7 @@ import {
 import { ExportButton } from '../../../components/ExportButton';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppSelect } from '../../../components/AppSelect';
+import { EntitySyncBadge } from '../../../components/EntitySyncBadge';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -138,6 +139,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         <td className="py-2.5 px-3">
                           <div className="flex items-center gap-1.5 font-bold text-zinc-900 truncate">
                             {tx.employeeName || 'Employee'}
+                            <EntitySyncBadge table="app_state_snapshots" entityId={tx.id} />
                             {isExpanded ? (
                               <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
                             ) : (

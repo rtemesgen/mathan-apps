@@ -1,8 +1,11 @@
 import { offlineStore, validateOfflineStorage } from './localStore';
 import { getQueuedMutations } from './syncQueue';
+import { summarizeStartupProtection } from './androidExit';
+import { diagnostic } from './diagnostics';
 
 export type OfflineDiagnosticRecord = {
   kind: 'cash-book' | 'payroll' | 'truck' | 'outbox' | 'other';
+  layer: 'confirmed' | 'effective' | 'outbox' | 'other';
   scopeHash: string;
   counts: Record<string, number>;
 };
@@ -23,6 +26,7 @@ export type OfflineDiagnosticSnapshot = {
   storage: Awaited<ReturnType<typeof validateOfflineStorage>>;
   records: OfflineDiagnosticRecord[];
   outbox: OfflineDiagnosticMutation[];
+  reconciliation: { confirmedRecords: number; effectiveRecords: number; pendingWithoutEffective: number; scopeMismatchCount: number };
 };
 
 function recordKind(key: string): OfflineDiagnosticRecord['kind'] {
@@ -30,6 +34,13 @@ function recordKind(key: string): OfflineDiagnosticRecord['kind'] {
   if (key.includes(':cash_book:')) return 'cash-book';
   if (key.includes(':payroll:')) return 'payroll';
   if (key.startsWith('truck:')) return 'truck';
+  return 'other';
+}
+
+function recordLayer(key: string): OfflineDiagnosticRecord['layer'] {
+  if (key === 'sync-queue-v1') return 'outbox';
+  if (key.startsWith('truck:confirmed:') || key.includes(':confirmed')) return 'confirmed';
+  if (key.startsWith('truck:') || key.includes(':cash_book:') || key.includes(':payroll:')) return 'effective';
   return 'other';
 }
 
@@ -69,14 +80,27 @@ export async function getOfflineDiagnosticSnapshot(): Promise<OfflineDiagnosticS
   ]);
   const records = await Promise.all(keys.sort().map(async (key) => ({
     kind: recordKind(key),
+    layer: recordLayer(key),
     scopeHash: await shortHash(key),
     counts: valueCounts(await offlineStore.read<unknown>(key)),
   })));
+  const keySet = new Set(keys);
+  const expectedEffectiveKey = (mutation: typeof queue[number]) => mutation.table === 'app_state_snapshots'
+    ? `${mutation.userId}:${mutation.companyId}:${String(mutation.payload.domain ?? mutation.entityId)}`
+    : `truck:${mutation.userId}:${mutation.companyId}`;
+  const pendingWithoutEffective = queue.filter((mutation) => !keySet.has(expectedEffectiveKey(mutation))).length;
+  const scopeMismatchCount = queue.filter((mutation) => !mutation.companyId || !mutation.entityId || !mutation.userId || mutation.userId === 'unknown').length;
   return {
     capturedAt: new Date().toISOString(),
     build,
     storage,
     records,
+    reconciliation: {
+      confirmedRecords: records.filter((record) => record.layer === 'confirmed').length,
+      effectiveRecords: records.filter((record) => record.layer === 'effective').length,
+      pendingWithoutEffective,
+      scopeMismatchCount,
+    },
     outbox: queue.map((mutation) => ({
       mutationId: mutation.mutationId,
       table: mutation.table,
@@ -87,4 +111,13 @@ export async function getOfflineDiagnosticSnapshot(): Promise<OfflineDiagnosticS
       retryCount: mutation.retryCount,
     })),
   };
+}
+
+export async function diagnoseStartupProtection(stage: 'before-fetch' | 'after-overlay' | 'after-sync' | 'after-final-refresh', workspaceId: string, userId: string) {
+  const [queue, keys] = await Promise.all([getQueuedMutations(), offlineStore.listKeys()]);
+  const scoped = queue.filter((mutation) => mutation.companyId === workspaceId && (mutation.userId === userId || mutation.userId === 'unknown'));
+  const keySet = new Set(keys);
+  const summary = await summarizeStartupProtection(stage, scoped, async (key) => keySet.has(key));
+  diagnostic('startup-protection', summary);
+  return summary;
 }

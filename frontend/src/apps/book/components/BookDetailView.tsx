@@ -19,6 +19,7 @@ import {
 import { ExportButton } from '../../../components/ExportButton';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppSelect } from '../../../components/AppSelect';
+import { EntitySyncBadge } from '../../../components/EntitySyncBadge';
 
 interface BookDetailViewProps {
   book: Book;
@@ -257,6 +258,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                           >
                             {isCashIn ? 'CASH IN' : 'CASH OUT'}
                           </span>
+                          <EntitySyncBadge table="app_state_snapshots" entityId={tx.id} />
 
                           {tx.category && (
                             <span className="text-[8px] font-medium text-[#4B5563] bg-[#EFECE3] px-1 py-0.2 rounded-md flex items-center gap-0.5">

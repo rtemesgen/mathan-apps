@@ -1,6 +1,5 @@
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth, type AppId } from '../../auth/AuthProvider';
-import { syncQueue } from '../offlineSync';
 import { hydrateLegacySnapshotGroup, hydrateSnapshot, persistSnapshot, readCanonicalSnapshot, type LegacySnapshotGroup, type SnapshotRepositoryContext } from './snapshotRepository';
 import { reportPersistenceNotice, type PersistenceState } from './types';
 import { emitSyncStatus } from '../toast';
@@ -106,7 +105,7 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
     reportPersistenceNotice({ app: domain, state: 'saving' });
     try {
       const context: SnapshotRepositoryContext = { storageKey, workspaceId: workspace?.id, userId: user?.id, standalone, domain, key };
-      const persistence = await persistSnapshot(context, nextValue, revision.current);
+      const persistence = await persistSnapshot(context, nextValue, revision.current, previousValue);
       lastHydratedValue.current = JSON.stringify(nextValue);
       setValue(nextValue);
       setPersistenceStatus(persistence);
@@ -123,10 +122,23 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
   }, [appId, canEditApp, domain, key, standalone, storageKey, user?.id, workspace, workspace?.id]);
 
   useEffect(() => {
-    const resync = () => { if (workspace) void syncQueue(workspace.id); };
+    let active = true;
+    const resync = () => {
+      if (!workspace || standalone) return;
+      const context: SnapshotRepositoryContext = { storageKey, workspaceId: workspace.id, userId: user?.id, standalone, domain, key };
+      void hydrateSnapshot<T>(context, revision.current).then((reconciled) => {
+        if (!active || reconciled.value === undefined) return;
+        revision.current = reconciled.revision;
+        valueRef.current = reconciled.value;
+        lastHydratedValue.current = JSON.stringify(reconciled.value);
+        setValue(reconciled.value);
+      }).catch(() => {
+        if (active) setPersistenceStatus('load error');
+      });
+    };
     window.addEventListener('online', resync);
-    return () => window.removeEventListener('online', resync);
-  }, [workspace?.id]);
+    return () => { active = false; window.removeEventListener('online', resync); };
+  }, [workspace?.id, user?.id, standalone, storageKey, domain, key]);
 
   const guardedSetValue: Dispatch<SetStateAction<T>> = (next) => {
     if (!standalone && !canEditApp(appId)) return;

@@ -3,6 +3,8 @@ import type { DependencyList } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { executePreparedExit, prepareForAndroidExit } from '../lib/androidExit';
+import { diagnostic } from '../lib/diagnostics';
 
 const ANDROID_BACK_EVENT = 'mathan:android-back';
 
@@ -10,11 +12,14 @@ export function useAndroidBackButton() {
   const location = useLocation();
   const navigate = useNavigate();
   const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false);
+  const [exitBusy, setExitBusy] = useState(false);
+  const [exitError, setExitError] = useState('');
   const exitOpenRef = useRef(false);
 
   const setExitOpen = (open: boolean) => {
     exitOpenRef.current = open;
     setExitConfirmationOpen(open);
+    if (open) setExitError('');
   };
 
   useEffect(() => {
@@ -46,8 +51,24 @@ export function useAndroidBackButton() {
 
   return {
     exitConfirmationOpen,
-    cancelExit: () => setExitOpen(false),
-    confirmExit: async () => { setExitOpen(false); await CapacitorApp.exitApp(); },
+    exitBusy,
+    exitError,
+    cancelExit: () => { if (!exitBusy) setExitOpen(false); },
+    confirmExit: async () => {
+      if (exitBusy) return;
+      setExitBusy(true);
+      setExitError('');
+      try {
+        const result = await executePreparedExit(prepareForAndroidExit, () => CapacitorApp.exitApp());
+        diagnostic('android-exit-prepared', result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Local data could not be verified. The app was kept open.';
+        diagnostic('android-exit-blocked', { error: message });
+        setExitError(message);
+      } finally {
+        setExitBusy(false);
+      }
+    },
   };
 }
 

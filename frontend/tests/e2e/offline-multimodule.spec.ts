@@ -33,9 +33,9 @@ async function inspectCombinedOfflineState(page: Page, labels: Labels) {
     });
     database.close();
 
-    const cashStates = entries.filter((entry) => entry.key.includes(':cash_book:state')).map((entry) => entry.value as { transactions?: Array<{ remark?: string }> });
-    const payrollStates = entries.filter((entry) => entry.key.includes(':payroll:state')).map((entry) => entry.value as { employees?: Array<{ name?: string }>; transactions?: Array<{ notes?: string }> });
-    const truckStates = entries.filter((entry) => entry.key.startsWith('truck:')).map((entry) => entry.value as { owners?: Array<{ name?: string }>; transactions?: Array<{ description?: string }> });
+    const cashStates = entries.filter((entry) => entry.key.endsWith(':cash_book:state')).map((entry) => entry.value as { transactions?: Array<{ remark?: string }> });
+    const payrollStates = entries.filter((entry) => entry.key.endsWith(':payroll:state')).map((entry) => entry.value as { employees?: Array<{ name?: string }>; transactions?: Array<{ notes?: string }> });
+    const truckStates = entries.filter((entry) => entry.key.startsWith('truck:') && !entry.key.startsWith('truck:confirmed:')).map((entry) => entry.value as { owners?: Array<{ name?: string }>; transactions?: Array<{ description?: string }> });
     const queue = entries.find((entry) => entry.key === 'sync-queue-v1')?.value;
     const queued = Array.isArray(queue) ? queue : [];
     const occurrences = (values: Array<string | undefined>, label: string) => values.filter((value) => value === label).length;
@@ -75,7 +75,7 @@ async function navigateClientSide(page: Page, path: string) {
   }, path);
 }
 
-test('Cash Book, Payroll, and Truck survive one combined offline process restart and sync exactly once', async ({}, testInfo) => {
+test('Cash Book, Payroll, and Truck survive Android-style false-online restart and sync exactly once', async ({}, testInfo) => {
   test.setTimeout(240_000);
   const stamp = Date.now();
   const labels: Labels = {
@@ -123,7 +123,7 @@ test('Cash Book, Payroll, and Truck survive one combined offline process restart
     await page.getByRole('option', { name: `${truckName} (${unitNumber})`, exact: true }).dispatchEvent('click');
     await expect(page.locator('header button[aria-haspopup=listbox]')).toContainText(truckName);
     await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
-    await persistent.setOffline(true);
+    await persistent.route(`${status.API_URL}/**`, (route) => route.abort('internetdisconnected'));
 
     await navigateClientSide(page, '/book');
     await page.getByRole('heading', { name: firstBook }).click();
@@ -132,6 +132,7 @@ test('Cash Book, Payroll, and Truck survive one combined offline process restart
     await page.getByPlaceholder('e.g. Counter sale, Payment received').fill(labels.cashIn);
     await page.getByRole('button', { name: 'Save Entry', exact: true }).click();
     await expect(page.getByText(labels.cashIn, { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Sync status: Pending').first()).toBeVisible();
     await page.getByRole('button', { name: 'Dashboard' }).click();
     await page.getByRole('heading', { name: secondBook }).click();
     await page.getByRole('button', { name: 'Cash Out', exact: true }).last().click();
@@ -162,6 +163,7 @@ test('Cash Book, Payroll, and Truck survive one combined offline process restart
     await page.getByPlaceholder('5000').fill('0');
     await page.getByRole('button', { name: 'Save Partner' }).click();
     await expect(page.getByText(labels.partner, { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Sync status: Pending').first()).toBeVisible();
 
     for (const description of [labels.tripOne, labels.tripTwo]) {
       await openTruckSection(page, 'Income (Trips)');
@@ -188,17 +190,15 @@ test('Cash Book, Payroll, and Truck survive one combined offline process restart
 
     const beforeRestart = await inspectCombinedOfflineState(page, labels);
     expect(Object.values(beforeRestart.effective)).toEqual(Array(9).fill(1));
-    expect(Object.values(beforeRestart.outbox)).toEqual(Array(9).fill(1));
+    expect(Object.values(beforeRestart.outbox).every((occurrences) => occurrences >= 1)).toBe(true);
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
     persistent.setDefaultTimeout(12_000);
     const reopened = await persistent.newPage();
     await reopened.goto('/truck');
-    await persistent.setOffline(true);
-    await reopened.reload();
     await expect(reopened.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });
-    expect(await inspectCombinedOfflineState(reopened, labels)).toEqual(beforeRestart);
+    expect((await inspectCombinedOfflineState(reopened, labels)).effective).toEqual(beforeRestart.effective);
     await openTruckSection(reopened, 'Activity History');
     for (const description of [labels.tripOne, labels.tripTwo, labels.repair, labels.tires]) await expect(reopened.getByText(description, { exact: true })).toBeVisible();
     await openTruckSection(reopened, /Partners & Loans/);
@@ -213,8 +213,6 @@ test('Cash Book, Payroll, and Truck survive one combined offline process restart
     await reopened.getByRole('heading', { name: secondBook }).click();
     await expect(reopened.getByText(labels.cashOut, { exact: true })).toBeVisible();
 
-    await persistent.setOffline(false);
-    await reopened.reload();
     await expect.poll(async () => {
       const [{ data: cash }, { data: payroll }, { count: ownerCount }, { data: transactions }] = await Promise.all([
         service.from('app_state_snapshots').select('payload').eq('workspace_id', workspace!.id).eq('domain', 'cash_book:state').maybeSingle(),

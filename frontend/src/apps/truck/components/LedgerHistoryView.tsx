@@ -9,6 +9,7 @@ import { Transaction, Owner, TransactionType } from '../types';
 import { formatCurrency, formatDate, transactionDetails } from '../utils/formatters';
 import { AppDatePicker } from '../../../components/AppDatePicker';
 import { ExportButton } from '../../../components/ExportButton';
+import { EntitySyncBadge } from '../../../components/EntitySyncBadge';
 
 interface LedgerHistoryViewProps {
   transactions: Transaction[];
@@ -217,7 +218,7 @@ export const LedgerHistoryView: React.FC<LedgerHistoryViewProps> = ({
                       <td className="whitespace-nowrap px-4 py-3">
                         {getTypeBadge(tx.type)}
                       </td>
-                      <td className="px-4 py-3 align-top"><div className="font-bold text-xs">{tx.category}</div></td>
+                      <td className="px-4 py-3 align-top"><div className="flex items-center gap-1 font-bold text-xs">{tx.category}<EntitySyncBadge table="truck_transactions" entityId={tx.id} /></div></td>
                       <td className="px-4 py-3 align-top"><div className="break-words text-[11px] leading-5 text-[#787672]">{transactionDetails(tx) || '—'}</div></td>
                       <td className="whitespace-nowrap px-4 py-3 text-[#4a4843]">
                         {getOwnerName(tx.ownerId)}
