@@ -9,6 +9,7 @@ import { AuthGate } from './auth/AuthGate';
 import { useAndroidBackButton } from './hooks/useAndroidBackButton';
 import { AppUpdateNotice } from './components/AppUpdateNotice';
 import { AppToast } from './components/AppToast';
+import { SyncIssueSheet } from './components/SyncIssueSheet';
 import { AppNotificationCenter } from './components/AppNotificationCenter';
 import { AppConnectivityBanner } from './components/AppConnectivityBanner';
 import { AppUpdateProvider } from './hooks/useAppUpdate';
@@ -61,6 +62,7 @@ export default function App() {
           <AndroidNavigationBridge />
           <AppUpdateNotice />
           <AppToast />
+          <SyncIssueSheet />
           <AppConnectivityBanner />
           <AppNotificationCenter />
           <AuthGate>

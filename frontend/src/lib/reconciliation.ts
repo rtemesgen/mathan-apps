@@ -5,6 +5,10 @@ export type EntitySyncStatus = {
   entityId: string;
   mutationId: string;
   state: EntitySyncState;
+  message?: string;
+  updatedAt?: string;
+  workspaceId?: string;
+  operation?: 'create' | 'update' | 'upsert' | 'delete';
 };
 
 type Identified = { id: string };
@@ -19,6 +23,11 @@ type SyncMutation = {
   entityId: string;
   syncStatus: string;
   payload: Record<string, unknown>;
+  errorMessage?: string;
+  lastError?: string;
+  updatedAt?: string;
+  companyId?: string;
+  operation?: 'create' | 'update' | 'upsert' | 'delete';
 };
 
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
@@ -118,6 +127,10 @@ export function deriveEntitySyncStatuses(mutations: SyncMutation[]) {
       entityId,
       mutationId: mutation.mutationId,
       state,
+      message: mutation.errorMessage ?? mutation.lastError,
+      updatedAt: mutation.updatedAt,
+      workspaceId: mutation.companyId ?? String(mutation.payload.workspace_id ?? ''),
+      operation: mutation.operation,
     });
   }
   return statuses;

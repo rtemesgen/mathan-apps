@@ -184,8 +184,9 @@ export const IncomePage: React.FC<IncomePageProps> = ({
           )}
 
           {incomeType === 'TRIP' && <div>
-            <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">Payment method / customer *</label>
-            <TruckSelect value={paymentSelection} onChange={setPaymentSelection} options={[{ value: 'CASH', label: 'Cash received now' }, ...truckCustomers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash received now" />
+            <label className="block text-[#787672] uppercase text-[10px] mb-1 font-bold">How is this trip paid? *</label>
+            <TruckSelect value={paymentSelection} onChange={setPaymentSelection} options={[{ value: 'CASH', label: 'Cash received now' }, ...truckCustomers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: `${customer.name} — will pay later` }))]} placeholder="Cash received now" />
+            <p className="mt-1 text-[10px] font-medium text-[#787672]">{selectedCustomer ? `${selectedCustomer.name} owes the Truck. Cash stays unchanged until their payment is received.` : 'Cash increases immediately.'}</p>
           </div>}
 
           {/* Amount & Category */}

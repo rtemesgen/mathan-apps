@@ -228,7 +228,7 @@ export const ExpensesPage: React.FC<ExpensesPageProps> = ({
               <input type="text" value={expenseVendor} onChange={(e) => setExpenseVendor(e.target.value)} placeholder="e.g. Love's, Pilot, Repair Shop" className="w-full bg-[#f8f6f0] border border-[#d8d0be] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#1c1d1f] focus:outline-none" />
             </div>
 
-            <div><label className="block text-[#787672] uppercase text-[10px] font-bold">Payment method / customer *</label><TruckSelect value={expensePaymentSelection} onChange={setExpensePaymentSelection} options={[{ value: 'CASH', label: 'Cash paid now' }, ...truckCustomers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: customer.name }))]} placeholder="Cash paid now" /></div>
+            <div><label className="block text-[#787672] uppercase text-[10px] font-bold">How is this expense funded? *</label><TruckSelect value={expensePaymentSelection} onChange={setExpensePaymentSelection} options={[{ value: 'CASH', label: 'Cash paid now' }, ...truckCustomers.map((customer) => ({ value: `CUSTOMER:${customer.id}`, label: `${customer.name} — paid for Truck` }))]} placeholder="Cash paid now" /><p className="mt-1 text-[10px] font-medium text-[#787672]">{selectedExpenseCustomer ? `${selectedExpenseCustomer.name} paid for the Truck. This becomes payable or offsets what they owe; Truck cash stays unchanged.` : 'Truck cash decreases immediately.'}</p></div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>

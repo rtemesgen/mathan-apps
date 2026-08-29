@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { calculateTruckFinancials } from '../src/apps/truck/utils/formatters';
+import { calculateTruckFinancials, operationalTransactions, orderOutstandingForSettlement, transactionsAsOf } from '../src/apps/truck/utils/formatters';
 import type { Owner, Transaction, Truck } from '../src/apps/truck/types';
 import { customersForTruck } from '../src/apps/truck/utils/customerScope';
 import { sortTruckActivityNewestFirst } from '../src/apps/truck/components/LedgerHistoryView';
@@ -23,6 +23,22 @@ assert.equal(result.netProfit, 800);
 assert.equal(result.cashOnHand, 1150);
 assert.equal(result.ownerSummaries[0].unpaidBalance, 250);
 assert.equal(result.ownerSummaries[0].earnedProfitShare, 400);
+
+// The dashboard, partner card, and customer card must be driven by the same
+// as-of transaction set. The partner history can otherwise show loans that
+// the summary silently excludes.
+const screenshotOwnerTransactions: Transaction[] = [
+  { id: 'loan-1', truckId: 't1', date: '2026-08-29', type: 'CAPITAL_INJECTION', category: 'Owner Loan to Truck', amount: 1, ownerId: 'o1', description: '' },
+  { id: 'loan-100', truckId: 't1', date: '2026-08-29', type: 'CAPITAL_INJECTION', category: 'Owner Loan to Truck', amount: 100, ownerId: 'o1', description: '' },
+  { id: 'loan-1000', truckId: 't1', date: '2026-08-29', type: 'CAPITAL_INJECTION', category: 'Owner Loan to Truck', amount: 1000, ownerId: 'o1', description: '' },
+  { id: 'repayment-11', truckId: 't1', date: '2026-08-29', type: 'CAPITAL_REPAYMENT', category: 'Owner Debt Clearance', amount: 11, ownerId: 'o1', description: '' },
+];
+const screenshotSummary = calculateTruckFinancials(truck, [owner], screenshotOwnerTransactions, '2026-08-29');
+assert.equal(screenshotSummary.ownerSummaries[0].totalInjected, 1101);
+assert.equal(screenshotSummary.ownerSummaries[0].totalRepaid, 11);
+assert.equal(screenshotSummary.ownerSummaries[0].totalUnpaidMoneyOwed, 1090, 'Owner Loan entries minus Owner Debt Clearance must produce the visible money owed');
+assert.deepEqual(transactionsAsOf(screenshotOwnerTransactions, '2026-08-28'), [], 'all Truck views must receive the same as-of transaction collection');
+assert.deepEqual(operationalTransactions(screenshotOwnerTransactions), screenshotOwnerTransactions, 'operational Truck screens must never hide a newly saved record behind a persisted report date');
 
 const creditTransactions: Transaction[] = [
   { id: 'ar', truckId: 't1', date: '2026-01-01', type: 'RECEIVABLE', category: 'Freight', amount: 500, counterpartyType: 'CUSTOMER', counterpartyName: 'ABC Customer', description: '' },
@@ -74,6 +90,18 @@ const legacyCustomerResult = calculateTruckFinancials(truck, [owner], [
 assert.equal(legacyCustomerResult.totalIncome, 6500);
 assert.equal(legacyCustomerResult.cashOnHand, 100, 'unpaid legacy trip credit is not counted as cash');
 assert.deepEqual(legacyCustomerResult.counterpartyBalances, [{ type: 'receivable', name: 'Wow', customerId: 'customer-1', amount: 6500 }]);
+
+const oldestFirstSettlement = calculateTruckFinancials(truck, [owner], [
+  { id: 'later-trip', truckId: 't1', date: '2026-02-02', type: 'RECEIVABLE', category: 'Trip', amount: 100, customerId: 'customer-1', counterpartyType: 'CUSTOMER', counterpartyName: 'ABC', description: '' },
+  { id: 'older-trip', truckId: 't1', date: '2026-02-01', type: 'RECEIVABLE', category: 'Trip', amount: 100, customerId: 'customer-1', counterpartyType: 'CUSTOMER', counterpartyName: 'ABC', description: '' },
+  { id: 'payment', truckId: 't1', date: '2026-02-03', type: 'RECEIVABLE_SETTLEMENT', category: 'Customer payment', amount: 125, customerId: 'customer-1', counterpartyType: 'CUSTOMER', counterpartyName: 'ABC', description: '' },
+]);
+assert.deepEqual(oldestFirstSettlement.counterpartyBalances, [{ type: 'receivable', name: 'ABC', customerId: 'customer-1', amount: 75 }], 'an unlinked customer payment must settle oldest outstanding trips first');
+assert.equal(oldestFirstSettlement.cashOnHand, 225, 'customer payment is cash received by the truck');
+assert.deepEqual(orderOutstandingForSettlement([
+  { id: 'later-trip', date: '2026-02-02', type: 'receivable' as const, amount: 100, name: 'ABC', customerId: 'customer-1' },
+  { id: 'older-trip', date: '2026-02-01', type: 'receivable' as const, amount: 100, name: 'ABC', customerId: 'customer-1' },
+], 'receivable', 'customer-1', 'ABC').map((item) => item.id), ['older-trip', 'later-trip'], 'an unlinked customer payment must select the oldest matching receivable first');
 
 const activityOrder = sortTruckActivityNewestFirst([
   { id: 'older-recorded', truckId: 't1', date: '2026-08-28', type: 'INCOME', category: 'Trip', amount: 1, description: '', createdAt: '2026-08-28T09:00:00.000Z' },

@@ -21,7 +21,7 @@ export default function App() {
   const { workspace, user, canEditApp, isGuest } = useAuth();
   const { trucks, setTrucks, owners, setOwners, customers, setCustomers, transactions, setTransactions, currentTruckId, setCurrentTruckId, members, loading, dataError, refresh } = useTruckData(workspace?.id, isGuest, user?.id);
 
-  const { currentView, setCurrentView, sortBy, setSortBy, calculationDate, setCalculationDate, isSidebarOpen, setIsSidebarOpen } = useTruckPreferences(workspace?.id, currentTruckId, setCurrentTruckId);
+  const { currentView, setCurrentView, sortBy, setSortBy, isSidebarOpen, setIsSidebarOpen } = useTruckPreferences(workspace?.id, currentTruckId, setCurrentTruckId);
 
   const [isAddPartnerModalOpen, setIsAddPartnerModalOpen] = useState<boolean>(false);
   const [editingOwner, setEditingOwner] = useState<Owner | null>(null);
@@ -35,11 +35,11 @@ export default function App() {
 
   const editable = canEditApp('truck');
   const [error, setError] = useState('');
-  const { activeTruck, activeTruckOwners, truckFinancials, sortedOwnerSummaries } = useTruckFinancials(trucks, owners, transactions, currentTruckId, calculationDate, sortBy);
+  const { activeTruck, activeTruckOwners, truckFinancials, sortedOwnerSummaries } = useTruckFinancials(trucks, owners, transactions, currentTruckId, sortBy);
 
   const deleteConfirmation = useDeleteConfirmation('Truck record deleted successfully.');
   const openDelete = (request: TruckDeleteRequest) => deleteConfirmation.open(request);
-  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddOrUpdateCustomer, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner, handleDeleteCustomer } = useTruckMutations({ workspaceId: workspace?.id, userId: user?.id, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
+  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddOrUpdateCustomer, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner, handleDeleteCustomer } = useTruckMutations({ workspaceId: workspace?.id, userId: user?.id, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
 
   const handleResetDemoData = () => setError('Demo reset is unavailable for cloud workspaces.');
 
@@ -58,8 +58,6 @@ export default function App() {
         currentView={currentView}
         setCurrentView={setCurrentView}
         summary={truckFinancials}
-        calculationDate={calculationDate}
-        setCalculationDate={setCalculationDate}
         onResetDemoData={handleResetDemoData}
         onOpenAddOwner={() => {
           setEditingOwner(null);

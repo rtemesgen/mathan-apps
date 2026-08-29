@@ -10,6 +10,7 @@ import { CashReportView } from './Pages/CashReportView';
 import { DashboardView } from './Pages/DashboardView';
 import { PartnersPage } from './Pages/PartnersPage';
 import { CustomersPage } from './Pages/CustomersPage';
+import { operationalTransactions } from '../utils/formatters';
 
 type TruckTransactionInput = {
   truckId: string;
@@ -104,7 +105,7 @@ export function TruckViewContent({
   dataError,
   onExportReport,
 }: TruckViewContentProps) {
-  const activeTransactions = transactions.filter((transaction) => transaction.truckId === activeTruck.id);
+  const activeTransactions = operationalTransactions(transactions.filter((transaction) => transaction.truckId === activeTruck.id));
   const openExpenses = () => {
     setExpensesTab('expense');
     setCurrentView('expenses');
@@ -120,7 +121,7 @@ export function TruckViewContent({
 
       {currentView === 'partners' && <PartnersPage
         activeTruck={activeTruck}
-        transactions={transactions}
+        transactions={activeTransactions}
         sortedOwnerSummaries={sortedOwnerSummaries}
         sortBy={sortBy}
         onSortByChange={setSortBy}
@@ -133,7 +134,7 @@ export function TruckViewContent({
         onEditTransaction={setEditingTransaction}
       />}
 
-      {currentView === 'customers' && <CustomersPage truck={activeTruck} customers={customers} transactions={activeTransactions} balances={truckFinancials.counterpartyBalances} onSave={onAddOrUpdateCustomer} onDelete={onDeleteCustomer} />}
+      {currentView === 'customers' && <CustomersPage truck={activeTruck} customers={customers} transactions={activeTransactions} balances={truckFinancials.counterpartyBalances} onSave={onAddOrUpdateCustomer} onDelete={onDeleteCustomer} onReceivePayment={handleAddTransaction} />}
 
       {currentView === 'cash-report' && <CashReportView
         truck={activeTruck}

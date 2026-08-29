@@ -52,8 +52,8 @@ export function EntitySyncBadge({ table, entityId, recordLabel, className = '' }
       ? { label: 'Needs attention', icon: AlertTriangle, style: 'border-red-200 bg-red-50 text-red-700', spin: false }
       : { label: 'Pending', icon: Clock3, style: 'border-amber-200 bg-amber-50 text-amber-800', spin: false };
   const Icon = detail.icon;
-  return <span role="status" aria-label={`Sync status: ${detail.label}`} className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${detail.style} ${className}`}>
+  return <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('mathan:open-sync-issue', { detail: status }))} aria-label={`Sync status: ${detail.label}. Open sync issue.`} className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${detail.style} ${className}`}>
     <Icon aria-hidden="true" className={`h-2.5 w-2.5 ${detail.spin ? 'animate-spin' : ''}`} />
     {recordLabel ? `${recordLabel} · ${detail.label}` : detail.label}
-  </span>;
+  </button>;
 }
