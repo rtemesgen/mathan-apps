@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, relative } from 'node:path';
 
 const dist = resolve(import.meta.dirname, '../../frontend/dist');
@@ -7,16 +8,9 @@ const output = resolve(dist, 'build-provenance.json');
 const repository = resolve(import.meta.dirname, '../..');
 
 function currentGitSha() {
-  const gitDirectory = resolve(repository, '.git');
-  const head = readFileSync(resolve(gitDirectory, 'HEAD'), 'utf8').trim();
-  if (!head.startsWith('ref: ')) return head;
-  const reference = head.slice(5);
-  const looseReference = resolve(gitDirectory, reference);
-  if (existsSync(looseReference)) return readFileSync(looseReference, 'utf8').trim();
-  const packed = readFileSync(resolve(gitDirectory, 'packed-refs'), 'utf8').split('\n')
-    .find((line) => line.endsWith(` ${reference}`));
-  if (!packed) throw new Error(`Could not resolve Git reference ${reference}`);
-  return packed.split(' ')[0];
+  // `git rev-parse` works for both a regular checkout and a linked worktree,
+  // where .git is a pointer file rather than a directory.
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim();
 }
 
 function filesBelow(directory) {

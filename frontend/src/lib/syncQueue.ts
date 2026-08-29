@@ -287,3 +287,35 @@ export async function retryQueuedMutations(workspaceId: string) {
     await offlineStore.write(KEY, retried);
   });
 }
+
+/** Retry one record from its visible sync issue. Conflicts require an explicit
+ * user choice, so callers must opt in before the protected row is requeued. */
+export async function retryQueuedMutation(mutationId: string, includeConflict = false) {
+  return withQueueLock(async () => {
+    const rawQueue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const now = new Date().toISOString();
+    let retried = false;
+    const queue = rawQueue.map((raw) => {
+      const mutation = normalizeQueuedMutation(raw);
+      const retryable = mutation.syncStatus === 'error' || (includeConflict && mutation.syncStatus === 'conflicted');
+      if (mutation.mutationId !== mutationId || !retryable) return mutation;
+      retried = true;
+      return { ...mutation, syncStatus: 'pending' as const, updatedAt: now, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, errorCode: undefined, errorMessage: undefined, lastError: undefined };
+    });
+    if (retried) await offlineStore.write(KEY, queue);
+    return retried;
+  });
+}
+
+/** Explicitly discard one queued change after the user chooses the server
+ * version. The effective cache is refreshed by the caller after removal. */
+export async function discardQueuedMutation(mutationId: string) {
+  return withQueueLock(async () => {
+    const rawQueue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const queue = rawQueue.map((item) => normalizeQueuedMutation(item));
+    const next = queue.filter((mutation) => mutation.mutationId !== mutationId);
+    if (next.length === queue.length) return false;
+    await offlineStore.write(KEY, next);
+    return true;
+  });
+}

@@ -39,7 +39,7 @@ export default function App() {
 
   const deleteConfirmation = useDeleteConfirmation('Truck record deleted successfully.');
   const openDelete = (request: TruckDeleteRequest) => deleteConfirmation.open(request);
-  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddOrUpdateCustomer, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner, handleDeleteCustomer } = useTruckMutations({ workspaceId: workspace?.id, userId: user?.id, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, calculationDate, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
+  const { handleAddTransaction, handleUpdateTransaction, handlePayOwnerSubmit, handleExecuteProfitDistribution, handleAddOrUpdateOwner, handleAddOrUpdateCustomer, handleAddTruckSubmit, handleUpdateTruck, handleDeleteTruck, handleDeleteTransaction, handleDeleteOwner, handleDeleteCustomer } = useTruckMutations({ workspaceId: workspace?.id, userId: user?.id, isGuest, editable, trucks, owners, customers, transactions, activeTruck, editingTransaction, refresh, setCurrentTruckId, setEditingTransaction, setError, openDelete });
 
   const handleResetDemoData = () => setError('Demo reset is unavailable for cloud workspaces.');
 
@@ -126,6 +126,7 @@ export default function App() {
           loading={loading}
           error={error}
           dataError={dataError}
+          calculationDate={calculationDate}
           onExportReport={openExport}
         />
       </div>

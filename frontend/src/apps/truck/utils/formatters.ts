@@ -32,6 +32,13 @@ export const transactionDetails = (transaction: Pick<Transaction, 'description' 
     : description;
 };
 
+/** One shared transaction scope for every Truck projection shown "as of" a
+ * selected date. Keeping this separate prevents one screen from calculating
+ * all-time totals while another silently hides the same rows. */
+export const transactionsAsOf = (transactions: Transaction[], calculationDate?: string) => (
+  calculationDate ? transactions.filter((transaction) => transaction.date <= calculationDate) : transactions
+);
+
 /**
  * Calculates complete financial metrics for a truck given its owners and transactions
  */
@@ -42,9 +49,7 @@ export const calculateTruckFinancials = (
   calculationDate?: string
 ): TruckFinancialSummary => {
   // Filter transactions up to calculation date if specified
-  const filteredTx = calculationDate
-    ? transactions.filter((t) => !calculationDate || t.date <= calculationDate)
-    : transactions;
+  const filteredTx = transactionsAsOf(transactions, calculationDate);
 
   let totalIncome = 0;
   let totalExpenses = 0;
