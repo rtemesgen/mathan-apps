@@ -20,11 +20,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
-      - run: npm run lint
-        working-directory: frontend
-      - run: npm run test:accounting
-        working-directory: frontend
-      - run: npm run test:admin-backup
+      # Keep the complete persistence, migration, queue, recovery, export, and
+      # architecture suite as a required PR gate. Running only a hand-picked
+      # subset here allowed offline-storage regressions to bypass CI.
+      - run: npm test
         working-directory: frontend
       - run: npm run build
         working-directory: frontend

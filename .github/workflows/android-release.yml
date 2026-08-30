@@ -41,6 +41,10 @@ jobs:
         run: npm ci
         working-directory: mobile
 
+      - name: Run complete frontend production checks
+        run: npm test
+        working-directory: frontend
+
       - name: Validate release signing secrets
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -88,9 +92,11 @@ jobs:
 
       - name: Verify APK signature and create release verification files
         run: |
+          set -euo pipefail
           APK=mobile/android/app/build/outputs/apk/release/app-release.apk
           BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
           "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "versionName='${VERSION_NAME#v}'"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "package: name='com.mathan.erp'"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee mobile/android/app/build/outputs/apk/release/signing-certificate.txt
           sha256sum "$APK" > mobile/android/app/build/outputs/apk/release/app-release.apk.sha256
           APK_SHA256=$(cut -d' ' -f1 mobile/android/app/build/outputs/apk/release/app-release.apk.sha256)
