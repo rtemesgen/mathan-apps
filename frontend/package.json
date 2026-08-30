@@ -29,7 +29,8 @@
     "test:context-export": "node --import tsx tests/context-export.test.ts",
     "test:book-import": "node --import tsx tests/book-import.test.ts",
     "test:e2e": "playwright test",
-    "test": "npm run lint && npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:reconciliation && npm run test:connectivity && npm run test:android-exit && npm run test:split-store-recovery && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:architecture"
+    "test:unit": "npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:reconciliation && npm run test:connectivity && npm run test:android-exit && npm run test:split-store-recovery && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:architecture",
+    "test": "npm run lint && npm run test:unit"
   },
   "dependencies": {
     "@capacitor-community/contacts": "^7.2.0",
