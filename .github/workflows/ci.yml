@@ -91,7 +91,39 @@ jobs:
         working-directory: frontend
       - run: npm ci
         working-directory: mobile
-      - run: npm run build
+      - run: npm run build:instrumentation
         working-directory: mobile
-      - run: ./gradlew assembleDebug
-        working-directory: mobile/android
+      - name: Run application/SQLite instrumentation tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          working-directory: mobile/android
+          script: |
+            adb logcat -c
+            set +e
+            ./gradlew connectedDebugAndroidTest --stacktrace
+            test_status=$?
+            if [ "$test_status" -ne 0 ]; then
+              mkdir -p app/build/android-diagnostics
+              adb logcat -d -v threadtime > app/build/android-diagnostics/logcat.txt || true
+              adb shell dumpsys activity processes > app/build/android-diagnostics/processes.txt || true
+              adb shell run-as com.mathan.erp.debug sh -c 'find databases shared_prefs -type f -maxdepth 2 -print -exec du -h {} \;' \
+                > app/build/android-diagnostics/database-files.txt 2>&1 || true
+              adb exec-out run-as com.mathan.erp.debug tar -cf - databases shared_prefs \
+                > app/build/android-diagnostics/private-storage.tar 2> app/build/android-diagnostics/private-storage-error.txt || true
+            fi
+            exit "$test_status"
+      - name: Upload Android test reports and database diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumentation-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            mobile/android/app/build/reports/androidTests/
+            mobile/android/app/build/outputs/androidTest-results/
+            mobile/android/app/build/android-diagnostics/
