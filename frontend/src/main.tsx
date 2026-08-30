@@ -5,6 +5,7 @@ import './index.css';
 import { enableGuestMode } from './auth/guestMode';
 import { Capacitor } from '@capacitor/core';
 import { getOfflineDiagnosticSnapshot, type OfflineDiagnosticSnapshot } from './lib/offlineDiagnostics';
+import { installAndroidInstrumentationApi } from './testing/androidInstrumentationApi';
 
 declare global {
   interface Window {
@@ -19,6 +20,10 @@ if (import.meta.env.VITE_ENABLE_OFFLINE_DIAGNOSTICS === 'true') {
     writable: false,
     value: Object.freeze({ snapshot: getOfflineDiagnosticSnapshot }),
   });
+}
+
+if (import.meta.env.VITE_ANDROID_INSTRUMENTATION === 'true') {
+  installAndroidInstrumentationApi();
 }
 
 if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator) {
