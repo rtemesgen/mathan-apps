@@ -195,6 +195,10 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
     persistent.setDefaultTimeout(12_000);
+    // Restore the false-online API failure before the first navigation. If
+    // routing is installed afterwards, startup can flush the outbox and
+    // hydrate remote state before this restart is inspected.
+    await persistent.route(`${status.API_URL}/**`, (route) => route.abort('internetdisconnected'));
     const reopened = await persistent.newPage();
     await reopened.goto('/truck');
     await expect(reopened.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });

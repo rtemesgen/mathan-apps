@@ -40,7 +40,11 @@ export function installAndroidInstrumentationApi() {
       return recovered;
     },
     async failWrite() {
-      await offlineStore.write('instrumentation:failed-write', { unsupported: BigInt(1) } as unknown);
+      // Use the atomic business-write path here. The general single-record
+      // store intentionally permits structured-clone-only values (the admin
+      // backup CryptoKey is one example) in IndexedDB, while application
+      // snapshots/outbox commits must be JSON-safe for SQLite.
+      await offlineStore.writeAtomic([{ key: 'instrumentation:failed-write', value: { unsupported: BigInt(1) } }]);
     },
     async logout(workspace: string) {
       for (const recordKey of await offlineStore.listKeys()) {
