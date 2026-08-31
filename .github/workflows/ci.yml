@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   push:
     branches: [main]
   pull_request:
@@ -20,13 +21,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
-      - run: npm run lint
+      # Keep the complete persistence, migration, queue, recovery, export, and
+      # architecture suite as a required PR gate. Running only a hand-picked
+      # subset here allowed offline-storage regressions to bypass CI.
+      - name: Run complete frontend test suite
+        run: npm test
         working-directory: frontend
-      - run: npm run test:accounting
-        working-directory: frontend
-      - run: npm run test:admin-backup
-        working-directory: frontend
-      - run: npm run build
+      - name: Build frontend
+        run: npm run build
         working-directory: frontend
 
   database:
@@ -38,9 +40,16 @@ jobs:
           version: latest
       - run: supabase start
         working-directory: backend
-      - run: supabase db reset
+      - name: Verify migration from the supported legacy schema
+        run: |
+          supabase db reset --local --version 202608260005 --sql-paths fixtures/legacy_upgrade_seed.sql
+          supabase migration up --local
+          supabase test db supabase/upgrade_tests/legacy_upgrade_contract.sql
         working-directory: backend
-      - run: supabase test db
+      - name: Verify fresh database and security contracts
+        run: |
+          supabase db reset --local --no-seed
+          supabase test db
         working-directory: backend
 
   e2e:
@@ -80,6 +89,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/*.gradle
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+            mobile/android/app/*.gradle
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -91,7 +105,59 @@ jobs:
         working-directory: frontend
       - run: npm ci
         working-directory: mobile
-      - run: npm run build
+      - run: npm run build:instrumentation
         working-directory: mobile
-      - run: ./gradlew assembleDebug
+      - name: Run native Android unit tests, lint, and build
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
         working-directory: mobile/android
+      - name: Run application/SQLite instrumentation tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          working-directory: mobile/android
+          script: |
+            adb logcat -c
+            set +e
+            ./gradlew connectedDebugAndroidTest --stacktrace
+            test_status=$?
+            if [ "$test_status" -ne 0 ]; then
+              mkdir -p app/build/android-diagnostics
+              adb logcat -d -v threadtime > app/build/android-diagnostics/logcat.txt || true
+              adb shell dumpsys activity processes > app/build/android-diagnostics/processes.txt || true
+              adb shell run-as com.mathan.erp.debug sh -c 'find databases shared_prefs -type f -maxdepth 2 -print -exec du -h {} \;' \
+                > app/build/android-diagnostics/database-files.txt 2>&1 || true
+              adb exec-out run-as com.mathan.erp.debug tar -cf - databases shared_prefs \
+                > app/build/android-diagnostics/private-storage.tar 2> app/build/android-diagnostics/private-storage-error.txt || true
+            fi
+            exit "$test_status"
+      - name: Upload Android test reports and database diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumentation-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            mobile/android/app/build/reports/androidTests/
+            mobile/android/app/build/outputs/androidTest-results/
+            mobile/android/app/build/android-diagnostics/
+  required:
+    name: Required CI gates
+    if: always()
+    needs: [frontend, database, e2e, android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every production-critical job
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          DATABASE_RESULT: ${{ needs.database.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+        run: |
+          test "$FRONTEND_RESULT" = success
+          test "$DATABASE_RESULT" = success
+          test "$E2E_RESULT" = success
+          test "$ANDROID_RESULT" = success

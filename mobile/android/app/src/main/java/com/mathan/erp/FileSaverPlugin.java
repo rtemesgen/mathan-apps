@@ -9,6 +9,7 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import android.widget.Toast;
 
+import androidx.annotation.RequiresApi;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSObject;
@@ -67,6 +68,7 @@ public class FileSaverPlugin extends Plugin {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private Uri saveToPublicDownloads(String filename, String mimeType, byte[] bytes) throws Exception {
         ContentValues values = new ContentValues();
         values.put(MediaStore.Downloads.DISPLAY_NAME, filename);

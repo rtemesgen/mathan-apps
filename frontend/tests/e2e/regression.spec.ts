@@ -278,10 +278,12 @@ test('Payroll data survives closing and reopening the browser process offline', 
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
-    await persistent.setOffline(false);
+    // Establish the restart's network state before creating a page. Letting
+    // the app boot online first races hydration/sync against the offline
+    // restart assertions and does not model a device relaunched offline.
+    await persistent.setOffline(true);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/payroll');
-    await persistent.setOffline(true);
     await reopenedPage.reload();
     await expect(reopenedPage.getByText('Loading Payroll data…')).toBeHidden({ timeout: 20_000 });
     await reopenedPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
@@ -358,9 +360,9 @@ test('legacy split Payroll workspace upgrades to canonical state and survives of
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    await persistent.setOffline(true);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/payroll');
-    await persistent.setOffline(true);
     await reopenedPage.reload();
     await expect(reopenedPage.getByText('Loading Payroll data…')).toBeHidden({ timeout: 20_000 });
     await reopenedPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
