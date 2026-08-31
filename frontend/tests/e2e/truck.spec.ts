@@ -122,9 +122,9 @@ test('Truck transactions survive closing and reopening the browser process offli
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    await persistent.setOffline(true);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/truck');
-    await persistent.setOffline(true);
     await reopenedPage.reload();
     await expect(reopenedPage.getByText('Loading Truck data…')).toBeHidden();
     await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
@@ -213,9 +213,9 @@ test('customer projections and Pay Owner remain identical after restart and sync
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    await persistent.setOffline(true);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/truck');
-    await persistent.setOffline(true);
     await reopenedPage.reload();
     await expect(reopenedPage.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });
     await reopenedPage.locator('header button[aria-haspopup=listbox]').click();
