@@ -1,6 +1,7 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { isJsonSerializable, jsonHash, jsonValue } from './sqliteJson';
 import { sqliteWriteStatement } from './sqliteStatements';
+import { createPersistenceCoordinator } from './persistenceCoordinator';
 import { diagnostic } from './diagnostics';
 
 const DATABASE_NAME = 'mathan-erp-offline';
@@ -60,6 +61,7 @@ export type MigrationStore = {
 
 let connection: SQLiteConnection | null = null;
 let databasePromise: Promise<SQLiteDBConnection> | null = null;
+const nativePersistence = createPersistenceCoordinator();
 
 function nativeDatabaseConnection() {
   connection ??= new SQLiteConnection(CapacitorSQLite);
@@ -154,48 +156,58 @@ async function inspectOpenDatabase(database: SQLiteDBConnection): Promise<Native
 }
 
 export async function getNativeDatabaseHealth() {
-  return inspectOpenDatabase(await openDatabase());
+  return nativePersistence.run(async () => inspectOpenDatabase(await openDatabase()));
 }
 
 async function readTable<T>(table: 'records' | 'metadata', key: string): Promise<T | null> {
-  const database = await openDatabase();
-  const result = await database.query(`SELECT value FROM ${table} WHERE key = ? LIMIT 1`, [key]);
-  const raw = result.values?.[0]?.value as string | undefined;
-  if (raw === undefined) return null;
-  try { return JSON.parse(raw) as T; } catch { return null; }
+  return nativePersistence.run(async () => {
+    const database = await openDatabase();
+    const result = await database.query(`SELECT value FROM ${table} WHERE key = ? LIMIT 1`, [key]);
+    const raw = result.values?.[0]?.value as string | undefined;
+    if (raw === undefined) return null;
+    try { return JSON.parse(raw) as T; } catch { return null; }
+  });
 }
 
 async function writeTable(table: 'records' | 'metadata', key: string, value: unknown) {
-  const serialized = jsonValue(value);
-  if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
-  const database = await openDatabase();
-  await database.run(
-    sqliteWriteStatement(table),
-    [key, serialized, Date.now()],
-  );
+  return nativePersistence.run(async () => {
+    const serialized = jsonValue(value);
+    if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
+    const database = await openDatabase();
+    await database.run(
+      sqliteWriteStatement(table),
+      [key, serialized, Date.now()],
+    );
+  });
 }
 
 async function deleteTable(table: 'records' | 'metadata', key: string) {
-  const database = await openDatabase();
-  await database.run(`DELETE FROM ${table} WHERE key = ?`, [key]);
+  return nativePersistence.run(async () => {
+    const database = await openDatabase();
+    await database.run(`DELETE FROM ${table} WHERE key = ?`, [key]);
+  });
 }
 
 async function listTable(table: 'records' | 'metadata') {
-  const database = await openDatabase();
-  const result = await database.query(`SELECT key FROM ${table} ORDER BY key`);
-  return (result.values ?? []).map((row) => String(row.key));
+  return nativePersistence.run(async () => {
+    const database = await openDatabase();
+    const result = await database.query(`SELECT key FROM ${table} ORDER BY key`);
+    return (result.values ?? []).map((row) => String(row.key));
+  });
 }
 
 export async function readNativeRecord<T>(key: string) { return readTable<T>('records', key); }
 export async function writeNativeRecord(key: string, value: unknown) { return writeTable('records', key, value); }
 export async function writeNativeRecordsAtomic(entries: LegacyEntry[]) {
-  const database = await openDatabase();
-  const statements = entries.map(({ key, value }) => {
-    const serialized = jsonValue(value);
-    if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
-    return { statement: sqliteWriteStatement('records'), values: [key, serialized, Date.now()] };
+  return nativePersistence.run(async () => {
+    const database = await openDatabase();
+    const statements = entries.map(({ key, value }) => {
+      const serialized = jsonValue(value);
+      if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
+      return { statement: sqliteWriteStatement('records'), values: [key, serialized, Date.now()] };
+    });
+    if (statements.length) await database.executeTransaction(statements);
   });
-  if (statements.length) await database.executeTransaction(statements);
 }
 export async function deleteNativeRecord(key: string) { return deleteTable('records', key); }
 export async function listNativeRecords() { return listTable('records'); }
@@ -229,14 +241,16 @@ export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: Leg
   const migrationStore: MigrationStore = store ?? {
     readMarker: () => readNativeMetadata<boolean>(MIGRATION_KEY),
     writeEntries: async (records, metadataEntries) => {
-      const database = await openDatabase();
-      // A migration can be interrupted after SQLite has written some rows but
-      // before verification/marker commit. Replace on retry so a stale partial
-      // row is repaired from the still-preserved legacy stores instead of
-      // causing verification to fail forever.
-      const recordStatements = records.map(({ key, value }) => ({ statement: sqliteWriteStatement('records'), values: [key, jsonValue(value), Date.now()] }));
-      const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: sqliteWriteStatement('metadata'), values: [key, jsonValue(value), Date.now()] }));
-      if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
+      await nativePersistence.run(async () => {
+        const database = await openDatabase();
+        // A migration can be interrupted after SQLite has written some rows but
+        // before verification/marker commit. Replace on retry so a stale partial
+        // row is repaired from the still-preserved legacy stores instead of
+        // causing verification to fail forever.
+        const recordStatements = records.map(({ key, value }) => ({ statement: sqliteWriteStatement('records'), values: [key, jsonValue(value), Date.now()] }));
+        const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: sqliteWriteStatement('metadata'), values: [key, jsonValue(value), Date.now()] }));
+        if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
+      });
     },
     verifyEntries: (records, metadataEntries) => verifyMigratedEntries(records, metadataEntries),
     writeMarker: () => writeNativeMetadata(MIGRATION_KEY, true),

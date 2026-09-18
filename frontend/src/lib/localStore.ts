@@ -4,6 +4,7 @@ import { diagnostic } from './diagnostics';
 import { persistenceActivity } from './persistenceActivity';
 import type { OfflineFlushResult } from './androidExit';
 import { planSplitStoreRecovery, type RecoverableQueuedMutation } from './splitStoreRecovery';
+import { createRetryableSingleFlight } from './retryableSingleFlight';
 
 const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
@@ -13,12 +14,44 @@ const ATOMIC_RECOVERY_KEY = 'mathan_erp_offline_atomic_recovery_v1';
 const SPLIT_STORE_RECOVERY_KEY = '__offline_sqlite_split_store_recovery_v1__';
 const memoryCache = new Map<string, unknown>();
 const fallbackKey = (key: string) => `mathan_erp_offline_${key}`;
-let nativeStoreReady: Promise<boolean> | null = null;
 // Once the marker has been verified, avoid a SQLite metadata query for every
 // local read/write during this app session. A failed check is deliberately not
 // cached so a transient native error can still fall back to IndexedDB.
 let nativeMigrationState: boolean | null = null;
 let nativeMigrationCheck: Promise<boolean> | null = null;
+const nativeStoreReady = createRetryableSingleFlight(async () => {
+  // SQLite is intentionally an Android-only adapter for this release. Web
+  // and any future non-Android native target continue using IndexedDB and the
+  // existing fallback path until they have their own verified adapter.
+  // This operation is retryable so transient native initialization failures
+  // do not permanently disable SQLite for the rest of the app session.
+  if (Capacitor.getPlatform() !== 'android') return false;
+  if (await readNativeMigrationState()) {
+    await recoverSplitIndexedDbStore();
+    return true;
+  }
+  const [records, metadata, localStorageRecords] = await Promise.all([
+    readLegacyStore(STORE_NAME),
+    readLegacyStore(META_STORE_NAME),
+    readLegacyLocalStorage(),
+  ]);
+  if (records === null || metadata === null) return false;
+  try {
+    const mergedRecords = new Map(records.map((entry) => [entry.key, entry]));
+    // A fallback entry exists because an IndexedDB write failed; it is the
+    // newest value and must win if both stores contain the same key.
+    localStorageRecords.forEach((entry) => mergedRecords.set(entry.key, entry));
+    await migrateLegacyRecords([...mergedRecords.values()], metadata);
+    await writeNativeMetadata(SPLIT_STORE_RECOVERY_KEY, true);
+    nativeMigrationState = true;
+    return true;
+  } catch (error) {
+    // Keep IndexedDB active until a complete verified migration succeeds.
+    nativeMigrationState = false;
+    diagnostic('migration-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
+}, (ready) => ready);
 const writeTails = new Map<string, Promise<void>>();
 
 type AtomicRecoveryRecord = Record<string, unknown>;
@@ -184,43 +217,7 @@ async function recoverSplitIndexedDbStore() {
 }
 
 async function getNativeStoreReady() {
-  // SQLite is intentionally an Android-only adapter for this release. Web
-  // and any future non-Android native target continue using IndexedDB and the
-  // existing fallback path until they have their own verified adapter.
-  if (Capacitor.getPlatform() !== 'android') return false;
-  nativeStoreReady ??= (async () => {
-    // Reopening an already migrated Android database must not rescan every
-    // legacy IndexedDB record before the first read or save.
-    if (await readNativeMigrationState()) {
-      await recoverSplitIndexedDbStore();
-      return true;
-    }
-    const [records, metadata, localStorageRecords] = await Promise.all([
-      readLegacyStore(STORE_NAME),
-      readLegacyStore(META_STORE_NAME),
-      readLegacyLocalStorage(),
-    ]);
-    if (records === null || metadata === null) return false;
-    try {
-      const mergedRecords = new Map(records.map((entry) => [entry.key, entry]));
-      // A fallback entry exists because an IndexedDB write failed; it is the
-      // newest value and must win if both stores contain the same key.
-      localStorageRecords.forEach((entry) => mergedRecords.set(entry.key, entry));
-      await migrateLegacyRecords([...mergedRecords.values()], metadata);
-      await writeNativeMetadata(SPLIT_STORE_RECOVERY_KEY, true);
-      nativeMigrationState = true;
-      return true;
-    } catch (error) {
-      // Keep IndexedDB active until a complete verified migration succeeds.
-      nativeMigrationState = false;
-      diagnostic('migration-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
-      return false;
-    }
-  })().catch((error) => {
-    diagnostic('migration-failed', { adapter: 'sqlite', error: error instanceof Error ? error.message : String(error) });
-    return false;
-  });
-  return nativeStoreReady;
+  return nativeStoreReady();
 }
 
 async function writeIndexedDb<T>(key: string, value: T): Promise<void> {
