@@ -2,6 +2,7 @@ import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@cap
 import { isJsonSerializable, jsonHash, jsonValue } from './sqliteJson';
 import { sqliteWriteStatement } from './sqliteStatements';
 import { createPersistenceCoordinator } from './persistenceCoordinator';
+import { NativeStoreError } from './nativeStoreErrors';
 import { diagnostic } from './diagnostics';
 
 const DATABASE_NAME = 'mathan-erp-offline';
@@ -88,8 +89,18 @@ async function openDatabase() {
       ? await sqlite.retrieveConnection(DATABASE_NAME, false)
       : await sqlite.createConnection(DATABASE_NAME, true, 'secret', DATABASE_VERSION, false);
     await database.open();
-    await database.execute(SQLITE_CURRENT_SCHEMA_SQL);
-    const health = await inspectOpenDatabase(database);
+    const preflight = await inspectOpenDatabase(database);
+    if (shouldBootstrapNativeSchema(preflight)) {
+      await database.execute(SQLITE_CURRENT_SCHEMA_SQL);
+    } else if (!preflight.healthy) {
+      throw new NativeStoreError('SCHEMA_INVALID', `Offline database schema is invalid; data was preserved (${[
+        preflight.actualVersion !== preflight.expectedVersion ? `version ${preflight.actualVersion}` : '',
+        preflight.missingTables.length ? `missing tables: ${preflight.missingTables.join(', ')}` : '',
+        preflight.missingColumns.length ? `missing columns: ${preflight.missingColumns.join(', ')}` : '',
+        preflight.partialMigration ? 'partial migration detected' : '',
+      ].filter(Boolean).join('; ')})`);
+    }
+    const health = shouldBootstrapNativeSchema(preflight) ? await inspectOpenDatabase(database) : preflight;
     diagnostic('local-schema-health', {
       healthy: health.healthy,
       expectedVersion: health.expectedVersion,
@@ -98,14 +109,7 @@ async function openDatabase() {
       missingColumns: health.missingColumns.join(','),
       partialMigration: health.partialMigration,
     });
-    if (!health.healthy) {
-      throw new Error(`Offline database schema is invalid; data was preserved (${[
-        health.actualVersion !== health.expectedVersion ? `version ${health.actualVersion}` : '',
-        health.missingTables.length ? `missing tables: ${health.missingTables.join(', ')}` : '',
-        health.missingColumns.length ? `missing columns: ${health.missingColumns.join(', ')}` : '',
-        health.partialMigration ? 'partial migration detected' : '',
-      ].filter(Boolean).join('; ')})`);
-    }
+    if (!health.healthy) throw new NativeStoreError('SCHEMA_INVALID', 'Offline database schema failed its post-bootstrap health check');
     return database;
   })().catch((error) => {
     databasePromise = null;
@@ -133,6 +137,10 @@ export function evaluateNativeDatabaseHealth(input: {
     missingColumns,
     partialMigration,
   };
+}
+
+export function shouldBootstrapNativeSchema(input: Pick<NativeDatabaseHealth, 'actualVersion' | 'missingTables'>) {
+  return input.actualVersion === 0 && input.missingTables.length === Object.keys(REQUIRED_TABLE_COLUMNS).length;
 }
 
 async function inspectOpenDatabase(database: SQLiteDBConnection): Promise<NativeDatabaseHealth> {
@@ -165,7 +173,11 @@ async function readTable<T>(table: 'records' | 'metadata', key: string): Promise
     const result = await database.query(`SELECT value FROM ${table} WHERE key = ? LIMIT 1`, [key]);
     const raw = result.values?.[0]?.value as string | undefined;
     if (raw === undefined) return null;
-    try { return JSON.parse(raw) as T; } catch { return null; }
+    try {
+      return JSON.parse(raw) as T;
+    } catch (error) {
+      throw new NativeStoreError('RECORD_INVALID', `Invalid JSON in native ${table} record: ${key}`, error);
+    }
   });
 }
 
