@@ -18,6 +18,7 @@
     "test:persistence-coordinator": "node --import tsx tests/persistence-coordinator.test.ts",
     "test:retryable-single-flight": "node --import tsx tests/retryable-single-flight.test.ts",
     "test:native-store-errors": "node --import tsx tests/native-store-errors.test.ts",
+    "test:native-store-lifecycle": "node --import tsx tests/native-store-lifecycle.test.ts",
     "test:sqlite-migration": "node --import tsx tests/sqlite-migration.test.ts",
     "test:sqlite-adapter": "node --import tsx tests/sqlite-adapter.test.ts",
     "test:data-layer-migration": "node --import tsx tests/data-layer-migration.test.ts",
@@ -35,7 +36,7 @@
     "test:book-transaction-input": "node --import tsx tests/book-transaction-input.test.ts",
     "test:book-transaction-list": "node --import tsx tests/book-transaction-list.test.ts",
     "test:e2e": "playwright test",
-    "test:unit": "npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:sqlite-statements && npm run test:persistence-coordinator && npm run test:retryable-single-flight && npm run test:native-store-errors && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:reconciliation && npm run test:connectivity && npm run test:android-exit && npm run test:split-store-recovery && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:book-transaction-input && npm run test:book-transaction-list && npm run test:architecture",
+    "test:unit": "npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:sqlite-statements && npm run test:persistence-coordinator && npm run test:retryable-single-flight && npm run test:native-store-errors && npm run test:native-store-lifecycle && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:reconciliation && npm run test:connectivity && npm run test:android-exit && npm run test:split-store-recovery && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:book-transaction-input && npm run test:book-transaction-list && npm run test:architecture",
     "test": "npm run lint && npm run test:unit"
   },
   "dependencies": {

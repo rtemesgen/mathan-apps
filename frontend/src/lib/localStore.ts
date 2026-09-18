@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { NativeStoreError } from './nativeStoreErrors';
 import { deleteNativeRecord, getNativeDatabaseHealth, isJsonSerializable, isNativeMigrationComplete, listNativeRecords, migrateLegacyRecords, readNativeMetadata, readNativeRecord, writeNativeMetadata, writeNativeRecord, writeNativeRecordsAtomic } from './sqliteStore';
 import { diagnostic } from './diagnostics';
 import { persistenceActivity } from './persistenceActivity';
@@ -507,6 +508,7 @@ export type OfflineStorageHealth = {
   healthy: boolean;
   adapter: 'sqlite' | 'indexeddb';
   schemaVersion: number;
+  failureCode?: string;
   message?: string;
 };
 
@@ -516,15 +518,15 @@ export async function validateOfflineStorage(): Promise<OfflineStorageHealth> {
   if (Capacitor.getPlatform() === 'android') {
     const ready = await getNativeStoreReady();
     if (!ready) {
-      const result = { healthy: false, adapter: 'sqlite' as const, schemaVersion: 0, message: 'The encrypted offline database could not be migrated. Existing data was preserved.' };
+      const result = { healthy: false, adapter: 'sqlite' as const, schemaVersion: 0, failureCode: 'INITIALIZATION_FAILED', message: 'The encrypted offline database could not be migrated. Existing data was preserved.' };
       diagnostic('local-schema-health', result);
       return result;
     }
     try {
       const health = await getNativeDatabaseHealth();
-      return { healthy: health.healthy, adapter: 'sqlite', schemaVersion: health.actualVersion, message: health.healthy ? undefined : 'The encrypted offline database schema is incomplete. Existing data was preserved.' };
+      return { healthy: health.healthy, adapter: 'sqlite', schemaVersion: health.actualVersion, failureCode: health.healthy ? undefined : 'SCHEMA_INVALID', message: health.healthy ? undefined : 'The encrypted offline database schema is incomplete. Existing data was preserved.' };
     } catch (error) {
-      return { healthy: false, adapter: 'sqlite', schemaVersion: 0, message: error instanceof Error ? error.message : 'The encrypted offline database could not be validated.' };
+      return { healthy: false, adapter: 'sqlite', schemaVersion: 0, failureCode: error instanceof NativeStoreError ? error.code : 'NATIVE_UNAVAILABLE', message: error instanceof Error ? error.message : 'The encrypted offline database could not be validated.' };
     }
   }
 

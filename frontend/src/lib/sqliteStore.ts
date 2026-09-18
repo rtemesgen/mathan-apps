@@ -74,7 +74,11 @@ async function openDatabase() {
   databasePromise = (async () => {
     const sqlite = nativeDatabaseConnection();
     diagnostic('local-schema-open', { database: DATABASE_NAME, expectedVersion: DATABASE_VERSION });
+    const databaseExists = (await sqlite.isDatabase(DATABASE_NAME)).result;
     if (!(await sqlite.isSecretStored()).result) {
+      if (databaseExists) {
+        throw new NativeStoreError('KEY_UNAVAILABLE', 'The existing encrypted offline database key is unavailable; data was preserved.');
+      }
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       const secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
       await sqlite.setEncryptionSecret(secret);
@@ -170,7 +174,12 @@ export async function getNativeDatabaseHealth() {
 async function readTable<T>(table: 'records' | 'metadata', key: string): Promise<T | null> {
   return nativePersistence.run(async () => {
     const database = await openDatabase();
-    const result = await database.query(`SELECT value FROM ${table} WHERE key = ? LIMIT 1`, [key]);
+    let result;
+    try {
+      result = await database.query(`SELECT value FROM ${table} WHERE key = ? LIMIT 1`, [key]);
+    } catch (error) {
+      throw new NativeStoreError('NATIVE_READ_FAILED', `Native ${table} read failed for ${key}`, error);
+    }
     const raw = result.values?.[0]?.value as string | undefined;
     if (raw === undefined) return null;
     try {

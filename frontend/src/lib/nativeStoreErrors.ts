@@ -1,5 +1,8 @@
 export type NativeStoreErrorCode =
+  | 'NATIVE_UNAVAILABLE'
+  | 'NATIVE_BUSY'
   | 'SCHEMA_INVALID'
+  | 'KEY_UNAVAILABLE'
   | 'RECORD_INVALID'
   | 'NATIVE_READ_FAILED'
   | 'NATIVE_WRITE_FAILED'
