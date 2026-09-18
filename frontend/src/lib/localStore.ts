@@ -345,6 +345,7 @@ export async function writeOffline<T>(key: string, value: T): Promise<void> {
       }
       await writeIndexedDb(key, value);
       removeFallback(key);
+      removeAtomicRecovery([key]);
     } catch {
       try {
         await writeIndexedDb(key, value);
@@ -439,6 +440,7 @@ export async function writeOfflineAtomic(entries: Array<{ key: string; value: un
       }
       await writeIndexedDbAtomic(entries);
       entries.forEach(({ key }) => removeFallback(key));
+      removeAtomicRecovery(entries.map(({ key }) => key));
     } catch (primaryError) {
       try {
         // One localStorage assignment is the recovery commit boundary. The
