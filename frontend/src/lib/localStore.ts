@@ -62,7 +62,7 @@ function readAtomicRecovery(): AtomicRecoveryRecord {
     const raw = localStorage.getItem(ATOMIC_RECOVERY_KEY);
     const parsed = raw === null ? null : JSON.parse(raw) as unknown;
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as AtomicRecoveryRecord : {};
-  } catch {
+  } catch (error) {
     return {};
   }
 }
@@ -277,16 +277,13 @@ export async function readOffline<T>(key: string): Promise<T | null> {
       }
     }
     if (await getNativeStoreReady()) {
-      // A failed native write may have left the newest value in the fallback
-      // store while SQLite still contains the previous value. Prefer that
-      // recovery value before consulting SQLite.
-      const fallback = readFallback<T>(key);
-      if (fallback !== null) { memoryCache.set(key, fallback); return fallback; }
       const nativeValue = await readNativeRecord<T>(key);
       if (nativeValue !== null) { memoryCache.set(key, nativeValue); return nativeValue; }
+      return null;
     }
     return await readIndexedDbRecord<T>(key);
-  } catch {
+  } catch (error) {
+    if (Capacitor.getPlatform() === 'android' && error instanceof NativeStoreError) throw error;
     return readFallback<T>(key);
   }
 }
@@ -473,7 +470,11 @@ export async function resetUserOfflineCache(userId: string): Promise<number> {
 }
 
 export async function readOfflineMetadata<T>(key: string): Promise<T | null> {
-  try { if (await getNativeStoreReady()) { const value = await readNativeMetadata<T>(key); if (value !== null) return value; } } catch { /* continue with IndexedDB */ }
+  try {
+    if (await getNativeStoreReady()) return readNativeMetadata<T>(key);
+  } catch (error) {
+    if (Capacitor.getPlatform() === 'android' && error instanceof NativeStoreError) throw error;
+  }
   try {
     const store = await getStore('readonly', META_STORE_NAME);
     return await new Promise<T | null>((resolve, reject) => {
