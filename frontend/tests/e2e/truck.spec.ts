@@ -3,6 +3,7 @@ import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
 import { localSupabaseStatus } from './supabaseLocal';
+import { setE2EOffline, setE2EOnline } from './network';
 
 async function inspectTruckOfflineContract(page: import('playwright/test').Page, memo: string) {
   return page.evaluate(async (expectedMemo) => {
@@ -19,6 +20,7 @@ async function inspectTruckOfflineContract(page: import('playwright/test').Page,
 }
 
 test('Truck app is available through the workspace launcher and preserves data across app switches and offline reloads', async ({ page, context }) => {
+  const status = localSupabaseStatus();
   await signIn(page, 'admin');
   const launcher = page.getByLabel('Truck Equity');
   if (await launcher.count() === 0) test.skip(true, 'Truck access is not granted to this fixture workspace.');
@@ -39,10 +41,10 @@ test('Truck app is available through the workspace launcher and preserves data a
   await expect(page).toHaveURL(/\/book$/);
   await page.goto('/truck');
   await expect(page.locator('main').getByText('E2E Truck', { exact: true }).first()).toBeVisible();
-  await context.setOffline(true);
+  await setE2EOffline(context, status.API_URL);
   await page.reload();
   await expect(page.locator('main').getByText('E2E Truck', { exact: true }).first()).toBeVisible();
-  await context.setOffline(false);
+  await setE2EOnline(context, status.API_URL);
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Customers', exact: true }).click();
   await page.getByRole('button', { name: 'Add Customer', exact: true }).first().click();
@@ -89,6 +91,7 @@ test('Truck app is available through the workspace launcher and preserves data a
 });
 
 test('Truck transactions survive closing and reopening the browser process offline', async ({}, testInfo) => {
+  const status = localSupabaseStatus();
   const profile = testInfo.outputPath('persistent-truck-profile');
   const baseURL = testInfo.project.use.baseURL as string;
   let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
@@ -111,7 +114,7 @@ test('Truck transactions survive closing and reopening the browser process offli
     await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
     await firstPage.getByRole('button', { name: 'Income (Trips)' }).click();
 
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     const description = `Offline persistent income ${Date.now()}`;
     await firstPage.locator('input[type=number]').first().fill('555');
     await firstPage.getByPlaceholder('e.g. Trip from Dallas TX to Atlanta GA').fill(description);
@@ -122,7 +125,7 @@ test('Truck transactions survive closing and reopening the browser process offli
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/truck');
     await reopenedPage.reload();
@@ -130,9 +133,8 @@ test('Truck transactions survive closing and reopening the browser process offli
     await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
     await reopenedPage.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
     await expect(reopenedPage.getByText(description, { exact: true })).toBeVisible();
-    await persistent.setOffline(false);
+    await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
-    const status = localSupabaseStatus();
     const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
     await expect.poll(async () => {
       const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
@@ -194,7 +196,7 @@ test('customer projections and Pay Owner remain identical after restart and sync
     const ownerCard = firstPage.getByText(ownerName, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
     await expect(ownerCard).toContainText('$1,000.00');
 
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     await ownerCard.getByRole('button', { name: 'Pay', exact: true }).click();
     await firstPage.locator('input[placeholder="0.00"]').fill('250');
     await firstPage.getByPlaceholder('e.g. Loan repayment check or Zelle transfer').fill(ownerPaymentMemo);
@@ -213,7 +215,7 @@ test('customer projections and Pay Owner remain identical after restart and sync
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/truck');
     await reopenedPage.reload();
@@ -236,7 +238,7 @@ test('customer projections and Pay Owner remain identical after restart and sync
     await reopenedPage.getByRole('button', { name: 'Activity History', exact: true }).click();
     await expect(reopenedPage.getByText(ownerPaymentMemo, { exact: true })).toBeVisible();
 
-    await persistent.setOffline(false);
+    await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
     await expect.poll(async () => {
       const { data } = await service.from('truck_transactions').select('id').eq('workspace_id', workspace!.id).eq('truck_id', truckId).eq('description', ownerPaymentMemo);

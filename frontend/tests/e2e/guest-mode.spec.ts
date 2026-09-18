@@ -2,6 +2,7 @@ import { expect, test } from 'playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { E2E_USERS } from './globalSetup';
 import { localSupabaseStatus } from './supabaseLocal';
+import { setE2EOffline, setE2EOnline } from './network';
 
 async function enterGuest(page: import('playwright/test').Page) {
   await page.goto('/');
@@ -14,7 +15,8 @@ async function enterGuest(page: import('playwright/test').Page) {
 test('guest mode exposes all apps and manages multiple companies offline', async ({ page, context }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await enterGuest(page);
-  await context.setOffline(true);
+  const status = localSupabaseStatus();
+  await setE2EOffline(context, status.API_URL);
   await page.getByRole('link', { name: /Switch · Guest Company/ }).click();
   await page.getByRole('button', { name: /Create another company/ }).click();
   await page.getByPlaceholder('Company name').fill('Offline Test Company');
@@ -24,7 +26,7 @@ test('guest mode exposes all apps and manages multiple companies offline', async
   await page.getByRole('link', { name: 'Truck Equity' }).click();
   await expect(page.getByText(/No trucks yet/i)).toBeVisible();
   await expect(page.getByText(/Truck tables are not installed/i)).not.toBeVisible();
-  await context.setOffline(false);
+  await setE2EOnline(context, status.API_URL);
 });
 
 test('guest Cash Book, Payroll, and Truck data merge idempotently after login', async ({ page }) => {

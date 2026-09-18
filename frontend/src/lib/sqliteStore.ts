@@ -1,5 +1,6 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { isJsonSerializable, jsonHash, jsonValue } from './sqliteJson';
+import { sqliteWriteStatement } from './sqliteStatements';
 import { diagnostic } from './diagnostics';
 
 const DATABASE_NAME = 'mathan-erp-offline';
@@ -169,8 +170,7 @@ async function writeTable(table: 'records' | 'metadata', key: string, value: unk
   if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
   const database = await openDatabase();
   await database.run(
-    `INSERT INTO ${table} (key, value, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    sqliteWriteStatement(table),
     [key, serialized, Date.now()],
   );
 }
@@ -193,7 +193,7 @@ export async function writeNativeRecordsAtomic(entries: LegacyEntry[]) {
   const statements = entries.map(({ key, value }) => {
     const serialized = jsonValue(value);
     if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
-    return { statement: `INSERT INTO records (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, values: [key, serialized, Date.now()] };
+    return { statement: sqliteWriteStatement('records'), values: [key, serialized, Date.now()] };
   });
   if (statements.length) await database.executeTransaction(statements);
 }
@@ -231,11 +231,11 @@ export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: Leg
     writeEntries: async (records, metadataEntries) => {
       const database = await openDatabase();
       // A migration can be interrupted after SQLite has written some rows but
-      // before verification/marker commit. Upsert on retry so a stale partial
+      // before verification/marker commit. Replace on retry so a stale partial
       // row is repaired from the still-preserved legacy stores instead of
       // causing verification to fail forever.
-      const recordStatements = records.map(({ key, value }) => ({ statement: `INSERT INTO records (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, values: [key, jsonValue(value), Date.now()] }));
-      const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: `INSERT INTO metadata (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, values: [key, jsonValue(value), Date.now()] }));
+      const recordStatements = records.map(({ key, value }) => ({ statement: sqliteWriteStatement('records'), values: [key, jsonValue(value), Date.now()] }));
+      const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: sqliteWriteStatement('metadata'), values: [key, jsonValue(value), Date.now()] }));
       if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
     },
     verifyEntries: (records, metadataEntries) => verifyMigratedEntries(records, metadataEntries),

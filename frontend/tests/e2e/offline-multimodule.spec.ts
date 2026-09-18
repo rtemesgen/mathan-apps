@@ -2,6 +2,7 @@ import { expect, test, type Page } from 'playwright/test';
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
+import { setE2EOffline } from './network';
 import { localSupabaseStatus } from './supabaseLocal';
 
 type Labels = {
@@ -123,7 +124,7 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await page.getByRole('option', { name: `${truckName} (${unitNumber})`, exact: true }).dispatchEvent('click');
     await expect(page.locator('header button[aria-haspopup=listbox]')).toContainText(truckName);
     await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
-    await persistent.route(`${status.API_URL}/**`, (route) => route.abort('internetdisconnected'));
+    await setE2EOffline(persistent, status.API_URL);
 
     await navigateClientSide(page, '/book');
     await page.getByRole('heading', { name: firstBook }).click();
@@ -198,7 +199,7 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     // Restore the false-online API failure before the first navigation. If
     // routing is installed afterwards, startup can flush the outbox and
     // hydrate remote state before this restart is inspected.
-    await persistent.route(`${status.API_URL}/**`, (route) => route.abort('internetdisconnected'));
+    await setE2EOffline(persistent, status.API_URL);
     const reopened = await persistent.newPage();
     await reopened.goto('/truck');
     await expect(reopened.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });

@@ -18,7 +18,7 @@ type CashBookViewContentProps = {
   onAddMembers: (book: Book) => void;
   onOpenImport: () => void;
   onDeleteTransaction: (transactionId: string) => Promise<void>;
-  onOpenExport: (filters?: { transactionType?: string; query?: string }) => void;
+  onOpenExport: (filters?: { transactionType?: string; query?: string; startDate?: string; endDate?: string }) => void;
 };
 
 export function CashBookViewContent({

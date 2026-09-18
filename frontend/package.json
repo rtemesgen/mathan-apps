@@ -14,6 +14,7 @@
     "test:truck": "node --import tsx tests/truck-financials.test.ts",
     "test:repositories": "node --import tsx tests/repositories.test.ts",
     "test:sqlite-json": "node --import tsx tests/sqlite-json.test.ts",
+    "test:sqlite-statements": "node --import tsx tests/sqlite-statements.test.ts",
     "test:sqlite-migration": "node --import tsx tests/sqlite-migration.test.ts",
     "test:sqlite-adapter": "node --import tsx tests/sqlite-adapter.test.ts",
     "test:data-layer-migration": "node --import tsx tests/data-layer-migration.test.ts",
@@ -28,8 +29,10 @@
     "test:export-metadata": "node --import tsx tests/export-metadata.test.ts",
     "test:context-export": "node --import tsx tests/context-export.test.ts",
     "test:book-import": "node --import tsx tests/book-import.test.ts",
+    "test:book-transaction-input": "node --import tsx tests/book-transaction-input.test.ts",
+    "test:book-transaction-list": "node --import tsx tests/book-transaction-list.test.ts",
     "test:e2e": "playwright test",
-    "test:unit": "npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:reconciliation && npm run test:connectivity && npm run test:android-exit && npm run test:split-store-recovery && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:architecture",
+    "test:unit": "npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:sqlite-statements && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:reconciliation && npm run test:connectivity && npm run test:android-exit && npm run test:split-store-recovery && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:book-transaction-input && npm run test:book-transaction-list && npm run test:architecture",
     "test": "npm run lint && npm run test:unit"
   },
   "dependencies": {

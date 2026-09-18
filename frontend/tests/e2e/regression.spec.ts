@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
 import { E2E_USERS } from './globalSetup';
 import { localSupabaseStatus } from './supabaseLocal';
+import { setE2EOffline, setE2EOnline } from './network';
 
 const e2eService = () => {
   const status = localSupabaseStatus();
@@ -142,10 +143,11 @@ test('Cash Book records survive switching apps and an offline reload', async ({ 
   await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
 
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
-  await context.setOffline(true);
+  const status = localSupabaseStatus();
+  await setE2EOffline(context, status.API_URL);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Persistence Regression Book' })).toBeVisible();
-  await context.setOffline(false);
+  await setE2EOnline(context, status.API_URL);
 });
 
 test('Payroll employees survive switching apps and an offline reload', async ({ page, context }) => {
@@ -164,11 +166,12 @@ test('Payroll employees survive switching apps and an offline reload', async ({ 
   await expect(page.getByText('Payroll Persistence Employee', { exact: true })).toBeVisible();
 
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
-  await context.setOffline(true);
+  const status = localSupabaseStatus();
+  await setE2EOffline(context, status.API_URL);
   await page.reload();
   await page.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
   await expect(page.getByText('Payroll Persistence Employee', { exact: true })).toBeVisible();
-  await context.setOffline(false);
+  await setE2EOnline(context, status.API_URL);
 });
 
 test('durable web state survives closing and reopening the browser process offline', async ({}, testInfo) => {
@@ -180,7 +183,8 @@ test('durable web state survives closing and reopening the browser process offli
     await signIn(firstPage, 'member');
     await firstPage.getByLabel('Cash Book').click();
     await expect(firstPage.getByText('Cash Book Overview')).toBeVisible();
-    await persistent.setOffline(true);
+    const status = localSupabaseStatus();
+    await setE2EOffline(persistent, status.API_URL);
     const bookName = `Persistent browser book ${Date.now()}`;
     await firstPage.getByRole('button', { name: /Create Book|New Book/ }).first().click();
     await firstPage.getByPlaceholder(/Retail Shop Cashbook/).fill(bookName);
@@ -208,7 +212,7 @@ test('durable web state survives closing and reopening the browser process offli
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/book');
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     await reopenedPage.reload();
     await expect(reopenedPage.getByRole('heading', { name: bookName })).toBeVisible();
     await reopenedPage.getByRole('heading', { name: bookName }).click();
@@ -218,7 +222,7 @@ test('durable web state survives closing and reopening the browser process offli
     // business data and outbox directly from IndexedDB while offline.
     const afterRestart = await inspectIndexedDbCashContract(reopenedPage, ['Offline Cash In', 'Offline Cash Out']);
     expect(afterRestart).toEqual(beforeRestart);
-    await persistent.setOffline(false);
+    await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
     const service = e2eService();
     await expect.poll(async () => {
@@ -252,7 +256,8 @@ test('Payroll data survives closing and reopening the browser process offline', 
     await signIn(firstPage, 'member');
     await firstPage.getByLabel('Payroll').click();
     await expect(firstPage.getByText('Payroll Tracker').first()).toBeVisible();
-    await persistent.setOffline(true);
+    const status = localSupabaseStatus();
+    await setE2EOffline(persistent, status.API_URL);
     await firstPage.getByRole('button', { name: 'Add Employee', exact: true }).first().click();
     const employeeName = `Persistent payroll employee ${Date.now()}`;
     await firstPage.getByPlaceholder('e.g. Sarah Jenkins').fill(employeeName);
@@ -281,7 +286,7 @@ test('Payroll data survives closing and reopening the browser process offline', 
     // Establish the restart's network state before creating a page. Letting
     // the app boot online first races hydration/sync against the offline
     // restart assertions and does not model a device relaunched offline.
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/payroll');
     await reopenedPage.reload();
@@ -296,7 +301,7 @@ test('Payroll data survives closing and reopening the browser process offline', 
     await reopenedPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
     await reopenedPage.getByText(employeeName, { exact: true }).last().click();
     await expect(reopenedPage.getByText(paymentNote, { exact: true })).toBeVisible();
-    await persistent.setOffline(false);
+    await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
     const service = e2eService();
     await expect.poll(async () => {
@@ -347,7 +352,8 @@ test('legacy split Payroll workspace upgrades to canonical state and survives of
     await firstPage.getByText(legacyEmployeeName, { exact: true }).last().click();
     await expect(firstPage.getByText('Pre-upgrade payment', { exact: true })).toBeVisible();
 
-    await persistent.setOffline(true);
+    const status = localSupabaseStatus();
+    await setE2EOffline(persistent, status.API_URL);
     await firstPage.getByRole('button', { name: 'Pay', exact: true }).first().click();
     await firstPage.getByRole('button', { name: /Choose employee|Legacy employee/ }).first().click();
     await firstPage.getByRole('button', { name: new RegExp(legacyEmployeeName) }).last().click();
@@ -360,7 +366,7 @@ test('legacy split Payroll workspace upgrades to canonical state and survives of
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/payroll');
     await reopenedPage.reload();
@@ -375,7 +381,7 @@ test('legacy split Payroll workspace upgrades to canonical state and survives of
     await reopenedPage.getByText(legacyEmployeeName, { exact: true }).last().click();
     await expect(reopenedPage.getByText(newPaymentNote, { exact: true })).toBeVisible();
 
-    await persistent.setOffline(false);
+    await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
     await expect.poll(async () => {
       const { data } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspaceId).eq('domain', 'payroll:state').maybeSingle();
@@ -432,7 +438,8 @@ test('all synced companies and their app data remain accessible offline', async 
   await expect(memberCompany).toBeVisible();
   await expect(adminCompany).toBeVisible();
 
-  await context.setOffline(true);
+  const status = localSupabaseStatus();
+  await setE2EOffline(context, status.API_URL);
   await adminCompany.click();
   await page.getByRole('button', { name: 'Switch company' }).click();
   await expect(page).toHaveURL(/\/$/);
