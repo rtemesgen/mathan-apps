@@ -56,7 +56,7 @@ export function queuedMutationCompanyId(mutation: Pick<QueuedMutation, 'companyI
  * acknowledged. This preserves the newer local payload while preventing a
  * reconnect race from submitting it against an obsolete revision. */
 export function rebaseSnapshotMutation(mutation: QueuedMutation, revision: number): QueuedMutation {
-  return mutation.table === 'app_state_snapshots' && mutation.syncStatus !== 'conflicted' && mutation.syncStatus !== 'error'
+  return mutation.table === 'app_state_snapshots' && mutation.syncStatus === 'pending' && !mutation.lastAttemptAt
     ? { ...mutation, baseRevision: revision, payload: { ...mutation.payload, expected_revision: revision } }
     : mutation;
 }

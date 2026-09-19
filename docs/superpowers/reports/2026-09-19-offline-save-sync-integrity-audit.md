@@ -27,7 +27,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Plan requirement | Current evidence | Status |
 | --- | --- | --- |
 | Full browser recovery journal v2, receipts, cleanup-failure behavior | v2 journal/receipt/tombstone source, deterministic selection tests, and a real browser test covering failure/reload plus post-commit cleanup failure exist; full crash-stage matrix remains | Partially verified |
-| Snapshot acknowledgement race matrix | Current worker/repository code has protections, but no deferred-RPC test proves delayed acknowledgement cannot overwrite a newer save | Missing proof |
+| Snapshot acknowledgement race matrix | `rebaseSnapshotMutation()` now limits rebasing to never-attempted pending successors; `queue-policy.test.ts` simulates a newer durable snapshot arriving during acknowledgement and verifies revision rebasing, while attempted successors remain immutable | Queue-layer proof passes; deferred-RPC/browser matrix remains pending |
 | Truck conflict resolution | `resolveTruckConflict()` fetches the remote row, supports keep-local/use-server, and uses an updated-at race guard before atomic queue/cache replacement | Implemented; no backend-connected UI/E2E proof yet |
 | Backend authorization matrix | `truck_batch_rpc.sql` exercises owner, permitted editor, read-only member, and unrelated user RPC execution paths | Pass locally for the covered batch RPC matrix; broader application policies remain outside this test |
 | Backend invalid-row rollback matrix | `truck_batch_rpc.sql` proves zero rows and zero receipt for invalid second-row truck references, duplicate IDs, and invalid owner/customer/workspace references | Pass locally for the covered RPC matrix |
