@@ -13,7 +13,9 @@ release ticket.
 2. Sign in to a non-production test workspace, enable airplane mode, and save
    uniquely named Cash Book, Payroll, and Truck Equity entries. Capture the
    pending-sync count and the names/amounts of every entry.
-3. Swipe the app away, run `adb shell am force-stop com.mathan.erp`, relaunch it
+3. Determine the installed application ID from the candidate's Gradle manifest
+   or package manager output; do not assume the production ID. Swipe the app
+   away, run `adb shell am force-stop <installed-application-id>`, relaunch it
    from the launcher while still offline, and verify every entry and pending
    item exactly once.
 4. Force-stop during another pending save, relaunch offline, and verify that the

@@ -12,7 +12,7 @@
 
 ## 1. Executive summary
 
-**Status: revised planning document; implementation has not started.** This revision incorporates the user's detailed requirements supplied after the review. Editing this document does not authorize application-code changes, commits, pushes, PRs, or production deployment. Commit labels inside the implementation tasks describe possible future checkpoints only.
+**Status: implementation in progress; audited checkpoint on `fix-andriod` (2026-09-19).** This revision incorporates the user's detailed requirements supplied after the review. The branch contains implemented and tested portions of phases 0A–8, including native coordination, queue v2 metadata, atomic snapshot acknowledgement, transactional Truck batches, conflict-path wiring, and CI-backed browser/database checks. The plan remains open: physical/device runtime evidence, the full browser race matrix, APK replacement, attachment-capacity measurements, and release/pilot gates are not yet proven. Editing this document does not authorize production database deployment or data cleanup.
 
 The most important changes are crash-safe primary/recovery selection, one durable acknowledgement boundary, and server-side atomic Truck batches. The design below defines exact algorithms and compatibility behavior, not just cleanup or retry instructions. Sections 6–20 are binding details for the phase checklists in section 5; where an earlier task summary is shorter, use those detailed contracts.
 
