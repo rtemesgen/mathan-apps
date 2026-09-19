@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited HEAD: `1609e8b`
+Audited HEAD: `2b2bfe7`
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
@@ -19,7 +19,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Atomic Truck batch backend | `202609190001_truck_transaction_batches.sql`; `truck_batch_rpc.sql`; 75 local Supabase assertions pass, including editor/read-only/unrelated authorization, changed-identity rejection, duplicate IDs, invalid truck/owner/customer/workspace references, and invalid-row rollback | Pass locally |
 | Online Truck batch client path | `writeTruckTransactionBatchOnline()` and `createTruckTransactionBatch()` preserve batch identity | Implemented; backend-connected browser test remains pending |
 | Queued Truck batch integrity | `truckBatchPolicy.ts` and worker group submission path | Policy and wiring implemented; end-to-end retry/cache proof remains pending |
-| Snapshot keep-local conflict path | `resolveSnapshotConflict()` fetches remote state, three-way merges, allocates a new ID, and atomically replaces local layers | Implemented; UI/E2E proof remains pending |
+| Snapshot keep-local conflict path | `resolveSnapshotConflict()` fetches remote state, three-way merges, allocates a new ID, and atomically replaces local layers; the issue sheet now stays open and reports failures | Implemented; UI/E2E proof remains pending |
 | Android force-stop test source | `OfflineSQLiteInstrumentedTest.java` uses target package plus `am force-stop` before relaunch | Compiles; emulator execution is unverified here |
 
 ## Partial or not yet proven
@@ -28,7 +28,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | --- | --- | --- |
 | Full browser recovery journal v2, receipts, cleanup-failure behavior | v2 journal/receipt/tombstone source, deterministic selection tests, and a real browser test covering failure/reload plus post-commit cleanup failure exist; full crash-stage matrix remains | Partially verified |
 | Snapshot acknowledgement race matrix | `rebaseSnapshotMutation()` now limits rebasing to never-attempted pending successors; `queue-policy.test.ts` simulates a newer durable snapshot arriving during acknowledgement and verifies revision rebasing, while attempted successors remain immutable | Queue-layer proof passes; deferred-RPC/browser matrix remains pending |
-| Truck conflict resolution | `resolveTruckConflict()` fetches the remote row, supports keep-local/use-server, and uses an updated-at race guard before atomic queue/cache replacement | Implemented; no backend-connected UI/E2E proof yet |
+| Truck conflict resolution | `resolveTruckConflict()` fetches the remote row, supports keep-local/use-server, and uses an updated-at race guard before atomic queue/cache replacement; the issue sheet now stays open and reports failures | Implemented; no backend-connected UI/E2E proof yet |
 | Backend authorization matrix | `truck_batch_rpc.sql` exercises owner, permitted editor, read-only member, and unrelated user RPC execution paths | Pass locally for the covered batch RPC matrix; broader application policies remain outside this test |
 | Backend invalid-row rollback matrix | `truck_batch_rpc.sql` proves zero rows and zero receipt for invalid second-row truck references, duplicate IDs, and invalid owner/customer/workspace references | Pass locally for the covered RPC matrix |
 | Backend-connected Android sync | CI runs Android instrumentation, but the test harness still lacks a live Supabase backend and exact-once server-count verification | Unverified |
