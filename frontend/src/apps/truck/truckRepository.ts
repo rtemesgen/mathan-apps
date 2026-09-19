@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase';
 import { offlineStore } from '../../lib/localStore';
 import { getQueuedMutations, getWorkspaceMutationStatus, type QueuedMutation } from '../../lib/syncQueue';
-import { syncQueue, writeTruckMutationOnline } from '../../lib/offlineSync';
+import { syncQueue, writeTruckMutationOnline, writeTruckTransactionBatchOnline } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import { canAttemptBackend, isConnectivityFailure, withConnectionTimeout } from '../../lib/connectivity';
 import { diagnostic } from '../../lib/diagnostics';
@@ -69,7 +69,7 @@ function replayTruckMutations(confirmed: TruckCache, queue: QueuedMutation[]) {
   };
 }
 
-type TruckQueueWrite = { table: string; payload: Record<string, unknown>; operation: 'create' | 'update' | 'delete' };
+type TruckQueueWrite = { table: string; payload: Record<string, unknown>; operation: 'create' | 'update' | 'delete'; batchId?: string; batchIndex?: number; batchSize?: number };
 
 function cachedUpdatedAt(cache: TruckCache, table: string, id: string) {
   const collection = table === 'trucks' ? cache.trucks : table === 'truck_owners' ? cache.owners : table === 'truck_customers' ? cache.customers : cache.transactions;
@@ -79,7 +79,7 @@ function cachedUpdatedAt(cache: TruckCache, table: string, id: string) {
 function applyConfirmedTruckRows(cache: TruckCache, writes: TruckQueueWrite[], rows: Array<Record<string, unknown> | null>) {
   const confirmed = { ...cache, trucks: [...cache.trucks], owners: [...cache.owners], customers: [...cache.customers], transactions: [...cache.transactions] };
   writes.forEach(({ table, operation }, index) => {
-    const row = rows[index];
+    const row = rows.find((candidate) => candidate && String(candidate.id) === String(writes[index].payload.id)) ?? rows[index];
     if (!row || operation === 'delete') return;
     const value = table === 'trucks' ? truckFromDb(row)
       : table === 'truck_owners' ? ownerFromDb(row)
@@ -115,10 +115,10 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
       if (localOnly || !canAttemptBackend() || !writes.length) {
         if (localOnly || !writes.length) await offlineStore.write(storageKey, next);
         else {
-          await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId }) => ({
+          await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId, batchId, batchIndex, batchSize }) => ({
             mutationId, userId, companyId: workspaceId,
             entityType: table, entityId: String(payload.id ?? ''), table,
-            operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
+            operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId, ...(batchId ? { batch_id: batchId, batch_index: batchIndex, batch_size: batchSize } : {}) },
           })), [{ key: storageKey, value: next }]);
         }
       } else {
@@ -129,10 +129,10 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
           try { await syncQueue(workspaceId); } catch { /* the queue remains the source of truth */ }
           const remainingStatus = await getWorkspaceMutationStatus(workspaceId, TRUCK_TABLES);
           if (remainingStatus) {
-            await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId }) => ({
+            await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId, batchId, batchIndex, batchSize }) => ({
               mutationId, userId, companyId: workspaceId,
               entityType: table, entityId: String(payload.id ?? ''), table,
-              operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
+              operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId, ...(batchId ? { batch_id: batchId, batch_index: batchIndex, batch_size: batchSize } : {}) },
             })), [{ key: storageKey, value: next }]);
             reportTruckStatus(remainingStatus === 'conflict' ? 'sync conflict' : 'sync pending');
             diagnostic('local-write-queued', { app: 'truck', workspaceId, operation: 'truck', reason: 'earlier-mutation-unresolved' });
@@ -141,7 +141,10 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
         }
         try {
           diagnostic('online-save-attempt', { app: 'truck', workspaceId, operation: 'truck' });
-          const confirmedRows = await Promise.all(durableWrites.map(({ table, payload, operation, mutationId }) => withConnectionTimeout(writeTruckMutationOnline(workspaceId, table, { ...payload, workspace_id: workspaceId }, operation, operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), mutationId))));
+          const batchWrites = durableWrites.filter((write) => write.batchId && write.batchSize);
+          const confirmedRows = batchWrites.length === durableWrites.length && batchWrites.length > 0
+            ? await writeTruckTransactionBatchOnline(workspaceId, String(batchWrites[0].batchId), batchWrites.map(({ payload, mutationId }) => ({ ...payload, workspace_id: workspaceId, mutation_id: mutationId })))
+            : await Promise.all(durableWrites.map(({ table, payload, operation, mutationId }) => withConnectionTimeout(writeTruckMutationOnline(workspaceId, table, { ...payload, workspace_id: workspaceId }, operation, operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), mutationId))));
           try {
             const confirmed = applyConfirmedTruckRows(next, writes, confirmedRows);
             await offlineStore.writeAtomic([
@@ -157,10 +160,10 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
           diagnostic('online-save-success', { app: 'truck', workspaceId, operation: 'truck' });
         } catch (error) {
           if (!isConnectivityFailure(error)) throw error;
-          await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId }) => ({
+          await saveOfflineFallback(durableWrites.map(({ table, payload, operation, mutationId, batchId, batchIndex, batchSize }) => ({
               mutationId, userId, companyId: workspaceId,
               entityType: table, entityId: String(payload.id ?? ''), table,
-              operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId },
+              operation, baseServerUpdatedAt: operation === 'create' ? null : cachedUpdatedAt(currentCache, table, String(payload.id ?? '')), payload: { ...payload, workspace_id: workspaceId, ...(batchId ? { batch_id: batchId, batch_index: batchIndex, batch_size: batchSize } : {}) },
             })), [{ key: storageKey, value: next }]);
           reportTruckStatus('offline saved');
           diagnostic('offline-fallback', { app: 'truck', workspaceId, operation: 'truck' });
@@ -312,9 +315,10 @@ export async function createTruckTransaction(workspaceId: string, v: Omit<Transa
 export async function createTruckTransactionBatch(workspaceId: string, values: Omit<Transaction, 'id'>[], localOnly = false, userId?: string) {
   if (!values.length) return [];
   const createdAt = new Date().toISOString();
+  const batchId = crypto.randomUUID();
   const rows = values.map((v) => ({ id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null, created_at: createdAt }));
   const transactions = rows.map((row) => transactionFromDb(row));
-  await persistTruckChange(workspaceId, (cache) => ({ ...cache, transactions: [...transactions, ...cache.transactions] }), rows.map((payload) => ({ table: 'truck_transactions', payload, operation: 'create' })), localOnly, userId);
+  await persistTruckChange(workspaceId, (cache) => ({ ...cache, transactions: [...transactions, ...cache.transactions] }), rows.map((payload, batchIndex) => ({ table: 'truck_transactions', payload, operation: 'create', batchId, batchIndex, batchSize: rows.length })), localOnly, userId);
   return transactions;
 }
 
