@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { localSupabaseStatus } from './supabaseLocal';
 
@@ -109,4 +110,8 @@ export default async function globalSetup() {
   if (uploadError) throw uploadError;
   const { error: attachmentError } = await service.from('record_attachments').insert({ workspace_id: adminWorkspace, record_type: 'cash_transaction', record_id: randomUUID(), storage_path: attachmentPath, file_name: 'e2e-backup-proof.txt', mime_type: 'text/plain', size_bytes: attachmentBytes.byteLength });
   if (attachmentError) throw attachmentError;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await globalSetup();
 }
