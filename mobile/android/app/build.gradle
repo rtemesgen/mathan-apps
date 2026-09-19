@@ -51,6 +51,14 @@ android {
     }
 }
 
+tasks.register('printDebugApplicationId') {
+    doLast {
+        def variant = android.applicationVariants.find { it.name == 'debug' }
+        if (variant == null) throw new GradleException('Debug application variant is unavailable.')
+        println(variant.applicationId)
+    }
+}
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'

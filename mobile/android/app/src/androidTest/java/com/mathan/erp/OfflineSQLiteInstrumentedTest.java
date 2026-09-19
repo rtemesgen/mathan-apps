@@ -17,14 +17,13 @@ import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.Assume;
 import org.junit.runner.RunWith;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.UUID;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 
 /** End-to-end durability tests. These launch the real BridgeActivity/WebView;
  * JavaScript calls enter the application's OfflineStore and the production
@@ -37,7 +36,7 @@ public class OfflineSQLiteInstrumentedTest {
     @Before public void launch() throws Exception {
         scenario = ActivityScenario.launch(MainActivity.class);
         awaitApi();
-        js("return await api.reset()", true);
+        if (!"verify".equals(processDeathPhase())) js("return await api.reset()", true);
     }
 
     @After public void close() { if (scenario != null) scenario.close(); }
@@ -71,13 +70,30 @@ public class OfflineSQLiteInstrumentedTest {
         assertEntry("alpha", "cash_book", "after-failure");
     }
 
-    @Test public void staleQueueRecoversAfterPendingSaveAndForceStopBoundary() throws Exception {
+    @Test public void staleQueueRecoversAfterPendingSaveAndActivityRecreation() throws Exception {
         save("alpha", "payroll", "pending-1", 42, "pending");
-        forceStopAndRelaunchApplication();
+        recreateApplication();
         JSONArray recovered = array(js("return await api.recoverQueue()", false));
         assertEquals(1, recovered.length());
         assertEquals("pending-1", recovered.getJSONObject(0).getString("mutationId"));
         assertEntry("alpha", "payroll", "pending-1");
+    }
+
+    /** Prepare one durable queue entry; the host force-stops the app before
+     * processDeathVerifyBoundary runs in a fresh instrumentation invocation. */
+    @Test public void processDeathPrepareBoundary() throws Exception {
+        Assume.assumeTrue("prepare".equals(processDeathPhase()));
+        save("process-death-workspace", "payroll", "process-death-entry", 42, "host force-stop");
+        assertEquals(1, array(js("return await api.recoverQueue()", false)).length());
+    }
+
+    /** Verify the entry after the host, rather than the app, killed the app. */
+    @Test public void processDeathVerifyBoundary() throws Exception {
+        Assume.assumeTrue("verify".equals(processDeathPhase()));
+        JSONArray recovered = array(js("return await api.recoverQueue()", false));
+        assertEquals(1, recovered.length());
+        assertEquals("process-death-entry", recovered.getJSONObject(0).getString("mutationId"));
+        assertEntry("process-death-workspace", "payroll", "process-death-entry");
     }
 
     @Test public void releasedSchemaAndInterruptedMigrationResumeIdempotently() throws Exception {
@@ -105,19 +121,19 @@ public class OfflineSQLiteInstrumentedTest {
         assertFalse(array(js("return await api.queue()", false)).length() == 0);
     }
 
-    @Test public void productionTruckRepositoryReachesBackendAndSurvivesProcessRestart() throws Exception {
+    @Test public void productionTruckRepositoryReachesBackendAndSurvivesActivityRecreation() throws Exception {
         JSONObject created = object(js("return await api.backendTruckRoundTrip()", false));
         assertEquals(1, created.getInt("serverCount"));
-        forceStopAndRelaunchApplication();
+        recreateApplication();
         JSONObject verified = object(js("return await api.backendVerify(" + JSONObject.quote(created.getString("workspaceId")) + "," + JSONObject.quote(created.getString("transactionId")) + ")", false));
         assertEquals(1, verified.getInt("serverCount"));
         assertTrue(verified.getBoolean("localContains"));
     }
 
-    @Test public void offlineProductionTruckSaveSurvivesProcessRestartAndSyncsExactlyOnce() throws Exception {
+    @Test public void offlineProductionTruckSaveSurvivesActivityRecreationAndSyncsExactlyOnce() throws Exception {
         JSONObject queued = object(js("return await api.backendOfflineTruckRoundTrip()", false));
         assertEquals(1, queued.getInt("queued"));
-        forceStopAndRelaunchApplication();
+        recreateApplication();
         JSONObject synced = object(js("return await api.backendSyncQueuedTruck(" + JSONObject.quote(queued.getString("workspaceId")) + "," + JSONObject.quote(queued.getString("transactionId")) + ")", false));
         assertEquals(1, synced.getInt("serverCount"));
         assertEquals(0, synced.getInt("queued"));
@@ -138,38 +154,8 @@ public class OfflineSQLiteInstrumentedTest {
 
     private void recreateApplication() throws Exception { scenario.recreate(); awaitApi(); }
 
-    private void forceStopAndRelaunchApplication() throws Exception {
-        scenario.close();
-        scenario = null;
-        String packageName = InstrumentationRegistry.getInstrumentation().getTargetContext().getPackageName();
-        // Drain the shell descriptor. Closing it immediately can leave the
-        // force-stop command racing the next ActivityScenario launch, which
-        // kills the newly-created WebView and makes the test process appear
-        // to crash rather than proving process-death durability.
-        readShellCommand("am force-stop " + packageName);
-        waitForPackageStopped(packageName);
-        scenario = ActivityScenario.launch(MainActivity.class);
-        awaitApi();
-    }
-
-    private void waitForPackageStopped(String packageName) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (readShellCommand("pidof " + packageName).trim().isEmpty()) return;
-            Thread.sleep(100);
-        }
-        throw new AssertionError("package did not stop after force-stop: " + packageName);
-    }
-
-    private String readShellCommand(String command) throws Exception {
-        ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command);
-        try (InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor)) {
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            byte[] buffer = new byte[256];
-            int read;
-            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
-            return output.toString(java.nio.charset.StandardCharsets.UTF_8.name());
-        }
+    private String processDeathPhase() {
+        return InstrumentationRegistry.getArguments().getString("processDeathPhase", "");
     }
 
     private void awaitApi() throws Exception {

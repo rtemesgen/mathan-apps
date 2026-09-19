@@ -157,6 +157,30 @@ jobs:
             set +e
             ./gradlew connectedDebugAndroidTest --stacktrace
             test_status=$?
+            if [ "$test_status" -eq 0 ]; then
+              ./gradlew connectedDebugAndroidTest --stacktrace \
+                '-Pandroid.testInstrumentationRunnerArguments.class=com.mathan.erp.OfflineSQLiteInstrumentedTest#processDeathPrepareBoundary' \
+                '-Pandroid.testInstrumentationRunnerArguments.processDeathPhase=prepare'
+              test_status=$?
+            fi
+            if [ "$test_status" -eq 0 ]; then
+              target_package=$(./gradlew -q printDebugApplicationId | tail -n 1 | tr -d '\r')
+              if [ -z "$target_package" ]; then
+                test_status=1
+              else
+                adb shell am force-stop "$target_package" || test_status=$?
+                deadline=$((SECONDS + 20))
+                while [ "$test_status" -eq 0 ] && [ "$SECONDS" -lt "$deadline" ] && [ -n "$(adb shell pidof "$target_package" | tr -d '\r')" ]; do sleep 1; done
+                test -z "$(adb shell pidof "$target_package" | tr -d '\r')" || test_status=$?
+              fi
+            fi
+            if [ "$test_status" -eq 0 ]; then
+              ./gradlew connectedDebugAndroidTest --stacktrace \
+                '-Pandroid.testInstrumentationRunnerArguments.class=com.mathan.erp.OfflineSQLiteInstrumentedTest#processDeathVerifyBoundary' \
+                '-Pandroid.testInstrumentationRunnerArguments.processDeathPhase=verify' \
+                '-Pandroid.testInstrumentationRunnerArguments.clearPackageData=false'
+              test_status=$?
+            fi
             if [ "$test_status" -ne 0 ]; then
               mkdir -p app/build/android-diagnostics
               adb logcat -d -v threadtime > app/build/android-diagnostics/logcat.txt || true
