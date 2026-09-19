@@ -6,11 +6,13 @@ import static org.junit.Assert.assertTrue;
 
 import android.webkit.WebView;
 import android.os.ParcelFileDescriptor;
+import android.Manifest;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.LargeTest;
 import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.rule.GrantPermissionRule;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -31,6 +33,10 @@ import java.util.UUID;
 @RunWith(AndroidJUnit4.class)
 @LargeTest
 public class OfflineSQLiteInstrumentedTest {
+    @org.junit.Rule
+    public GrantPermissionRule runtimePermissions = GrantPermissionRule.grant(
+            Manifest.permission.POST_NOTIFICATIONS);
+
     private ActivityScenario<MainActivity> scenario;
 
     @Before public void launch() throws Exception {
