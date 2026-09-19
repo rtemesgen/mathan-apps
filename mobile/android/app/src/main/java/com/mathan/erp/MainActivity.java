@@ -11,6 +11,9 @@ import com.getcapacitor.PluginHandle;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "MathanMainActivity";
@@ -54,9 +57,31 @@ public class MainActivity extends BridgeActivity {
             if (implementation == null) return;
 
             Method rollbackTransaction = implementation.getClass().getMethod("rollbackTransaction", String.class);
-            rollbackTransaction.invoke(implementation, OFFLINE_DATABASE);
             Method closeConnection = implementation.getClass().getMethod("closeConnection", String.class, Boolean.class);
-            closeConnection.invoke(implementation, OFFLINE_DATABASE, false);
+            CountDownLatch completed = new CountDownLatch(1);
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+
+            // Capacitor routes plugin calls through its worker HandlerThread. SQLite
+            // transactions are thread-local, so invoking these methods directly from
+            // Activity.onPause() cannot roll back the transaction that holds the lock.
+            getBridge().execute(() -> {
+                try {
+                    rollbackTransaction.invoke(implementation, OFFLINE_DATABASE);
+                    closeConnection.invoke(implementation, OFFLINE_DATABASE, false);
+                } catch (Throwable error) {
+                    failure.set(error);
+                } finally {
+                    completed.countDown();
+                }
+            });
+
+            if (!completed.await(2, TimeUnit.SECONDS)) {
+                Log.w(TAG, "Timed out closing offline SQLite connection before activity pause");
+                return;
+            }
+            if (failure.get() != null) {
+                throw new Exception(failure.get());
+            }
             Log.d(TAG, "Rolled back and closed offline SQLite connection before activity pause");
         } catch (NoSuchFieldException | NoSuchMethodException ignored) {
             Log.w(TAG, "SQLite lifecycle close API is unavailable; JavaScript recovery remains enabled");
