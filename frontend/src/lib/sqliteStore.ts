@@ -89,6 +89,24 @@ async function openDatabase() {
     }]);
     const consistent = (await sqlite.checkConnectionsConsistency()).result;
     const connected = (await sqlite.isConnection(DATABASE_NAME, false)).result;
+    // A WebView recreation creates a new JS SQLiteConnection wrapper while
+    // the native plugin can still own the old connection. If that old bridge
+    // was destroyed between BEGIN and COMMIT, creating a second connection
+    // leaves SQLCipher locked until the stale connection is closed. Closing
+    // only when this wrapper cannot retrieve a connection rolls back that
+    // incomplete native transaction without disturbing an active connection
+    // owned by this JS session.
+    if (!consistent && !connected && databaseExists) {
+      try {
+        await sqlite.closeConnection(DATABASE_NAME, false);
+        diagnostic('local-stale-connection-closed', { database: DATABASE_NAME });
+      } catch (error) {
+        diagnostic('local-stale-connection-close-failed', {
+          database: DATABASE_NAME,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     const database = consistent && connected
       ? await sqlite.retrieveConnection(DATABASE_NAME, false)
       : await sqlite.createConnection(DATABASE_NAME, true, 'secret', DATABASE_VERSION, false);
