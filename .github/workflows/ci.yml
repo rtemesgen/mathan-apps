@@ -35,9 +35,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.84.2
       - run: supabase start
         working-directory: backend
       - name: Verify migration from the supported legacy schema
@@ -57,9 +57,9 @@ jobs:
     needs: database
     steps:
       - uses: actions/checkout@v6
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.84.2
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -85,9 +85,9 @@ jobs:
     needs: [frontend, database]
     steps:
       - uses: actions/checkout@v6
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.84.2
       - name: Start disposable Supabase backend
         run: supabase start
         working-directory: backend
