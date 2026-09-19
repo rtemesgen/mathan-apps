@@ -56,6 +56,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - Full elevated browser run on the current branch: 20/26 passed. The remaining six failures were all restart-heavy flows; traces identified cold persistent-context timeouts and a reconnect-event/selector harness issue, not a new persistence assertion failure.
 - Focused verification after the harness corrections: `npm run test:unit`, `npm run lint`, `npm run test:snapshot-sync`, `npm run test:snapshot-save`, `npm run test:truck`, and `npm run build` — passed. The dedicated Truck restart and customer-projection scenarios pass; the ordinary Payroll restart scenario passes. The legacy split-Payroll restart remains unverified because its cold local run exceeded 180 seconds.
 - Fresh `npx supabase test db` passed all 75 database/security assertions. The reconnect helper now replays the online event after a persistent page reload, and restart-heavy tests have explicit cold-start budgets/selectors.
+- Current release checks: `npm run build` passed and a post-build string scan found no Android instrumentation API or E2E credential material in the production bundle. `./gradlew testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestJavaWithJavac` passed; Gradle's `flatDir` messages are warnings from the generated Capacitor Cordova plugin repository, not failures.
 
 ## Release decision
 
