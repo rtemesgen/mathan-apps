@@ -1,6 +1,9 @@
 import { offlineStore } from './localStore';
 import { mergeQueuedMutation } from './queuePolicy';
 import { emitSyncProgress } from './toast';
+import { supabase } from './supabase';
+import { withConnectionTimeout } from './connectivity';
+import { threeWayMergeSnapshot, affectedEntityIds } from './reconciliation';
 
 export interface QueuedMutation {
   id: string;
@@ -304,6 +307,67 @@ export async function retryQueuedMutation(mutationId: string, includeConflict = 
     });
     if (retried) await offlineStore.write(KEY, queue);
     return retried;
+  });
+}
+
+/** Resolve a conflicted snapshot against a freshly fetched server version.
+ * The network read happens without the queue lock; the final replacement is
+ * committed only if the selected mutation is still the same durable record. */
+export async function resolveSnapshotConflict(mutationId: string) {
+  const queue = await getQueuedMutations();
+  const target = queue.find((mutation) => mutation.mutationId === mutationId);
+  if (!target || target.table !== 'app_state_snapshots' || target.syncStatus !== 'conflicted') return false;
+  const workspaceId = queuedMutationCompanyId(target);
+  const domain = String(target.payload.domain ?? target.entityId);
+  const base = target.payload.base_payload;
+  if (base === undefined) throw new Error('This snapshot has no recorded baseline; whole-snapshot replacement requires explicit review.');
+  const { data, error } = await withConnectionTimeout(supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', workspaceId).eq('domain', domain).maybeSingle());
+  if (error) throw error;
+  const remote = data as unknown as { payload?: unknown; revision?: number } | null;
+  if (!remote || remote.payload === undefined || remote.revision === undefined) throw new Error('The server snapshot is unavailable; the local change was preserved.');
+  const local = target.payload.payload;
+  const merged = threeWayMergeSnapshot(base, remote.payload, local);
+  const nextMutationId = crypto.randomUUID();
+  const next: QueuedMutation = {
+    ...target,
+    id: nextMutationId,
+    mutationId: nextMutationId,
+    baseRevision: remote.revision,
+    baseServerUpdatedAt: null,
+    lastAttemptAt: null,
+    syncStartedAt: null,
+    syncAttemptId: null,
+    leaseExpiresAt: null,
+    syncStatus: 'pending',
+    retryCount: 0,
+    errorCode: undefined,
+    errorMessage: undefined,
+    lastError: undefined,
+    updatedAt: new Date().toISOString(),
+    payload: {
+      ...target.payload,
+      mutation_id: nextMutationId,
+      expected_revision: remote.revision,
+      base_payload: remote.payload,
+      payload: merged,
+      affected_client_ids: affectedEntityIds(remote.payload, merged),
+    },
+  };
+  const storageKey = `${target.userId}:${workspaceId}:${domain}`;
+  return withQueueLock(async () => {
+    const latestRaw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const latest = latestRaw.map((item) => normalizeQueuedMutation(item));
+    const current = latest.find((item) => item.mutationId === mutationId);
+    if (!current || current.updatedAt !== target.updatedAt || current.syncStatus !== 'conflicted') return false;
+    const replacement = latest.map((item) => item.mutationId === mutationId ? next : item);
+    await offlineStore.writeAtomic([
+      { key: storageKey, value: merged },
+      { key: `${storageKey}:revision`, value: remote.revision },
+      { key: `${storageKey}:confirmed`, value: remote.payload },
+      { key: `${storageKey}:confirmed:revision`, value: remote.revision },
+      { key: KEY, value: replacement },
+    ]);
+    return true;
   });
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import type { EntitySyncStatus } from '../lib/reconciliation';
-import { discardQueuedMutation, retryQueuedMutation } from '../lib/syncQueue';
+import { discardQueuedMutation, resolveSnapshotConflict, retryQueuedMutation } from '../lib/syncQueue';
 import { syncWorkspaceQueues } from '../lib/offlineSync';
 
 export function SyncIssueSheet() {
@@ -16,7 +16,10 @@ export function SyncIssueSheet() {
   const retry = async (keepLocal = false) => {
     setBusy(true);
     try {
-      if (await retryQueuedMutation(issue.mutationId, keepLocal) && issue.workspaceId) await syncWorkspaceQueues(issue.workspaceId);
+      const resolved = keepLocal && issue.table === 'app_state_snapshots'
+        ? await resolveSnapshotConflict(issue.mutationId)
+        : await retryQueuedMutation(issue.mutationId, false);
+      if (resolved && issue.workspaceId) await syncWorkspaceQueues(issue.workspaceId);
     } finally { setBusy(false); setIssue(null); }
   };
   const useServer = async () => {
