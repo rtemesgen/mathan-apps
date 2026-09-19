@@ -16,7 +16,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Authoritative Android reads | `localStore.ts` rejects typed native read failures and does not consult stale browser stores after native readiness | Implemented |
 | Offline create/update queue semantics | `queue-policy.test.ts` and `queuePolicy.ts` preserve never-attempted creates and protect attempted mutations | Pass for policy behavior |
 | Browser recovery supersession | `recoveryJournal.ts` and `localStore.ts` use v2 journal entries, same-store per-key receipts, and deletion tombstones; unit tests pass; `recovery.spec.ts` forces an IndexedDB write failure, reloads, commits a later primary value, and reloads again | Implemented and real-browser tested; cleanup-failure and full crash-stage matrix remain pending |
-| Atomic Truck batch backend | `202609190001_truck_transaction_batches.sql`; `truck_batch_rpc.sql`; 63 local Supabase assertions pass, including editor/read-only/unrelated authorization, changed-identity rejection, and invalid-row rollback | Pass locally |
+| Atomic Truck batch backend | `202609190001_truck_transaction_batches.sql`; `truck_batch_rpc.sql`; 75 local Supabase assertions pass, including editor/read-only/unrelated authorization, changed-identity rejection, duplicate IDs, invalid truck/owner/customer/workspace references, and invalid-row rollback | Pass locally |
 | Online Truck batch client path | `writeTruckTransactionBatchOnline()` and `createTruckTransactionBatch()` preserve batch identity | Implemented; backend-connected browser test remains pending |
 | Queued Truck batch integrity | `truckBatchPolicy.ts` and worker group submission path | Policy and wiring implemented; end-to-end retry/cache proof remains pending |
 | Snapshot keep-local conflict path | `resolveSnapshotConflict()` fetches remote state, three-way merges, allocates a new ID, and atomically replaces local layers | Implemented; UI/E2E proof remains pending |
@@ -30,7 +30,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Snapshot acknowledgement race matrix | Current worker/repository code has protections, but no deferred-RPC test proves delayed acknowledgement cannot overwrite a newer save | Missing proof |
 | Truck conflict resolution | `resolveTruckConflict()` fetches the remote row, supports keep-local/use-server, and uses an updated-at race guard before atomic queue/cache replacement | Implemented; no backend-connected UI/E2E proof yet |
 | Backend authorization matrix | `truck_batch_rpc.sql` exercises owner, permitted editor, read-only member, and unrelated user RPC execution paths | Pass locally for the covered batch RPC matrix; broader application policies remain outside this test |
-| Backend invalid-row rollback matrix | `truck_batch_rpc.sql` proves a valid first row plus invalid second truck reference leaves zero rows and zero receipt; duplicate/reference variants beyond this case remain future coverage | Partially verified |
+| Backend invalid-row rollback matrix | `truck_batch_rpc.sql` proves zero rows and zero receipt for invalid second-row truck references, duplicate IDs, and invalid owner/customer/workspace references | Pass locally for the covered RPC matrix |
 | Backend-connected Android sync | CI runs Android instrumentation, but the test harness still lacks a live Supabase backend and exact-once server-count verification | Unverified |
 | True process-death execution | Test source now calls `am force-stop`; no emulator was available locally and CI evidence was not inspected for this HEAD | Unverified |
 | Attachment capacity | Attachments remain base64 in snapshot payloads with a 5 MB UI limit; no physical-device SQLite capacity result exists | Unverified |
@@ -45,7 +45,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - `frontend`: `npm run test:e2e -- --grep "durable web state survives closing"` — passed with a real persistent Chromium profile and local Supabase.
 - `frontend`: `npm run test:e2e -- recovery.spec.ts` — passed with forced IndexedDB failure, reload recovery, later primary commit, and reload verification.
 - `backend`: `supabase db reset --local --no-seed` — applied all migrations, including the Truck batch migration.
-- `backend`: `supabase test db` — passed 63 assertions across security and Truck batch RPC tests.
+- `backend`: `supabase test db` — passed 75 assertions across security and Truck batch RPC tests.
 - `mobile/android`: `./gradlew testDebugUnitTest` — passed.
 - `mobile/android`: `./gradlew compileDebugAndroidTestJavaWithJavac` — passed.
 - Local `adb devices` could not start an ADB daemon in this environment; physical/emulator runtime results therefore remain unverified.

@@ -1,5 +1,5 @@
 begin;
-select plan(13);
+select plan(25);
 
 select ok(to_regclass('public.truck_transaction_batch_receipts') is not null, 'batch receipt table is available');
 
@@ -103,6 +103,48 @@ select throws_ok($$select * from public.write_truck_transaction_batch(
   '44444444-4444-4444-4444-444444444444',
   '[{"id":"55555555-5555-5555-5555-555555555551","mutation_id":"66666666-6666-6666-6666-666666666661","workspace_id":"22222222-2222-2222-2222-222222222222","truck_id":"33333333-3333-3333-3333-333333333333","occurred_on":"2026-09-19","transaction_type":"INCOME","category":"Changed request","amount":999,"description":"Identity reuse must reject"}]'::jsonb
 )$$, '23505', 'Batch identity was reused with a different request', 'changed request under a receipt identity is rejected');
+
+select throws_ok($$select * from public.write_truck_transaction_batch(
+  '22222222-2222-2222-2222-222222222222',
+  'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+  '[{"id":"55555555-5555-5555-5555-555555555558","mutation_id":"66666666-6666-6666-6666-666666666668","workspace_id":"22222222-2222-2222-2222-222222222222","truck_id":"33333333-3333-3333-3333-333333333333","occurred_on":"2026-09-19","transaction_type":"INCOME","category":"Duplicate one","amount":7,"description":"Duplicate"},{"id":"55555555-5555-5555-5555-555555555558","mutation_id":"66666666-6666-6666-6666-666666666669","workspace_id":"22222222-2222-2222-2222-222222222222","truck_id":"33333333-3333-3333-3333-333333333333","occurred_on":"2026-09-19","transaction_type":"INCOME","category":"Duplicate two","amount":8,"description":"Duplicate"}]'::jsonb
+)$$, '22023', 'Batch row and mutation IDs must be present and unique', 'duplicate row IDs reject the whole batch');
+select is((select count(*)::integer from public.truck_transactions where id = '55555555-5555-5555-5555-555555555558'), 0, 'duplicate-ID batch inserts no rows');
+set local role postgres;
+select is((select count(*)::integer from public.truck_transaction_batch_receipts where batch_id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), 0, 'duplicate-ID batch writes no receipt');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+select throws_ok($$select * from public.write_truck_transaction_batch(
+  '22222222-2222-2222-2222-222222222222',
+  'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  '[{"id":"55555555-5555-5555-5555-555555555559","mutation_id":"66666666-6666-6666-6666-666666666670","workspace_id":"22222222-2222-2222-2222-222222222222","truck_id":"33333333-3333-3333-3333-333333333333","owner_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","occurred_on":"2026-09-19","transaction_type":"INCOME","category":"Invalid owner","amount":7,"description":"Should rollback"}]'::jsonb
+)$$, '23503', 'Batch references an invalid Truck owner or customer', 'invalid owner reference rejects the whole batch');
+select is((select count(*)::integer from public.truck_transactions where id = '55555555-5555-5555-5555-555555555559'), 0, 'invalid-owner batch inserts no rows');
+set local role postgres;
+select is((select count(*)::integer from public.truck_transaction_batch_receipts where batch_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'), 0, 'invalid-owner batch writes no receipt');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+select throws_ok($$select * from public.write_truck_transaction_batch(
+  '22222222-2222-2222-2222-222222222222',
+  '12121212-1212-1212-1212-121212121212',
+  '[{"id":"55555555-5555-5555-5555-555555555560","mutation_id":"66666666-6666-6666-6666-666666666671","workspace_id":"22222222-2222-2222-2222-222222222222","truck_id":"33333333-3333-3333-3333-333333333333","customer_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","occurred_on":"2026-09-19","transaction_type":"INCOME","category":"Invalid customer","amount":7,"description":"Should rollback"}]'::jsonb
+)$$, '23503', 'Batch references an invalid Truck owner or customer', 'invalid customer reference rejects the whole batch');
+select is((select count(*)::integer from public.truck_transactions where id = '55555555-5555-5555-5555-555555555560'), 0, 'invalid-customer batch inserts no rows');
+set local role postgres;
+select is((select count(*)::integer from public.truck_transaction_batch_receipts where batch_id = '12121212-1212-1212-1212-121212121212'), 0, 'invalid-customer batch writes no receipt');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+
+select throws_ok($$select * from public.write_truck_transaction_batch(
+  '22222222-2222-2222-2222-222222222222',
+  '13131313-1313-1313-1313-131313131313',
+  '[{"id":"55555555-5555-5555-5555-555555555561","mutation_id":"66666666-6666-6666-6666-666666666672","workspace_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","truck_id":"33333333-3333-3333-3333-333333333333","occurred_on":"2026-09-19","transaction_type":"INCOME","category":"Invalid workspace","amount":7,"description":"Should rollback"}]'::jsonb
+)$$, '22023', 'Batch contains an invalid Truck transaction', 'workspace mismatch rejects the whole batch');
+select is((select count(*)::integer from public.truck_transactions where id = '55555555-5555-5555-5555-555555555561'), 0, 'invalid-workspace batch inserts no rows');
+set local role postgres;
+select is((select count(*)::integer from public.truck_transaction_batch_receipts where batch_id = '13131313-1313-1313-1313-131313131313'), 0, 'invalid-workspace batch writes no receipt');
 
 select * from finish();
 rollback;
