@@ -62,6 +62,7 @@ export type MigrationStore = {
 
 let connection: SQLiteConnection | null = null;
 let databasePromise: Promise<SQLiteDBConnection> | null = null;
+let lifecycleClose: Promise<void> | null = null;
 const nativePersistence = createPersistenceCoordinator();
 
 function nativeDatabaseConnection() {
@@ -70,6 +71,7 @@ function nativeDatabaseConnection() {
 }
 
 async function openDatabase() {
+  if (lifecycleClose) await lifecycleClose;
   if (databasePromise) return databasePromise;
   databasePromise = (async () => {
     const sqlite = nativeDatabaseConnection();
@@ -138,6 +140,41 @@ async function openDatabase() {
     throw error;
   });
   return databasePromise;
+}
+
+/**
+ * Capacitor recreates the WebView during some Android activity transitions,
+ * but the SQLite plugin keeps its native connection on the old plugin
+ * instance. Close it while this bridge still owns that instance so an
+ * interrupted transaction is rolled back before the next WebView opens the
+ * encrypted database. This deliberately bypasses nativePersistence: waiting
+ * behind a transaction that is being interrupted would leave the native lock
+ * alive until the old bridge is gone.
+ */
+export async function closeNativeDatabaseForLifecycle(): Promise<void> {
+  if (lifecycleClose) return lifecycleClose;
+  lifecycleClose = (async () => {
+    const sqlite = connection;
+    connection = null;
+    databasePromise = null;
+    if (!sqlite) return;
+    try {
+      if ((await sqlite.isConnection(DATABASE_NAME, false)).result) {
+        await sqlite.closeConnection(DATABASE_NAME, false);
+        diagnostic('local-lifecycle-connection-closed', { database: DATABASE_NAME });
+      }
+    } catch (error) {
+      // A bridge may already have torn down the plugin. The next WebView
+      // still performs the guarded stale-connection recovery in openDatabase.
+      diagnostic('local-lifecycle-connection-close-failed', {
+        database: DATABASE_NAME,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      lifecycleClose = null;
+    }
+  })();
+  return lifecycleClose;
 }
 
 export function evaluateNativeDatabaseHealth(input: {

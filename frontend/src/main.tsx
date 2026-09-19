@@ -4,7 +4,9 @@ import App from './App';
 import './index.css';
 import { enableGuestMode } from './auth/guestMode';
 import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import { getOfflineDiagnosticSnapshot, type OfflineDiagnosticSnapshot } from './lib/offlineDiagnostics';
+import { closeNativeDatabaseForLifecycle } from './lib/sqliteStore';
 import { installAndroidInstrumentationApi } from './testing/androidInstrumentationApi';
 
 declare global {
@@ -24,6 +26,10 @@ if (import.meta.env.VITE_ENABLE_OFFLINE_DIAGNOSTICS === 'true') {
 
 if (import.meta.env.VITE_ANDROID_INSTRUMENTATION === 'true') {
   installAndroidInstrumentationApi();
+}
+
+if (Capacitor.getPlatform() === 'android') {
+  void CapacitorApp.addListener('pause', () => { void closeNativeDatabaseForLifecycle(); });
 }
 
 if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator) {
