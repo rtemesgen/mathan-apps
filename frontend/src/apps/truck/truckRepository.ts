@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase';
 import { offlineStore } from '../../lib/localStore';
-import { getQueuedMutations, getWorkspaceMutationStatus, replaceConflictedMutationAtomically, type QueuedMutation } from '../../lib/syncQueue';
+import { getQueuedMutations, getWorkspaceMutationStatus, replaceConflictedMutationUnitAtomically, type QueuedMutation } from '../../lib/syncQueue';
 import { syncQueue, writeTruckMutationOnline, writeTruckTransactionBatchOnline } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import { canAttemptBackend, isConnectivityFailure, withConnectionTimeout } from '../../lib/connectivity';
@@ -257,54 +257,71 @@ export async function synchronizeTruckData(workspaceId: string, userId?: string)
 export async function resolveTruckConflict(mutationId: string, decision: 'keep-local' | 'use-server') {
   const queue = await getQueuedMutations();
   const target = queue.find((mutation) => mutation.mutationId === mutationId);
-  if (!target || !TRUCK_TABLES.includes(target.table) || target.syncStatus !== 'conflicted') return false;
+  if (!target || !TRUCK_TABLES.includes(target.table) || !['conflicted', 'error'].includes(target.syncStatus)) return false;
   const workspaceId = target.companyId || String(target.payload.workspace_id ?? '');
   const userId = target.userId || 'unknown';
-  const { data, error } = await withConnectionTimeout(supabase.from(target.table).select('*').eq('workspace_id', workspaceId).eq('id', target.entityId).maybeSingle());
-  if (error) throw error;
-  const remote = data as Record<string, unknown> | null;
-  if (decision === 'keep-local' && !remote) throw new Error('The Truck row was deleted remotely; restoring it requires an explicit new create.');
+  const batchId = String(target.payload.batch_id ?? '');
+  const unit = batchId
+    ? queue.filter((mutation) => mutation.companyId === workspaceId && mutation.table === 'truck_transactions' && String(mutation.payload.batch_id ?? '') === batchId)
+    : [target];
+  if (batchId) {
+    const expectedSize = Number(target.payload.batch_size ?? 0);
+    const indexes = unit.map((mutation) => Number(mutation.payload.batch_index));
+    if (!expectedSize || unit.length !== expectedSize || new Set(indexes).size !== expectedSize || indexes.some((index) => index < 0 || index >= expectedSize)) {
+      throw new Error('This transaction batch is incomplete or corrupt. The full batch must be reviewed together.');
+    }
+    if (unit.some((mutation) => !['conflicted', 'error'].includes(mutation.syncStatus))) throw new Error('This transaction batch changed while it was being reviewed.');
+  }
+  const remotes = await Promise.all(unit.map(async (mutation) => {
+    const { data, error } = await withConnectionTimeout(supabase.from(mutation.table).select('*').eq('workspace_id', workspaceId).eq('id', mutation.entityId).maybeSingle());
+    if (error) throw error;
+    return data as Record<string, unknown> | null;
+  }));
+  if (decision === 'keep-local' && remotes.some((remote) => !remote)) throw new Error('A Truck row in this change was deleted remotely; restoring it requires an explicit new create.');
   const confirmedStorageKey = confirmedCacheKey(workspaceId, userId);
   const effectiveStorageKey = `truck:${userId}:${workspaceId}`;
   const confirmed = (await offlineStore.read<TruckCache>(confirmedStorageKey)) ?? emptyCache();
-  const currentEffectiveQueue = queue.filter((mutation) => mutation.mutationId !== mutationId);
-  const write = { table: target.table, payload: target.payload, operation: target.operation } as TruckQueueWrite;
-  const confirmedNext = remote
-    ? applyConfirmedTruckRows(confirmed, [write], [remote])
-    : (() => {
-      const next = { ...confirmed, trucks: [...confirmed.trucks], owners: [...confirmed.owners], customers: [...confirmed.customers], transactions: [...confirmed.transactions] };
-      const collection = target.table === 'trucks' ? next.trucks : target.table === 'truck_owners' ? next.owners : target.table === 'truck_customers' ? next.customers : next.transactions;
-      const index = collection.findIndex((item) => item.id === target.entityId);
-      if (index >= 0) collection.splice(index, 1);
-      return next;
-    })();
-  let replacement: QueuedMutation | null = null;
-  if (decision === 'keep-local') {
-    const replacementId = crypto.randomUUID();
-    replacement = {
-      ...target,
-      id: replacementId,
-      mutationId: replacementId,
-      baseServerUpdatedAt: updatedAt(remote ?? {} ) ?? null,
-      lastAttemptAt: null,
-      syncStartedAt: null,
-      syncAttemptId: null,
-      leaseExpiresAt: null,
-      syncStatus: 'pending',
-      retryCount: 0,
-      errorCode: undefined,
-      errorMessage: undefined,
-      lastError: undefined,
-      updatedAt: new Date().toISOString(),
-      payload: { ...target.payload, workspace_id: workspaceId, mutation_id: replacementId },
-    };
-    currentEffectiveQueue.push(replacement);
-  }
-  const effective = replayTruckMutations(confirmedNext, currentEffectiveQueue.filter((mutation) => mutation.companyId === workspaceId && TRUCK_TABLES.includes(mutation.table)));
-  return replaceConflictedMutationAtomically(mutationId, replacement, [
+  let confirmedNext = { ...confirmed, trucks: [...confirmed.trucks], owners: [...confirmed.owners], customers: [...confirmed.customers], transactions: [...confirmed.transactions] };
+  unit.forEach((mutation, index) => {
+    const remote = remotes[index];
+    const write = { table: mutation.table, payload: mutation.payload, operation: mutation.operation } as TruckQueueWrite;
+    if (remote) confirmedNext = applyConfirmedTruckRows(confirmedNext, [write], [remote]);
+    else {
+      const collection = mutation.table === 'trucks' ? confirmedNext.trucks : mutation.table === 'truck_owners' ? confirmedNext.owners : mutation.table === 'truck_customers' ? confirmedNext.customers : confirmedNext.transactions;
+      const rowIndex = collection.findIndex((item) => item.id === mutation.entityId);
+      if (rowIndex >= 0) collection.splice(rowIndex, 1);
+    }
+  });
+  const selectedIds = new Set(unit.map((mutation) => mutation.mutationId));
+  const currentEffectiveQueue = queue.filter((mutation) => !selectedIds.has(mutation.mutationId));
+  const replacementBatchId = batchId ? crypto.randomUUID() : undefined;
+  const replacements = decision === 'keep-local'
+    ? unit.map((mutation, index) => {
+      const replacementId = crypto.randomUUID();
+      return {
+        ...mutation,
+        id: replacementId,
+        mutationId: replacementId,
+        baseServerUpdatedAt: updatedAt(remotes[index] ?? {}) ?? null,
+        lastAttemptAt: null,
+        syncStartedAt: null,
+        syncAttemptId: null,
+        leaseExpiresAt: null,
+        syncStatus: 'pending' as const,
+        retryCount: 0,
+        errorCode: undefined,
+        errorMessage: undefined,
+        lastError: undefined,
+        updatedAt: new Date().toISOString(),
+        payload: { ...mutation.payload, workspace_id: workspaceId, mutation_id: replacementId, ...(batchId ? { batch_id: replacementBatchId, batch_index: mutation.payload.batch_index, batch_size: mutation.payload.batch_size } : {}) },
+      };
+    })
+    : [];
+  const effective = replayTruckMutations(confirmedNext, [...currentEffectiveQueue, ...replacements].filter((mutation) => mutation.companyId === workspaceId && TRUCK_TABLES.includes(mutation.table)));
+  return replaceConflictedMutationUnitAtomically(unit.map((mutation) => mutation.mutationId), replacements, [
     { key: confirmedStorageKey, value: confirmedNext },
     { key: effectiveStorageKey, value: effective },
-  ], target.updatedAt);
+  ], Object.fromEntries(unit.map((mutation) => [mutation.mutationId, mutation.updatedAt])));
 }
 
 export async function createTruck(workspaceId: string, v: Omit<Truck, 'id'>, localOnly = false, userId?: string) {

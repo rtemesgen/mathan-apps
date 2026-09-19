@@ -392,6 +392,36 @@ export async function replaceConflictedMutationAtomically(
   });
 }
 
+/** Replace or remove an entire conflict unit under one queue transaction.
+ * Truck transaction batches must never be resolved one row at a time. The
+ * caller fetches the complete unit first, then supplies all fresh identities
+ * (or none for a use-server discard) and the observed durable timestamps. */
+export async function replaceConflictedMutationUnitAtomically(
+  mutationIds: string[],
+  replacements: QueuedMutation[],
+  records: Array<{ key: string; value: unknown }>,
+  expectedUpdatedAt: Record<string, string | undefined> = {},
+) {
+  return withQueueLock(async () => {
+    const selected = new Set(mutationIds);
+    if (!mutationIds.length || new Set(replacements.map((item) => item.mutationId)).size !== replacements.length) return false;
+    const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const queue = raw.map((item) => normalizeQueuedMutation(item));
+    const current = queue.filter((item) => selected.has(item.mutationId));
+    if (current.length !== selected.size || current.some((item) => !['conflicted', 'error'].includes(item.syncStatus))) return false;
+    if (current.some((item) => expectedUpdatedAt[item.mutationId] !== undefined && expectedUpdatedAt[item.mutationId] !== item.updatedAt)) return false;
+    const replacementBySource = new Map(mutationIds.map((id, index) => [id, replacements[index]]));
+    if (replacements.length !== 0 && replacements.length !== mutationIds.length) return false;
+    const next = queue.flatMap((item) => {
+      if (!selected.has(item.mutationId)) return [item];
+      const replacement = replacementBySource.get(item.mutationId);
+      return replacement ? [replacement] : [];
+    });
+    await offlineStore.writeAtomic([...records, { key: KEY, value: next }]);
+    return true;
+  });
+}
+
 /** Explicitly discard one queued change after the user chooses the server
  * version. The effective cache is refreshed by the caller after removal. */
 export async function discardQueuedMutation(mutationId: string) {

@@ -5,6 +5,7 @@ import { getCurrentLocalDateTimeString } from '../utils/formatters';
 import { AppSelect } from '../../../components/AppSelect';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
 import { DEFAULT_TRANSACTION_CATEGORIES, formatTransactionAmount, parseTransactionAmount } from '../utils/transactionInput';
+import { validateEmbeddedAttachmentSize } from '../../../lib/attachmentPolicy';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -65,8 +66,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File size exceeds 5MB limit.');
+    const attachmentError = validateEmbeddedAttachmentSize(file.size);
+    if (attachmentError) {
+      setError(attachmentError);
       return;
     }
 
