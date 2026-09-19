@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited HEAD: `c93ecb4`
+Audited HEAD: `4797b6f`
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
