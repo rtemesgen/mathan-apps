@@ -15,15 +15,20 @@ if [ "$test_status" -eq 0 ]; then
   if [ -z "$target_package" ]; then
     test_status=1
   else
+    target_apk="app/build/outputs/apk/debug/app-debug.apk"
     test_apk="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
-    if [ ! -f "$test_apk" ]; then
-      echo "Android test APK was not produced: $test_apk"
+    if [ ! -f "$target_apk" ] || [ ! -f "$test_apk" ]; then
+      echo "Android APKs were not produced: target=$target_apk test=$test_apk"
       test_status=1
     else
-      # connectedDebugAndroidTest may remove the test APK after its run. Reinstall
-      # only the test APK; do not clear the application package or its database.
-      adb install -r -g "$test_apk"
+      # connectedDebugAndroidTest may remove both packages after its run. Reinstall
+      # with -r so the process-death phase keeps the target app's SQLite data.
+      adb install -r -g "$target_apk"
       test_status=$?
+      if [ "$test_status" -eq 0 ]; then
+        adb install -r -g "$test_apk"
+        test_status=$?
+      fi
     fi
   fi
 fi
