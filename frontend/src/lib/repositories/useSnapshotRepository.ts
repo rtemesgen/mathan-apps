@@ -16,6 +16,7 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
   const [persistenceStatus, setPersistenceStatus] = useState<SnapshotPersistenceStatus>('idle');
   const hydrated = useRef(false);
   const localMutationStarted = useRef(false);
+  const localMutationEpoch = useRef(0);
   const hydrationWaiter = useRef<{ promise: Promise<void>; resolve: () => void }>({ promise: Promise.resolve(), resolve: () => undefined });
   const lastHydratedValue = useRef<string | null>(null);
   const revision = useRef(0);
@@ -95,6 +96,7 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
 
   const persistValue = useCallback(async (next: SetStateAction<T>) => {
     await hydrationWaiter.current.promise;
+    localMutationEpoch.current += 1;
     localMutationStarted.current = true;
     if (!standalone && !workspace) throw new Error('A workspace is required to save this record.');
     if (!standalone && !canEditApp(appId)) throw new Error('You do not have permission to edit this app.');
@@ -125,9 +127,10 @@ export function useSnapshotRepository<T>(domain: 'cash_book' | 'payroll', key: s
     let active = true;
     const resync = () => {
       if (!workspace || standalone) return;
+      const epoch = localMutationEpoch.current;
       const context: SnapshotRepositoryContext = { storageKey, workspaceId: workspace.id, userId: user?.id, standalone, domain, key };
       void hydrateSnapshot<T>(context, revision.current).then((reconciled) => {
-        if (!active || reconciled.value === undefined) return;
+        if (!active || epoch !== localMutationEpoch.current || reconciled.value === undefined) return;
         revision.current = reconciled.revision;
         valueRef.current = reconciled.value;
         lastHydratedValue.current = JSON.stringify(reconciled.value);

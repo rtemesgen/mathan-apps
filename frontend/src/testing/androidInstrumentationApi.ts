@@ -1,8 +1,11 @@
 import { offlineStore } from '../lib/localStore';
 import { enqueueMutationsAtomic, getQueuedMutations, replaceQueue } from '../lib/syncQueue';
 import { getNativeDatabaseHealth, migrateLegacyRecords } from '../lib/sqliteStore';
+import { supabase } from '../lib/supabase';
+import { createTruckTransaction, refreshTruckDataFromCloud } from '../apps/truck/truckRepository';
 
 type Entry = { id: string; amount: number; note: string };
+const instrumentationEnv = import.meta.env as Record<string, string | undefined>;
 const queueKey = 'sync-queue-v1';
 const key = (workspace: string, domain: string) => `instrumentation:${workspace}:${domain}`;
 
@@ -72,6 +75,37 @@ export function installAndroidInstrumentationApi() {
       try { await migrateLegacyRecords([{ key: 'released-v1', value: { retained: true } }], [], store); } catch { /* restart */ }
       await migrateLegacyRecords([{ key: 'released-v1', value: { retained: true } }], [], store);
       return { marker, value: rows.get('released-v1') };
+    },
+    async backendTruckRoundTrip() {
+      const email = instrumentationEnv.VITE_ANDROID_E2E_EMAIL;
+      const password = instrumentationEnv.VITE_ANDROID_E2E_PASSWORD;
+      if (!email || !password) throw new Error('Android backend instrumentation credentials are not configured.');
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) throw sessionError ?? new Error('Android backend instrumentation session was not created.');
+      const userId = sessionData.session.user.id;
+      const { data: memberships, error: membershipError } = await supabase.from('workspace_members').select('workspace_id').eq('user_id', userId).limit(1);
+      if (membershipError || !memberships?.[0]?.workspace_id) throw membershipError ?? new Error('No Android instrumentation workspace is available.');
+      const workspaceId = String(memberships[0].workspace_id);
+      const { data: trucks, error: truckError } = await supabase.from('trucks').select('id').eq('workspace_id', workspaceId).is('deleted_at', null).limit(1);
+      if (truckError || !trucks?.[0]?.id) throw truckError ?? new Error('No Android instrumentation truck is available.');
+      const transaction = await createTruckTransaction(workspaceId, {
+        truckId: String(trucks[0].id), date: new Date().toISOString(), type: 'INCOME', category: 'Android instrumentation', amount: 1, description: `android-${crypto.randomUUID()}`,
+      }, false, userId);
+      const { data: serverRow, error: rowError } = await supabase.from('truck_transactions').select('id').eq('workspace_id', workspaceId).eq('id', transaction.id).maybeSingle();
+      if (rowError) throw rowError;
+      return { workspaceId, transactionId: transaction.id, serverCount: serverRow ? 1 : 0 };
+    },
+    async backendVerify(workspaceId: string, transactionId: string) {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) throw sessionError ?? new Error('Android backend instrumentation session is unavailable after restart.');
+      const userId = sessionData.session.user.id;
+      const { data: serverRow, error: rowError } = await supabase.from('truck_transactions').select('id').eq('workspace_id', workspaceId).eq('id', transactionId).maybeSingle();
+      if (rowError) throw rowError;
+      await refreshTruckDataFromCloud(workspaceId, userId);
+      const cached = await offlineStore.read<{ transactions?: Array<{ id: string }> }>(`truck:${userId}:${workspaceId}`);
+      return { serverCount: serverRow ? 1 : 0, localContains: Boolean(cached?.transactions?.some((row) => row.id === transactionId)) };
     },
   };
   Object.defineProperty(window, '__mathanAndroidTest', { value: Object.freeze(api), configurable: false });

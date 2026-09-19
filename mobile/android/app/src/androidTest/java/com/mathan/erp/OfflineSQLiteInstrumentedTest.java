@@ -102,6 +102,15 @@ public class OfflineSQLiteInstrumentedTest {
         assertFalse(array(js("return await api.queue()", false)).length() == 0);
     }
 
+    @Test public void productionTruckRepositoryReachesBackendAndSurvivesProcessRestart() throws Exception {
+        JSONObject created = object(js("return await api.backendTruckRoundTrip()", false));
+        assertEquals(1, created.getInt("serverCount"));
+        forceStopAndRelaunchApplication();
+        JSONObject verified = object(js("return await api.backendVerify(" + JSONObject.quote(created.getString("workspaceId")) + "," + JSONObject.quote(created.getString("transactionId")) + ")", false));
+        assertEquals(1, verified.getInt("serverCount"));
+        assertTrue(verified.getBoolean("localContains"));
+    }
+
     private void save(String workspace, String domain, String id, int amount, String note) throws Exception {
         js("return await api.save(" + JSONObject.quote(workspace) + "," + JSONObject.quote(domain) + "," +
                 new JSONObject().put("id", id).put("amount", amount).put("note", note) + ")", true);

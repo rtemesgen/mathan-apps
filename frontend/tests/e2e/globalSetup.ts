@@ -93,6 +93,16 @@ export default async function globalSetup() {
   ].map((snapshot) => ({ workspace_id: adminWorkspace, revision: 1, ...snapshot }));
   const { error: snapshotError } = await service.from('app_state_snapshots').insert(snapshots);
   if (snapshotError) throw snapshotError;
+  const { error: truckSeedError } = await service.from('trucks').insert({
+    workspace_id: adminWorkspace,
+    name: 'Android instrumentation truck',
+    unit_number: 'E2E-1',
+    make_model: 'Test vehicle',
+    vin: 'E2E-ANDROID-TRUCK',
+    cash_on_hand: 0,
+    license_plate: 'E2E-1',
+  });
+  if (truckSeedError) throw truckSeedError;
   const attachmentPath = `${adminWorkspace}/e2e-backup-proof.txt`;
   const attachmentBytes = new TextEncoder().encode('Mathan ERP full-stack backup fixture');
   const { error: uploadError } = await service.storage.from('workspace-attachments').upload(attachmentPath, attachmentBytes, { contentType: 'text/plain', upsert: true });

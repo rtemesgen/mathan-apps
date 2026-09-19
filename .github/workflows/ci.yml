@@ -82,9 +82,15 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
-    needs: frontend
+    needs: [frontend, database]
     steps:
       - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start disposable Supabase backend
+        run: supabase start
+        working-directory: backend
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -105,6 +111,19 @@ jobs:
         working-directory: frontend
       - run: npm ci
         working-directory: mobile
+      - name: Seed disposable Android backend account
+        run: npx tsx tests/e2e/globalSetup.ts
+        working-directory: frontend
+        env:
+          SUPABASE_TELEMETRY_DISABLED: 'true'
+      - name: Configure Android instrumentation backend
+        run: |
+          SUPABASE_STATUS="$(supabase status -o json | sed -n '/^{/,$p')"
+          echo "VITE_SUPABASE_URL=http://127.0.0.1:54321" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$(printf '%s' "$SUPABASE_STATUS" | jq -r .ANON_KEY)" >> "$GITHUB_ENV"
+          echo 'VITE_ANDROID_E2E_EMAIL=admin@mathan-e2e.local' >> "$GITHUB_ENV"
+          echo 'VITE_ANDROID_E2E_PASSWORD=Admin-E2E-pass-123!' >> "$GITHUB_ENV"
+        working-directory: backend
       - run: npm run build:instrumentation
         working-directory: mobile
       - name: Run native Android unit tests, lint, and build
@@ -128,6 +147,9 @@ jobs:
           disable-animations: true
           working-directory: mobile/android
           script: |
+            adb reverse tcp:54321 tcp:54321
+            echo "Android page size: $(adb shell getconf PAGE_SIZE | tr -d '\r')"
+            adb shell dumpsys package com.google.android.webview | grep -m1 versionName || true
             adb logcat -c
             set +e
             ./gradlew connectedDebugAndroidTest --stacktrace
@@ -138,8 +160,6 @@ jobs:
               adb shell dumpsys activity processes > app/build/android-diagnostics/processes.txt || true
               adb shell run-as com.mathan.erp.debug sh -c 'find databases shared_prefs -type f -maxdepth 2 -print -exec du -h {} \;' \
                 > app/build/android-diagnostics/database-files.txt 2>&1 || true
-              adb exec-out run-as com.mathan.erp.debug tar -cf - databases shared_prefs \
-                > app/build/android-diagnostics/private-storage.tar 2> app/build/android-diagnostics/private-storage-error.txt || true
             fi
             exit "$test_status"
       - name: Upload Android test reports and database diagnostics

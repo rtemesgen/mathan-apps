@@ -30,6 +30,9 @@
     "test:diagnostics": "node --import tsx tests/diagnostics.test.ts",
     "test:conflict-resolution": "node --import tsx tests/conflict-resolution.test.ts",
     "test:attachment-policy": "node --import tsx tests/attachment-policy.test.ts",
+    "test:snapshot-cache-repair": "node --import tsx tests/snapshot-cache-repair.test.ts",
+    "test:snapshot-save": "node --import tsx tests/snapshot-save.test.ts",
+    "test:snapshot-sync": "node --import tsx tests/snapshot-sync.test.ts",
     "test:android-exit": "node --import tsx tests/android-exit.test.ts",
     "test:split-store-recovery": "node --import tsx tests/split-store-recovery.test.ts",
     "test:app-update": "node --import tsx tests/app-update.test.ts",
@@ -41,7 +44,7 @@
     "test:book-transaction-input": "node --import tsx tests/book-transaction-input.test.ts",
     "test:book-transaction-list": "node --import tsx tests/book-transaction-list.test.ts",
     "test:e2e": "playwright test",
-    "test:unit": "npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:local-store-recovery && npm run test:sqlite-statements && npm run test:persistence-coordinator && npm run test:retryable-single-flight && npm run test:native-store-errors && npm run test:native-store-lifecycle && npm run test:truck-batch-policy && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:reconciliation && npm run test:connectivity && npm run test:diagnostics && npm run test:conflict-resolution && npm run test:attachment-policy && npm run test:android-exit && npm run test:split-store-recovery && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:book-transaction-input && npm run test:book-transaction-list && npm run test:architecture",
+    "test:unit": "npm run test:accounting && npm run test:admin-backup && npm run test:truck && npm run test:repositories && npm run test:sqlite-json && npm run test:local-store-recovery && npm run test:sqlite-statements && npm run test:persistence-coordinator && npm run test:retryable-single-flight && npm run test:native-store-errors && npm run test:native-store-lifecycle && npm run test:truck-batch-policy && npm run test:sqlite-migration && npm run test:sqlite-adapter && npm run test:data-layer-migration && npm run test:queue-policy && npm run test:reconciliation && npm run test:connectivity && npm run test:diagnostics && npm run test:conflict-resolution && npm run test:attachment-policy && npm run test:snapshot-cache-repair && npm run test:snapshot-save && npm run test:snapshot-sync && npm run test:android-exit && npm run test:split-store-recovery && npm run test:app-update && npm run test:file-export && npm run test:export-metadata && npm run test:context-export && npm run test:book-import && npm run test:book-transaction-input && npm run test:book-transaction-list && npm run test:architecture",
     "test": "npm run lint && npm run test:unit"
   },
   "dependencies": {

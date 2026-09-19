@@ -6,9 +6,10 @@ This document is the release handoff for the implementation described in `docs/s
 
 1. Apply the additive Supabase migrations first, including the Truck transaction-batch receipt migration. Do not clear SQLite, IndexedDB, localStorage, or server outboxes.
 2. Run the local migration/upgrade contract, security contract, and batch receipt/idempotency tests with synthetic users for owner, editor, read-only, and unrelated workspaces.
-3. Release the matching web/Android client only after the RPC and receipt schema are available. A client must retain grouped batches when the RPC is unavailable; it must not fall back to independent financial inserts.
-4. Pilot with disposable workspaces: offline Cash Book, Payroll, and Truck edits; browser reload; Android force-stop/relaunch; reconnect; duplicate-request retry; and both conflict choices.
-5. Record the exact client commit, migration version, APK/application ID, Android API level, device/emulator, test account class, server row counts, receipt counts, and local queue counts.
+3. The required Android CI job starts a disposable Supabase stack, seeds a synthetic owner workspace and Truck, configures the debug instrumentation build through `adb reverse`, and runs the production Truck repository through force-stop/relaunch. A client must retain grouped batches when the RPC is unavailable; it must not fall back to independent financial inserts.
+4. Release the matching web/Android client only after the RPC and receipt schema are available.
+5. Pilot with disposable workspaces: offline Cash Book, Payroll, and Truck edits; browser reload; Android force-stop/relaunch; reconnect; duplicate-request retry; and both conflict choices.
+6. Record the exact client commit, migration version, APK/application ID, Android API level, device/emulator, test account class, server row counts, receipt counts, and local queue counts.
 
 ## Stop-ship triggers
 

@@ -10,7 +10,7 @@ async function inspectTruckOfflineContract(page: import('playwright/test').Page,
     const database = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('mathan-erp-offline'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     const entries = await new Promise<Array<{ key: string; value: unknown }>>((resolve, reject) => { const transaction = database.transaction('records', 'readonly'); const store = transaction.objectStore('records'); const keys = store.getAllKeys(); const values = store.getAll(); transaction.oncomplete = () => resolve(keys.result.map((key, index) => ({ key: String(key), value: values.result[index] }))); transaction.onerror = () => reject(transaction.error); });
     database.close();
-    const cachedTransactions = entries.filter((entry) => entry.key.startsWith('truck:')).flatMap((entry) => (entry.value as { transactions?: Array<{ description?: string }> } | null)?.transactions ?? []);
+    const cachedTransactions = entries.filter((entry) => entry.key.startsWith('truck:') && !entry.key.startsWith('truck:confirmed:')).flatMap((entry) => (entry.value as { transactions?: Array<{ description?: string }> } | null)?.transactions ?? []);
     const queue = entries.find((entry) => entry.key === 'sync-queue-v1')?.value;
     return {
       effectiveCount: cachedTransactions.filter((transaction) => transaction.description === expectedMemo).length,

@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited HEAD: `2b2bfe7`
+Audited implementation checkpoint: `fix-andriod` working tree after `b5f0103`; final commit recorded after verification.
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
@@ -20,6 +20,9 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Online Truck batch client path | `writeTruckTransactionBatchOnline()` and `createTruckTransactionBatch()` preserve batch identity | Implemented; backend-connected browser test remains pending |
 | Queued Truck batch integrity | `truckBatchPolicy.ts` and worker group submission path | Policy and wiring implemented; end-to-end retry/cache proof remains pending |
 | Snapshot keep-local conflict path | `resolveSnapshotConflict()` fetches remote state, three-way merges, allocates a new ID, and atomically replaces local layers; the issue sheet now stays open and reports failures | Implemented; UI/E2E proof remains pending |
+| Snapshot delayed acknowledgement and revision refresh | `snapshot-sync.test.ts`, `snapshot-save.test.ts`, and `snapshot-cache-repair.test.ts` cover newer intent preservation, post-flush revision rereads, and same-ID cache repair receipts | Focused tests pass |
+| Bounded diagnostics and attachment input policy | `diagnostics.test.ts` verifies redaction/retention; `attachment-policy.test.ts` verifies the 5 MB embedded limit | Pass for client policy |
+| Stale asynchronous state protection | Truck refresh generations and snapshot online-resync epochs prevent older async results from overwriting newer local state; focused TypeScript and repository tests pass | Implemented; browser confirmation remains blocked by backend-sync failures |
 | Android force-stop test source | `OfflineSQLiteInstrumentedTest.java` uses target package plus `am force-stop` before relaunch | Compiles; emulator execution is unverified here |
 
 ## Partial or not yet proven
@@ -31,7 +34,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Truck conflict resolution | `resolveTruckConflict()` fetches the remote row, supports keep-local/use-server, and uses an updated-at race guard before atomic queue/cache replacement; the issue sheet now stays open and reports failures | Implemented; no backend-connected UI/E2E proof yet |
 | Backend authorization matrix | `truck_batch_rpc.sql` exercises owner, permitted editor, read-only member, and unrelated user RPC execution paths | Pass locally for the covered batch RPC matrix; broader application policies remain outside this test |
 | Backend invalid-row rollback matrix | `truck_batch_rpc.sql` proves zero rows and zero receipt for invalid second-row truck references, duplicate IDs, and invalid owner/customer/workspace references | Pass locally for the covered RPC matrix |
-| Backend-connected Android sync | CI runs Android instrumentation, but the test harness still lacks a live Supabase backend and exact-once server-count verification | Unverified |
+| Backend-connected Android sync | CI now starts disposable Supabase, seeds an authenticated Truck fixture, uses `adb reverse`, and runs the production Truck repository after force-stop/relaunch | CI/device evidence required |
 | True process-death execution | Test source now calls `am force-stop`; no emulator was available locally and CI evidence was not inspected for this HEAD | Unverified |
 | Attachment capacity | Attachments remain base64 in snapshot payloads with a 5 MB UI limit; no physical-device SQLite capacity result exists | Unverified |
 | 16 KB page-size release evidence | Existing artifact checks were previously recorded, but no final post-change release/device evidence is attached to this HEAD | Unverified |
@@ -50,6 +53,8 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - `mobile/android`: `./gradlew testDebugUnitTest` — passed.
 - `mobile/android`: `./gradlew compileDebugAndroidTestJavaWithJavac` — passed.
 - Local `adb devices` could not start an ADB daemon in this environment; physical/emulator runtime results therefore remain unverified.
+- Latest elevated browser run: 21/26 passed. Five restart/sync scenarios failed because Truck server counts stayed at zero or restart flows timed out; this is recorded as an unresolved backend-connected E2E gate, not a passing persistence claim.
+- Latest focused verification after stale-state guard: `npm run lint`, `npm run test:snapshot-sync`, `npm run test:snapshot-save`, `npm run test:truck`, and `npm run build` — passed. `npx playwright test tests/e2e/truck.spec.ts` still failed its three backend-sync scenarios.
 
 ## Release decision
 
