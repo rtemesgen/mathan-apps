@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited implementation checkpoint: `fix-andriod` at `2af589f` after the Android lifecycle, rollback, process-death harness, conflict-resolution, and runtime-evidence updates.
+Audited implementation checkpoint: `fix-andriod` at `5f6a61c` after the Android lifecycle, rollback, process-death harness, conflict-resolution, and runtime-evidence updates.
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
@@ -85,6 +85,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - CI run `35459355609` again passed the ordinary Android instrumentation suite (10/10 app tests), but the direct process-death phase could not find instrumentation info because the generated `androidTest` APK had been removed after the Gradle test task.
 - Commit `ded3fe4` reinstalls the generated `androidTest` APK, discovers its installed instrumentation component, and runs prepare/verify directly without clearing the production app package. Run `35460083846` exposed the remaining target-APK removal, which was fixed in `18bf3cf`.
 - CI run `35460969456` passed all required gates: frontend, database, E2E, Android, and the required-gates aggregation. Android reported page size `4096`; this proves process-death durability on the API 35 emulator but does not prove 16 KB runtime behavior.
+- CI run `35461876727` passed all required gates again for the current branch HEAD `5f6a61c`; this was an audit-report-only rerun and introduces no new product evidence beyond the implementation run above.
 - Commit `0d0cafb` adds active-session scope validation and transactional snapshot “use server” conflict resolution. Frontend `npm test` and `npm run build` pass locally; the pushed CI run also passed frontend/database/E2E/Android.
 
 ## Release decision
