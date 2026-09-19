@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited implementation checkpoint: `fix-andriod` at `0d0cafb` after the Android lifecycle, rollback, process-death harness, and conflict-resolution fixes.
+Audited implementation checkpoint: `fix-andriod` at `2af589f` after the Android lifecycle, rollback, process-death harness, conflict-resolution, and runtime-evidence updates.
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
