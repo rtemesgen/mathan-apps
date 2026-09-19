@@ -119,10 +119,19 @@ jobs:
       - name: Configure Android instrumentation backend
         run: |
           SUPABASE_STATUS="$(supabase status -o json | sed -n '/^{/,$p')"
-          echo "VITE_SUPABASE_URL=http://127.0.0.1:54321" >> "$GITHUB_ENV"
-          echo "VITE_SUPABASE_ANON_KEY=$(printf '%s' "$SUPABASE_STATUS" | jq -r .ANON_KEY)" >> "$GITHUB_ENV"
-          echo 'VITE_ANDROID_E2E_EMAIL=admin@mathan-e2e.local' >> "$GITHUB_ENV"
-          echo 'VITE_ANDROID_E2E_PASSWORD=Admin-E2E-pass-123!' >> "$GITHUB_ENV"
+          api_url="http://127.0.0.1:54321"
+          anon_key="$(printf '%s' "$SUPABASE_STATUS" | jq -r .ANON_KEY)"
+          email='admin@mathan-e2e.local'
+          password='Admin-E2E-pass-123!'
+          auth_code="$(curl -sS -o /tmp/android-auth-probe.json -w '%{http_code}' \
+            -X POST "$api_url/auth/v1/token?grant_type=password" \
+            -H "apikey: $anon_key" -H 'Content-Type: application/json' \
+            --data "{\"email\":\"$email\",\"password\":\"$password\"}")"
+          test "$auth_code" = 200
+          echo "VITE_SUPABASE_URL=$api_url" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$anon_key" >> "$GITHUB_ENV"
+          echo "VITE_ANDROID_E2E_EMAIL=$email" >> "$GITHUB_ENV"
+          echo "VITE_ANDROID_E2E_PASSWORD=$password" >> "$GITHUB_ENV"
         working-directory: backend
       - run: npm run build:instrumentation
         working-directory: mobile
@@ -144,10 +153,10 @@ jobs:
           cores: 2
           emulator-boot-timeout: 600
           # The force-stop/relaunch coverage exercises a second WebView process.
-          # Use SwiftShader for deterministic WebView rendering. Keep Vulkan
-          # available because this API-35 WebView needs its GLES/Vulkan config;
-          # process death is driven by the host after the normal suite.
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          # Use direct SwiftShader for deterministic WebView GLES/Vulkan
+          # rendering on API 35; the indirect backend reports missing ES
+          # configs and crashes the renderer during Activity recreation.
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: mobile/android
           script: |

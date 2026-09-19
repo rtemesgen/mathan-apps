@@ -8,6 +8,7 @@ import { createTruckTransaction, refreshTruckDataFromCloud, synchronizeTruckData
 type Entry = { id: string; amount: number; note: string };
 const instrumentationEnv = import.meta.env as Record<string, string | undefined>;
 const key = (workspace: string, domain: string) => `instrumentation:${workspace}:${domain}`;
+const configuredSupabaseEndpoint = () => (supabase as unknown as { supabaseUrl?: string }).supabaseUrl ?? 'unknown';
 
 /** Test-only API compiled into emulator builds by mobile:build:instrumentation.
  * Every persistence operation below goes through the same OfflineStore and
@@ -79,7 +80,7 @@ export function installAndroidInstrumentationApi() {
       const password = instrumentationEnv.VITE_ANDROID_E2E_PASSWORD;
       if (!email || !password) throw new Error('Android backend instrumentation credentials are not configured.');
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) throw signInError;
+      if (signInError) throw new Error(`${signInError.message} (endpoint=${configuredSupabaseEndpoint()})`);
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !sessionData.session) throw sessionError ?? new Error('Android backend instrumentation session was not created.');
       const userId = sessionData.session.user.id;
@@ -110,7 +111,7 @@ export function installAndroidInstrumentationApi() {
       const password = instrumentationEnv.VITE_ANDROID_E2E_PASSWORD;
       if (!email || !password) throw new Error('Android backend instrumentation credentials are not configured.');
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) throw signInError;
+      if (signInError) throw new Error(`${signInError.message} (endpoint=${configuredSupabaseEndpoint()})`);
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !sessionData.session) throw sessionError ?? new Error('Android backend instrumentation session was not created.');
       const userId = sessionData.session.user.id;
