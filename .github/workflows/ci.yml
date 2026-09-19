@@ -144,9 +144,10 @@ jobs:
           cores: 2
           emulator-boot-timeout: 600
           # The force-stop/relaunch coverage exercises a second WebView process.
-          # Use SwiftShader and disable Vulkan so the WebView renderer remains
-          # stable across the force-stop/relaunch process boundary.
-          emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -no-snapshot -noaudio -no-boot-anim -camera-back none
+          # Use SwiftShader for deterministic WebView rendering. Keep Vulkan
+          # available because this API-35 WebView needs its GLES/Vulkan config;
+          # process death is driven by the host after the normal suite.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: mobile/android
           script: |
