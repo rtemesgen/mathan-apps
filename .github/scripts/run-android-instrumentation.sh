@@ -15,8 +15,26 @@ if [ "$test_status" -eq 0 ]; then
   if [ -z "$target_package" ]; then
     test_status=1
   else
-    test_package="${target_package}.test"
-    instrumentation_runner="${test_package}/androidx.test.runner.AndroidJUnitRunner"
+    test_apk="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+    if [ ! -f "$test_apk" ]; then
+      echo "Android test APK was not produced: $test_apk"
+      test_status=1
+    else
+      # connectedDebugAndroidTest may remove the test APK after its run. Reinstall
+      # only the test APK; do not clear the application package or its database.
+      adb install -r -g "$test_apk"
+      test_status=$?
+    fi
+  fi
+fi
+
+if [ "$test_status" -eq 0 ]; then
+  test_package="${target_package}.test"
+  instrumentation_runner=$(adb shell pm list instrumentation | tr -d '\r' | sed -n "s/^instrumentation:\([^ ]*\).*$/\1/p" | grep "^${test_package}/" | head -n 1)
+  if [ -z "$instrumentation_runner" ]; then
+    echo "Android instrumentation component was not installed for $test_package"
+    test_status=1
+  else
     adb shell am instrument -w -r \
       -e class 'com.mathan.erp.OfflineSQLiteInstrumentedTest#processDeathPrepareBoundary' \
       -e processDeathPhase prepare \
@@ -40,8 +58,6 @@ if [ "$test_status" -eq 0 ]; then
 fi
 
 if [ "$test_status" -eq 0 ]; then
-  test_package="${target_package}.test"
-  instrumentation_runner="${test_package}/androidx.test.runner.AndroidJUnitRunner"
   adb shell am instrument -w -r \
     -e class 'com.mathan.erp.OfflineSQLiteInstrumentedTest#processDeathVerifyBoundary' \
     -e processDeathPhase verify \
