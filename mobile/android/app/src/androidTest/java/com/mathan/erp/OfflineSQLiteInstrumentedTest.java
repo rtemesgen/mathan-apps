@@ -9,6 +9,7 @@ import android.webkit.WebView;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.LargeTest;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -69,7 +70,7 @@ public class OfflineSQLiteInstrumentedTest {
 
     @Test public void staleQueueRecoversAfterPendingSaveAndForceStopBoundary() throws Exception {
         save("alpha", "payroll", "pending-1", 42, "pending");
-        recreateApplication(); // Activity destruction/recreation is the in-run process boundary.
+        forceStopAndRelaunchApplication();
         JSONArray recovered = array(js("return await api.recoverQueue()", false));
         assertEquals(1, recovered.length());
         assertEquals("pending-1", recovered.getJSONObject(0).getString("mutationId"));
@@ -112,6 +113,14 @@ public class OfflineSQLiteInstrumentedTest {
     }
 
     private void recreateApplication() throws Exception { scenario.recreate(); awaitApi(); }
+
+    private void forceStopAndRelaunchApplication() throws Exception {
+        scenario.close();
+        String packageName = InstrumentationRegistry.getInstrumentation().getTargetContext().getPackageName();
+        InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("am force-stop " + packageName).close();
+        scenario = ActivityScenario.launch(MainActivity.class);
+        awaitApi();
+    }
 
     private void awaitApi() throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
