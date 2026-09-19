@@ -36,7 +36,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Attachment capacity | Attachments remain base64 in snapshot payloads with a 5 MB UI limit; no physical-device SQLite capacity result exists | Unverified |
 | 16 KB page-size release evidence | Existing artifact checks were previously recorded, but no final post-change release/device evidence is attached to this HEAD | Unverified |
 | APK replacement/data preservation | No supported old-APK-to-new-APK instrumentation run is recorded | Missing |
-| Deployment, rollback, mixed-client, and pilot handoff | Plan section 17–19 is not yet reflected in an implementation/release handoff document | Missing |
+| Deployment, rollback, mixed-client, and pilot handoff | [offline-sync-rollout.md](../../offline-sync-rollout.md) records additive order, stop-ship triggers, rollback restrictions, and required evidence; pilot/device artifacts remain pending | Documented; evidence pending |
 
 ## Verification run for this audit
 
