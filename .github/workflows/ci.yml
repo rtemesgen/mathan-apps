@@ -123,11 +123,20 @@ jobs:
           anon_key="$(printf '%s' "$SUPABASE_STATUS" | jq -r .ANON_KEY)"
           email='admin@mathan-e2e.local'
           password='Admin-E2E-pass-123!'
-          auth_code="$(curl -sS -o /tmp/android-auth-probe.json -w '%{http_code}' \
-            -X POST "$api_url/auth/v1/token?grant_type=password" \
-            -H "apikey: $anon_key" -H 'Content-Type: application/json' \
-            --data "{\"email\":\"$email\",\"password\":\"$password\"}")"
-          test "$auth_code" = 200
+          auth_code='000'
+          for attempt in $(seq 1 15); do
+            auth_code="$(curl -sS -o /tmp/android-auth-probe.json -w '%{http_code}' \
+              -X POST "$api_url/auth/v1/token?grant_type=password" \
+              -H "apikey: $anon_key" -H 'Content-Type: application/json' \
+              --data "{\"email\":\"$email\",\"password\":\"$password\"}" || true)"
+            [ "$auth_code" = 200 ] && break
+            sleep 2
+          done
+          if [ "$auth_code" != 200 ]; then
+            printf 'Android auth probe failed with HTTP %s: ' "$auth_code"
+            sed -E 's/(access_token|refresh_token)":"[^"]+"/\1":"<redacted>"/g' /tmp/android-auth-probe.json || true
+            exit 1
+          fi
           echo "VITE_SUPABASE_URL=$api_url" >> "$GITHUB_ENV"
           echo "VITE_SUPABASE_ANON_KEY=$anon_key" >> "$GITHUB_ENV"
           echo "VITE_ANDROID_E2E_EMAIL=$email" >> "$GITHUB_ENV"
