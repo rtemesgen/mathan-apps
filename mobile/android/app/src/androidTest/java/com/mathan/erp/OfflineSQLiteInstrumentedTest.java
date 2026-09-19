@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import android.webkit.WebView;
 import android.os.ParcelFileDescriptor;
 import android.Manifest;
+import android.os.Build;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -34,8 +35,15 @@ import java.util.UUID;
 @LargeTest
 public class OfflineSQLiteInstrumentedTest {
     @org.junit.Rule
-    public GrantPermissionRule runtimePermissions = GrantPermissionRule.grant(
-            Manifest.permission.POST_NOTIFICATIONS);
+    public GrantPermissionRule runtimePermissions = notificationPermissionRule();
+
+    private static GrantPermissionRule notificationPermissionRule() {
+        // POST_NOTIFICATIONS was introduced in API 33. Asking Android 12 and
+        // older devices to grant it aborts every test before the app starts.
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                ? GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+                : GrantPermissionRule.grant();
+    }
 
     private ActivityScenario<MainActivity> scenario;
 
