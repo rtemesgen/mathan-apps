@@ -6,6 +6,7 @@ import { emitSyncConflict, emitSyncProgress, emitSyncStatus, type SyncStatus } f
 import { withConnectionTimeout } from './connectivity';
 import { diagnostic } from './diagnostics';
 import { validateQueuedTransactionBatch } from './truckBatchPolicy';
+import { validateTruckBatchResponse } from './truckBatch';
 
 export type { SyncStatus } from './toast';
 
@@ -97,7 +98,7 @@ export async function writeTruckTransactionBatchOnline(workspaceId: string, batc
   if (!result || !['written', 'already_applied'].includes(result.status)) {
     throw new Error('The Truck transaction batch was not accepted by the server.');
   }
-  return result.rows ?? [];
+  return validateTruckBatchResponse(batchId, rows, result);
 }
 
 /** Flush queued changes for one or more workspaces in a single pass. */

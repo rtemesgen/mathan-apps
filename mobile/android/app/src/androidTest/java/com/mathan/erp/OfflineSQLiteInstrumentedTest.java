@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.webkit.WebView;
+import android.os.ParcelFileDescriptor;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -22,6 +23,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.UUID;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 
 /** End-to-end durability tests. These launch the real BridgeActivity/WebView;
  * JavaScript calls enter the application's OfflineStore and the production
@@ -137,10 +140,36 @@ public class OfflineSQLiteInstrumentedTest {
 
     private void forceStopAndRelaunchApplication() throws Exception {
         scenario.close();
+        scenario = null;
         String packageName = InstrumentationRegistry.getInstrumentation().getTargetContext().getPackageName();
-        InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("am force-stop " + packageName).close();
+        // Drain the shell descriptor. Closing it immediately can leave the
+        // force-stop command racing the next ActivityScenario launch, which
+        // kills the newly-created WebView and makes the test process appear
+        // to crash rather than proving process-death durability.
+        readShellCommand("am force-stop " + packageName);
+        waitForPackageStopped(packageName);
         scenario = ActivityScenario.launch(MainActivity.class);
         awaitApi();
+    }
+
+    private void waitForPackageStopped(String packageName) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            if (readShellCommand("pidof " + packageName).trim().isEmpty()) return;
+            Thread.sleep(100);
+        }
+        throw new AssertionError("package did not stop after force-stop: " + packageName);
+    }
+
+    private String readShellCommand(String command) throws Exception {
+        ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand(command);
+        try (InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor)) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[256];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            return output.toString(java.nio.charset.StandardCharsets.UTF_8.name());
+        }
     }
 
     private void awaitApi() throws Exception {
