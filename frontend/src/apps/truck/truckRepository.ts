@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase';
 import { offlineStore } from '../../lib/localStore';
-import { getQueuedMutations, getWorkspaceMutationStatus, replaceConflictedMutationUnitAtomically, type QueuedMutation } from '../../lib/syncQueue';
+import { getQueuedMutations, getWorkspaceMutationStatus, replaceConflictedMutationUnitAtomically, validateQueuedMutationScope, type QueuedMutation } from '../../lib/syncQueue';
 import { syncQueue, writeTruckMutationOnline, writeTruckTransactionBatchOnline } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import { canAttemptBackend, isConnectivityFailure, withConnectionTimeout } from '../../lib/connectivity';
@@ -258,8 +258,10 @@ export async function resolveTruckConflict(mutationId: string, decision: 'keep-l
   const queue = await getQueuedMutations();
   const target = queue.find((mutation) => mutation.mutationId === mutationId);
   if (!target || !TRUCK_TABLES.includes(target.table) || !['conflicted', 'error'].includes(target.syncStatus)) return false;
+  const { data: currentUser, error: authError } = await supabase.auth.getUser();
+  if (authError || !validateQueuedMutationScope(target, currentUser.user?.id)) throw new Error('This saved Truck change belongs to a different or unresolved session. Sign in to the original workspace account before resolving it.');
   const workspaceId = target.companyId || String(target.payload.workspace_id ?? '');
-  const userId = target.userId || 'unknown';
+  const userId = currentUser.user.id;
   const batchId = String(target.payload.batch_id ?? '');
   const unit = batchId
     ? queue.filter((mutation) => mutation.companyId === workspaceId && mutation.table === 'truck_transactions' && String(mutation.payload.batch_id ?? '') === batchId)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { offlineStore } from '../src/lib/localStore';
-import { replaceConflictedMutationUnitAtomically, type QueuedMutation } from '../src/lib/syncQueue';
+import { replaceConflictedMutationUnitAtomically, validateQueuedMutationScope, type QueuedMutation } from '../src/lib/syncQueue';
 
 const mutation = (id: string, updatedAt = '2026-09-19T00:00:00.000Z'): QueuedMutation => ({
   id, mutationId: id, userId: 'user-a', companyId: 'workspace-a', entityType: 'truck_transaction', entityId: id,
@@ -19,6 +19,10 @@ offlineStore.writeAtomic = (async (records: Array<{ key: string; value: unknown 
   }
 }) as typeof offlineStore.writeAtomic;
 try {
+  assert.equal(validateQueuedMutationScope(mutation('scope-ok'), 'user-a'), true, 'a queued mutation may be reviewed only by its owning user');
+  assert.equal(validateQueuedMutationScope(mutation('scope-unknown'), 'user-b'), false, 'a queued mutation from another user cannot be reviewed');
+  assert.equal(validateQueuedMutationScope({ ...mutation('legacy'), userId: 'unknown' }, 'user-a'), false, 'legacy unscoped mutations cannot be guessed into an active session');
+
   const replaced = await replaceConflictedMutationUnitAtomically(
     ['m1', 'm2'],
     [

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import type { EntitySyncStatus } from '../lib/reconciliation';
-import { discardQueuedMutation, resolveSnapshotConflict, retryQueuedMutation } from '../lib/syncQueue';
+import { resolveSnapshotConflict, retryQueuedMutation } from '../lib/syncQueue';
 import { syncWorkspaceQueues } from '../lib/offlineSync';
 import { resolveTruckConflict } from '../apps/truck/truckRepository';
 
@@ -41,8 +41,9 @@ export function SyncIssueSheet() {
         if (!resolved) throw new Error('This sync issue changed before it could be resolved. Review it again.');
         if (issue.workspaceId) await syncWorkspaceQueues(issue.workspaceId);
       } else {
-        if (!await discardQueuedMutation(issue.mutationId)) throw new Error('This sync issue changed before it could be resolved. Review it again.');
-        window.location.reload();
+        const resolved = await resolveSnapshotConflict(issue.mutationId, 'use-server');
+        if (!resolved) throw new Error('This sync issue changed before it could be resolved. Review it again.');
+        if (issue.workspaceId) await syncWorkspaceQueues(issue.workspaceId);
       }
       setIssue(null);
     } catch (reason) {

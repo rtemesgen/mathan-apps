@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited implementation checkpoint: `fix-andriod` after the stale-state fixes and Truck E2E assertion correction.
+Audited implementation checkpoint: `fix-andriod` at `ded3fe4` after the Android lifecycle, rollback, and process-death harness fixes.
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
@@ -77,6 +77,12 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - CI run `35456076515` passed database, frontend, and browser E2E jobs, but Android failed the same three lifecycle/database tests. Its logcat showed `MathanMainActivity: Closed offline SQLite connection before activity pause`, followed by `SQLiteConnectionPool: ... closed but there are still 1 connections in use`; this confirms the hook was reached but did not roll back the interrupted transaction. Added explicit `rollbackTransaction` before `closeConnection` in `fa1acb7`.
 - CI run `35456880898` reached the emulator and reported 10/10 instrumentation tests passing before the wrapper failed with `sh: Syntax error: end of file (expecting "fi")`. The reactivecircus runner executes each multiline `script` line independently, so the conditional process-death flow was moved to `.github/scripts/run-android-instrumentation.sh` in `f7261a4`; `bash -n` passes and a fresh CI run is required to evaluate the rollback fix.
 - Latest local verification after explicit rollback: `mobile/android` `./gradlew testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestJavaWithJavac` passed. No local emulator was attached for connected execution.
+
+## Latest Android harness evidence
+
+- CI run `35458574243` passed the ordinary Android instrumentation suite (10/10 app tests), including the former SQLCipher-lock cases. Its process-death boundary then failed because a second Gradle connected-test invocation cleared/reinstalled app state.
+- CI run `35459355609` again passed the ordinary Android instrumentation suite (10/10 app tests), but the direct process-death phase could not find instrumentation info because the generated `androidTest` APK had been removed after the Gradle test task.
+- Commit `ded3fe4` reinstalls the generated `androidTest` APK, discovers its installed instrumentation component, and runs prepare/verify directly without clearing the production app package. CI run `35460083846` is still in progress, so this runtime gate remains unverified.
 
 ## Release decision
 

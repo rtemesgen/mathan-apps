@@ -61,6 +61,21 @@ export function queuedMutationCompanyId(mutation: Pick<QueuedMutation, 'companyI
   return mutation.companyId || String(mutation.payload.workspace_id ?? '');
 }
 
+/** A conflict may only be reviewed by the session that created it. Legacy
+ * entries without an owner are intentionally rejected rather than guessed
+ * into whichever user happens to be signed in. */
+export function validateQueuedMutationScope(mutation: Pick<QueuedMutation, 'userId' | 'companyId' | 'payload'>, activeUserId: string | null | undefined) {
+  return Boolean(activeUserId && mutation.userId && mutation.userId !== 'unknown' && mutation.userId === activeUserId && queuedMutationCompanyId(mutation));
+}
+
+async function requireQueuedMutationScope(mutation: Pick<QueuedMutation, 'userId' | 'companyId' | 'payload'>) {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user?.id || !validateQueuedMutationScope(mutation, data.user.id)) {
+    throw new Error('This saved change belongs to a different or unresolved session. Sign in to the original workspace account before resolving it.');
+  }
+  return { userId: data.user.id, workspaceId: queuedMutationCompanyId(mutation) };
+}
+
 /** Rebase a newer full snapshot after an earlier snapshot has been
  * acknowledged. This preserves the newer local payload while preventing a
  * reconnect race from submitting it against an obsolete revision. */
@@ -446,18 +461,61 @@ export async function retryQueuedMutation(mutationId: string, includeConflict = 
 /** Resolve a conflicted snapshot against a freshly fetched server version.
  * The network read happens without the queue lock; the final replacement is
  * committed only if the selected mutation is still the same durable record. */
-export async function resolveSnapshotConflict(mutationId: string) {
+export async function resolveSnapshotConflict(mutationId: string, decision: 'keep-local' | 'use-server' = 'keep-local') {
   const queue = await getQueuedMutations();
   const target = queue.find((mutation) => mutation.mutationId === mutationId);
   if (!target || target.table !== 'app_state_snapshots' || target.syncStatus !== 'conflicted') return false;
-  const workspaceId = queuedMutationCompanyId(target);
+  const { userId, workspaceId } = await requireQueuedMutationScope(target);
   const domain = String(target.payload.domain ?? target.entityId);
-  const base = target.payload.base_payload;
-  if (base === undefined) throw new Error('This snapshot has no recorded baseline; whole-snapshot replacement requires explicit review.');
   const { data, error } = await withConnectionTimeout(supabase.from('app_state_snapshots').select('payload, revision').eq('workspace_id', workspaceId).eq('domain', domain).maybeSingle());
   if (error) throw error;
   const remote = data as unknown as { payload?: unknown; revision?: number } | null;
   if (!remote || remote.payload === undefined || remote.revision === undefined) throw new Error('The server snapshot is unavailable; the local change was preserved.');
+  if (decision === 'use-server') {
+    const storageKey = `${userId}:${workspaceId}:${domain}`;
+    return withQueueLock(async () => {
+      const latestRaw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+      const latest = latestRaw.map((item, index) => normalizeQueuedMutation(item, index + 1));
+      const current = latest.find((item) => item.mutationId === mutationId);
+      if (!current || current.updatedAt !== target.updatedAt || current.syncStatus !== 'conflicted') return false;
+      const later = latest
+        .filter((item) => item.mutationId !== mutationId && item.table === 'app_state_snapshots' && queuedMutationCompanyId(item) === workspaceId && String(item.payload.domain ?? item.entityId) === domain && (item.localSequence ?? 0) > (current.localSequence ?? 0))
+        .sort((a, b) => (a.localSequence ?? 0) - (b.localSequence ?? 0));
+      let effective = remote.payload;
+      let effectiveRevision = remote.revision;
+      const rebased = latest.map((item) => {
+        if (!later.some((candidate) => candidate.mutationId === item.mutationId)) return item;
+        if (item.syncStatus === 'pending' && !item.lastAttemptAt && item.payload.base_payload !== undefined) {
+          const baseline = effective;
+          effective = threeWayMergeSnapshot(item.payload.base_payload, baseline, item.payload.payload);
+          return {
+            ...item,
+            baseRevision: effectiveRevision,
+            payload: {
+              ...item.payload,
+              expected_revision: effectiveRevision,
+              base_payload: baseline,
+              payload: effective,
+              affected_client_ids: affectedEntityIds(baseline, effective),
+            },
+          };
+        }
+        if (item.payload.payload !== undefined) effective = item.payload.payload;
+        return item;
+      });
+      const nextQueue = rebased.filter((item) => item.mutationId !== mutationId);
+      const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), nextQueue);
+      await persistQueueState(nextQueue, metadata, [
+        { key: storageKey, value: effective },
+        { key: `${storageKey}:revision`, value: effectiveRevision },
+        { key: `${storageKey}:confirmed`, value: remote.payload },
+        { key: `${storageKey}:confirmed:revision`, value: effectiveRevision },
+      ]);
+      return true;
+    });
+  }
+  const base = target.payload.base_payload;
+  if (base === undefined) throw new Error('This snapshot has no recorded baseline; whole-snapshot replacement requires explicit review.');
   const local = target.payload.payload;
   const merged = threeWayMergeSnapshot(base, remote.payload, local);
   const nextMutationId = crypto.randomUUID();
@@ -487,7 +545,7 @@ export async function resolveSnapshotConflict(mutationId: string) {
       affected_client_ids: affectedEntityIds(remote.payload, merged),
     },
   };
-  const storageKey = `${target.userId}:${workspaceId}:${domain}`;
+  const storageKey = `${userId}:${workspaceId}:${domain}`;
   return withQueueLock(async () => {
     const latestRaw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
     const latest = latestRaw.map((item, index) => normalizeQueuedMutation(item, index + 1));
