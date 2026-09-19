@@ -1,4 +1,4 @@
-import { offlineStore } from './localStore';
+import { offlineStore, readDurableOffline } from './localStore';
 import { mergeQueuedMutation } from './queuePolicy';
 import { emitSyncProgress } from './toast';
 import { supabase } from './supabase';
@@ -208,6 +208,14 @@ export async function enqueueMutation(mutation: QueuedMutationInput) {
 export async function getQueuedMutations() {
   await queueTail;
   const queue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+  return queue.map((item, index) => recoverQueuedMutation(normalizeQueuedMutation(item, index + 1)));
+}
+
+/** Read and normalize the queue directly from its backing store. This is used
+ * by the Android exit barrier, where an in-memory queue must not be mistaken
+ * for data that survived the JS process boundary. */
+export async function getDurableQueuedMutations() {
+  const queue = (await readDurableOffline<QueuedMutation[]>(KEY)) ?? [];
   return queue.map((item, index) => recoverQueuedMutation(normalizeQueuedMutation(item, index + 1)));
 }
 

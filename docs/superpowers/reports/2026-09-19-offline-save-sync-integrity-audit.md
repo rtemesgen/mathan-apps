@@ -65,6 +65,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - Latest client batch verification: `npm run test:truck-batch` passed the complete-receipt, partial-receipt, batch-identity, and mutation-identity rejection cases; the full frontend unit suite also passed after this addition.
 - Latest queue metadata verification: `npm test` passed with elevated permission for the SQLite child-process test, including legacy queue normalization, monotonic local sequencing, queue-generation metadata, ordering policy, SQLite adapter, recovery, and architecture checks; `npm run build` also passed.
 - Latest snapshot/recovery verification: `npm run lint`, `npm run test:snapshot-sync`, `npm run test:split-store-recovery`, `npm run test:persistence-compatibility`, and `npm run test:architecture` passed after making snapshot acknowledgement atomic and preserving queue metadata during split-store recovery.
+- Latest Android-exit verification: the exit barrier now reads a normalized queue directly from the durable backing store instead of the in-memory queue; `npm run test:android-exit`, lint, and architecture checks pass.
 - External CI evidence: run `35445118182` passed frontend, database, and browser E2E jobs; Android reached the disposable-backend and build stages but failed in the emulator with `bad color buffer handle` and an instrumentation process crash while starting `staleQueueRecoversAfterPendingSaveAndForceStopBoundary`. This does not prove the application path passes or fails.
 
 ## Release decision
