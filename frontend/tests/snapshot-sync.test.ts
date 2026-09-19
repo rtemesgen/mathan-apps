@@ -17,19 +17,20 @@ const originalWrite = offlineStore.write;
 const originalWriteAtomic = offlineStore.writeAtomic;
 const originalWriteMetadata = offlineStore.writeMetadata;
 const originalRpc = supabase.rpc;
+const atomicWrites: Array<Array<{ key: string; value: unknown }>> = [];
 let releaseRpc!: () => void;
 let rpcStarted!: () => void;
 const rpcReady = new Promise<void>((resolve) => { rpcStarted = resolve; });
 const rpcRelease = new Promise<void>((resolve) => { releaseRpc = resolve; });
 offlineStore.read = (async <T>(key: string) => (durable.get(key) as T | undefined) ?? null) as typeof offlineStore.read;
 offlineStore.write = (async (key: string, value: unknown) => { durable.set(key, value); }) as typeof offlineStore.write;
-offlineStore.writeAtomic = (async (records: Array<{ key: string; value: unknown }>) => { records.forEach(({ key, value }) => durable.set(key, value)); }) as typeof offlineStore.writeAtomic;
+offlineStore.writeAtomic = (async (records: Array<{ key: string; value: unknown }>) => { atomicWrites.push(records); records.forEach(({ key, value }) => durable.set(key, value)); }) as typeof offlineStore.writeAtomic;
 offlineStore.writeMetadata = (async () => undefined) as typeof offlineStore.writeMetadata;
 let rpcCount = 0;
 supabase.rpc = (async (_name: string, params: { target_payload: unknown }) => {
   rpcCount += 1;
   if (rpcCount === 1) { rpcStarted(); await rpcRelease; }
-  return { data: [{ status: 'written', revision: 2, payload: params.target_payload }], error: null };
+  return { data: [{ status: rpcCount === 1 ? 'already_applied' : 'written', revision: 2, payload: params.target_payload }], error: null };
 }) as unknown as typeof supabase.rpc;
 try {
   const sync = syncWorkspaceQueues('workspace-a');
@@ -44,6 +45,9 @@ try {
   assert.deepEqual(queue.map((item) => item.mutationId), ['new-snapshot']);
   assert.equal(queue[0].payload.expected_revision, 2, 'the newer successor must rebase onto the older acknowledgement');
   assert.deepEqual(durable.get(storageKey), { transactions: [{ id: 'new' }] }, 'the delayed older acknowledgement must not hide the newer effective value');
+  assert.deepEqual(durable.get(`${storageKey}:confirmed`), { transactions: [{ id: 'old' }] }, 'already-applied receipts update the confirmed layer');
+  assert.ok(atomicWrites.some((writes) => writes.some((write) => write.key === SYNC_QUEUE_KEY)
+    && writes.some((write) => write.key === storageKey)), 'snapshot acknowledgement removes the mutation and updates cache layers in one atomic write');
 } finally {
   offlineStore.read = originalRead;
   offlineStore.write = originalWrite;

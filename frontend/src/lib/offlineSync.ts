@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { claimQueuedMutations, replaceQueue, SYNC_QUEUE_KEY, type QueuedMutation } from './syncQueue';
+import { acknowledgeSnapshotMutation, claimQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
 import { offlineStore } from './localStore';
 import { reportPersistenceNotice } from './repositories/types';
 import { emitSyncConflict, emitSyncProgress, emitSyncStatus, type SyncStatus } from './toast';
@@ -235,26 +235,15 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
       blockedSnapshotEntities.add(snapshotEntityKey);
       if (permanentError(error)) { errors += 1; blockedSnapshotEntities.add(snapshotEntityKey); reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict'); remaining.push({ ...attempted, ...released, syncStatus: 'error', errorCode: error?.code, errorMessage: error?.message, lastError: error?.message ?? 'Synchronization failed' }); }
       else { reportSnapshotMutationStatus(mutation.payload.domain, 'sync pending'); failed = true; remaining.push({ ...attempted, ...released, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, errorCode: error?.code, errorMessage: error?.message, lastError: error?.message ?? 'Synchronization failed' }); }
-    } else if (result.status === 'written' && result.payload !== undefined) {
+    } else if (['written', 'already_applied'].includes(result.status) && result.payload !== undefined) {
       acknowledgedSnapshotRevisions.set(snapshotEntityKey, result.revision);
       const storageKey = `${mutation.userId}:${workspaceId}:${String(mutation.payload.domain ?? mutation.entityId)}`;
-      // A newer local snapshot may have been durably enqueued while this RPC
-      // was in flight. The server response becomes the confirmed layer, but
-      // the effective layer must continue showing the newest remaining local
-      // intent until that successor is acknowledged.
-      const latestQueue = (await offlineStore.read<QueuedMutation[]>(SYNC_QUEUE_KEY)) ?? [];
-      const successor = latestQueue.filter((candidate) => candidate.mutationId !== mutation.mutationId
-        && candidate.companyId === workspaceId
-        && candidate.table === 'app_state_snapshots'
-        && String(candidate.payload.domain ?? candidate.entityId) === String(mutation.payload.domain ?? mutation.entityId)
-        && candidate.syncStatus !== 'completed').at(-1);
-      const effectivePayload = successor?.payload.payload ?? result.payload;
-      await offlineStore.writeAtomic([
-        { key: storageKey, value: effectivePayload },
-        { key: `${storageKey}:revision`, value: result.revision },
-        { key: `${storageKey}:confirmed`, value: result.payload },
-        { key: `${storageKey}:confirmed:revision`, value: result.revision },
-      ]);
+      await acknowledgeSnapshotMutation(mutation.mutationId, result.payload, result.revision, {
+        effectiveKey: storageKey,
+        revisionKey: `${storageKey}:revision`,
+        confirmedKey: `${storageKey}:confirmed`,
+        confirmedRevisionKey: `${storageKey}:confirmed:revision`,
+      });
     }
     } catch (error) {
       if (mutation.table !== 'app_state_snapshots') reportTruckMutationStatus('sync pending');

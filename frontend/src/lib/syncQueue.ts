@@ -87,7 +87,31 @@ function queuedMutation(mutation: QueuedMutationInput, localSequence: number): Q
   const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
   const entityId = mutation.entityId ?? String(mutation.payload.id ?? mutation.payload.client_id ?? mutation.payload.domain ?? '');
   const now = new Date().toISOString();
-  return { ...mutation, formatVersion: 2, localSequence, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: now, updatedAt: now, baseServerUpdatedAt: mutation.baseServerUpdatedAt ?? null, lastAttemptAt: null, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, syncStatus: 'pending', retryCount: 0 };
+  return {
+    ...mutation,
+    formatVersion: 2,
+    localSequence,
+    intentBase: mutation.intentBase ?? mutation.payload.base_payload,
+    batchId: mutation.batchId ?? (mutation.payload.batch_id ? String(mutation.payload.batch_id) : undefined),
+    batchSize: mutation.batchSize ?? (mutation.payload.batch_size === undefined ? undefined : Number(mutation.payload.batch_size)),
+    batchIndex: mutation.batchIndex ?? (mutation.payload.batch_index === undefined ? undefined : Number(mutation.payload.batch_index)),
+    id: mutationId,
+    mutationId,
+    userId: mutation.userId ?? 'unknown',
+    companyId,
+    entityType: mutation.entityType ?? mutation.table,
+    entityId,
+    baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0),
+    queuedAt: now,
+    updatedAt: now,
+    baseServerUpdatedAt: mutation.baseServerUpdatedAt ?? null,
+    lastAttemptAt: null,
+    syncStartedAt: null,
+    syncAttemptId: null,
+    leaseExpiresAt: null,
+    syncStatus: 'pending',
+    retryCount: 0,
+  };
 }
 
 function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string; operation: QueuedMutation['operation']; payload: Record<string, unknown> }, fallbackSequence = 0): QueuedMutation {
@@ -102,6 +126,10 @@ function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string
     ...item,
     formatVersion: 2,
     localSequence: Number.isSafeInteger(item.localSequence) && Number(item.localSequence) > 0 ? Number(item.localSequence) : fallbackSequence,
+    intentBase: item.intentBase ?? item.payload.base_payload,
+    batchId: item.batchId ?? (item.payload.batch_id ? String(item.payload.batch_id) : undefined),
+    batchSize: item.batchSize ?? (item.payload.batch_size === undefined ? undefined : Number(item.payload.batch_size)),
+    batchIndex: item.batchIndex ?? (item.payload.batch_index === undefined ? undefined : Number(item.payload.batch_index)),
     id: mutationId,
     mutationId,
     userId: item.userId ?? 'unknown',
@@ -324,6 +352,50 @@ export async function reconcilePendingSnapshotMutation(
   });
 }
 
+/** Remove one successfully acknowledged snapshot and update its confirmed and
+ * effective layers in the same durable transaction. The server call happens
+ * before this function; if the local commit fails, the original mutation
+ * remains retryable with its original identity. */
+export async function acknowledgeSnapshotMutation(
+  mutationId: string,
+  acknowledgedPayload: unknown,
+  revision: number,
+  recordKeys: {
+    effectiveKey: string;
+    revisionKey: string;
+    confirmedKey: string;
+    confirmedRevisionKey: string;
+  },
+  extraRecords: Array<{ key: string; value: unknown }> = [],
+) {
+  return withQueueLock(async () => {
+    const { queue, metadata } = await loadQueueState();
+    const target = queue.find((mutation) => mutation.mutationId === mutationId);
+    if (!target || target.table !== 'app_state_snapshots') return false;
+
+    const snapshotKey = `${queuedMutationCompanyId(target)}:${String(target.payload.domain ?? target.entityId)}`;
+    const remaining = queue
+      .filter((mutation) => mutation.mutationId !== mutationId)
+      .map((mutation) => mutation.localSequence > target.localSequence
+        ? rebaseSnapshotMutation(mutation, revision)
+        : mutation);
+    const successor = remaining
+      .filter((mutation) => mutation.table === 'app_state_snapshots'
+        && `${queuedMutationCompanyId(mutation)}:${String(mutation.payload.domain ?? mutation.entityId)}` === snapshotKey
+        && mutation.syncStatus !== 'completed')
+      .sort((left, right) => (right.localSequence ?? 0) - (left.localSequence ?? 0))[0];
+    const effectivePayload = successor?.payload.payload ?? acknowledgedPayload;
+    await persistQueueState(remaining, metadata, [
+      ...extraRecords,
+      { key: recordKeys.effectiveKey, value: effectivePayload },
+      { key: recordKeys.revisionKey, value: revision },
+      { key: recordKeys.confirmedKey, value: acknowledgedPayload },
+      { key: recordKeys.confirmedRevisionKey, value: revision },
+    ]);
+    return { effectivePayload, revision };
+  });
+}
+
 /** Explicit user retry for permanent failures. Conflicts remain protected
  * until the user reviews the remote/local versions. */
 export async function retryQueuedMutations(workspaceId: string) {
@@ -469,15 +541,23 @@ export async function replaceConflictedMutationUnitAtomically(
     const current = queue.filter((item) => selected.has(item.mutationId));
     if (current.length !== selected.size || current.some((item) => !['conflicted', 'error'].includes(item.syncStatus))) return false;
     if (current.some((item) => expectedUpdatedAt[item.mutationId] !== undefined && expectedUpdatedAt[item.mutationId] !== item.updatedAt)) return false;
-    const replacementBySource = new Map(mutationIds.map((id, index) => [id, replacements[index]]));
+    const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), queue);
+    let nextLocalSequence = metadata.nextLocalSequence;
+    const replacementBySource = new Map(mutationIds.map((id, index) => [id, replacements[index]
+      ? {
+        ...replacements[index],
+        formatVersion: 2 as const,
+        localSequence: nextLocalSequence++,
+        supersedesMutationId: id,
+      }
+      : replacements[index]]));
     if (replacements.length !== 0 && replacements.length !== mutationIds.length) return false;
     const next = queue.flatMap((item) => {
       if (!selected.has(item.mutationId)) return [item];
       const replacement = replacementBySource.get(item.mutationId);
       return replacement ? [replacement] : [];
     });
-    const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), next);
-    await persistQueueState(next, metadata, records);
+    await persistQueueState(next, { ...metadata, nextLocalSequence }, records);
     return true;
   });
 }

@@ -244,14 +244,16 @@ async function recoverSplitIndexedDbStore() {
   const legacyRecords = new Map(legacyEntries.map(({ key, value }) => [key, value]));
   const legacyQueue = legacyRecords.get('sync-queue-v1');
   const nativeQueue = await readNativeRecord<RecoverableQueuedMutation[]>('sync-queue-v1');
+  const nativeQueueMetadata = await readNativeRecord<Record<string, unknown>>('sync-queue-meta-v2');
   const plan = planSplitStoreRecovery(
     Array.isArray(nativeQueue) ? nativeQueue : [],
     Array.isArray(legacyQueue) ? legacyQueue as RecoverableQueuedMutation[] : [],
     legacyRecords,
+    nativeQueueMetadata,
   );
   if (plan.entries.length) await writeNativeRecordsAtomic(plan.entries);
   await writeNativeMetadata(SPLIT_STORE_RECOVERY_KEY, true);
-  diagnostic('split-store-recovered', { adapter: 'sqlite', recoveredMutationCount: plan.recoveredMutationCount, recoveredRecordCount: Math.max(0, plan.entries.length - 1) });
+  diagnostic('split-store-recovered', { adapter: 'sqlite', recoveredMutationCount: plan.recoveredMutationCount, recoveredRecordCount: Math.max(0, plan.entries.length - 2) });
 }
 
 async function getNativeStoreReady() {
