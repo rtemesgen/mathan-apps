@@ -11,10 +11,18 @@ adb logcat -c
 test_status=$?
 
 if [ "$test_status" -eq 0 ]; then
-  ./gradlew connectedDebugAndroidTest --stacktrace \
-    '-Pandroid.testInstrumentationRunnerArguments.class=com.mathan.erp.OfflineSQLiteInstrumentedTest#processDeathPrepareBoundary' \
-    '-Pandroid.testInstrumentationRunnerArguments.processDeathPhase=prepare'
-  test_status=$?
+  target_package=$(./gradlew -q printDebugApplicationId | tail -n 1 | tr -d '\r')
+  if [ -z "$target_package" ]; then
+    test_status=1
+  else
+    test_package="${target_package}.test"
+    instrumentation_runner="${test_package}/androidx.test.runner.AndroidJUnitRunner"
+    adb shell am instrument -w -r \
+      -e class 'com.mathan.erp.OfflineSQLiteInstrumentedTest#processDeathPrepareBoundary' \
+      -e processDeathPhase prepare \
+      "$instrumentation_runner"
+    test_status=$?
+  fi
 fi
 
 if [ "$test_status" -eq 0 ]; then
@@ -32,10 +40,13 @@ if [ "$test_status" -eq 0 ]; then
 fi
 
 if [ "$test_status" -eq 0 ]; then
-  ./gradlew connectedDebugAndroidTest --stacktrace \
-    '-Pandroid.testInstrumentationRunnerArguments.class=com.mathan.erp.OfflineSQLiteInstrumentedTest#processDeathVerifyBoundary' \
-    '-Pandroid.testInstrumentationRunnerArguments.processDeathPhase=verify' \
-    '-Pandroid.testInstrumentationRunnerArguments.clearPackageData=false'
+  test_package="${target_package}.test"
+  instrumentation_runner="${test_package}/androidx.test.runner.AndroidJUnitRunner"
+  adb shell am instrument -w -r \
+    -e class 'com.mathan.erp.OfflineSQLiteInstrumentedTest#processDeathVerifyBoundary' \
+    -e processDeathPhase verify \
+    -e clearPackageData false \
+    "$instrumentation_runner"
   test_status=$?
 fi
 
