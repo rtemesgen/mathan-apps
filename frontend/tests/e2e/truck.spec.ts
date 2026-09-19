@@ -91,6 +91,7 @@ test('Truck app is available through the workspace launcher and preserves data a
 });
 
 test('Truck transactions survive closing and reopening the browser process offline', async ({}, testInfo) => {
+  test.setTimeout(180_000);
   const status = localSupabaseStatus();
   const profile = testInfo.outputPath('persistent-truck-profile');
   const baseURL = testInfo.project.use.baseURL as string;

@@ -53,8 +53,9 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - `mobile/android`: `./gradlew testDebugUnitTest` — passed.
 - `mobile/android`: `./gradlew compileDebugAndroidTestJavaWithJavac` — passed.
 - Local `adb devices` could not start an ADB daemon in this environment; physical/emulator runtime results therefore remain unverified.
-- Earlier elevated browser run: 21/26 passed. Its five failures included a Truck selector mismatch and timing/interference in restart scenarios; that run is retained as historical evidence, not as the current Truck result.
-- Latest focused verification after stale-state guard: `npm run test:unit`, `npm run lint`, `npm run test:snapshot-sync`, `npm run test:snapshot-save`, `npm run test:truck`, and `npm run build` — passed. `npx playwright test tests/e2e/truck.spec.ts` now passes all 3 Truck scenarios against local Supabase, including customer projections and process-restart recovery.
+- Full elevated browser run on the current branch: 20/26 passed. The remaining six failures were all restart-heavy flows; traces identified cold persistent-context timeouts and a reconnect-event/selector harness issue, not a new persistence assertion failure.
+- Focused verification after the harness corrections: `npm run test:unit`, `npm run lint`, `npm run test:snapshot-sync`, `npm run test:snapshot-save`, `npm run test:truck`, and `npm run build` — passed. The dedicated Truck restart and customer-projection scenarios pass; the ordinary Payroll restart scenario passes. The legacy split-Payroll restart remains unverified because its cold local run exceeded 180 seconds.
+- Fresh `npx supabase test db` passed all 75 database/security assertions. The reconnect helper now replays the online event after a persistent page reload, and restart-heavy tests have explicit cold-start budgets/selectors.
 
 ## Release decision
 

@@ -40,6 +40,14 @@ export async function setE2EOffline(context: BrowserContext, apiUrl: string) {
 
 export async function setE2EOnline(context: BrowserContext, apiUrl: string) {
   await context.unroute(apiPattern(apiUrl));
+  // Persistent-context restart tests call this before reloading the page.
+  // Remove the marker before navigation and replay the reconnect event after
+  // the new document has mounted its AuthProvider/sync listeners; otherwise
+  // the event can be lost between the old and new JavaScript processes.
+  await context.addInitScript((key) => {
+    localStorage.removeItem(key);
+    window.addEventListener('load', () => window.dispatchEvent(new Event('online')), { once: true });
+  }, OFFLINE_KEY);
   await Promise.all(context.pages().map(async (page) => {
     try {
       await page.evaluate((key) => {

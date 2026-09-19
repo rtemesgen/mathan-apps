@@ -248,6 +248,7 @@ test('durable web state survives closing and reopening the browser process offli
 });
 
 test('Payroll data survives closing and reopening the browser process offline', async ({}, testInfo) => {
+  test.setTimeout(180_000);
   const profile = testInfo.outputPath('persistent-payroll-profile');
   const baseURL = testInfo.project.use.baseURL as string;
   let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
@@ -278,7 +279,7 @@ test('Payroll data survives closing and reopening the browser process offline', 
     const paidBeforeRestart = await firstPage.getByText('Previously Paid:').locator('..').textContent();
     const balanceBeforeRestart = await firstPage.getByText('Available Balance:').locator('..').textContent();
     await firstPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
-    await firstPage.getByText(employeeName, { exact: true }).last().click();
+    await firstPage.locator('tbody tr').filter({ hasText: employeeName }).first().click();
     await expect(firstPage.getByText(paymentNote, { exact: true })).toBeVisible();
 
     await persistent.close();
@@ -299,7 +300,7 @@ test('Payroll data survives closing and reopening the browser process offline', 
     await expect(reopenedPage.getByText('Previously Paid:').locator('..')).toHaveText(paidBeforeRestart ?? '');
     await expect(reopenedPage.getByText('Available Balance:').locator('..')).toHaveText(balanceBeforeRestart ?? '');
     await reopenedPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
-    await reopenedPage.getByText(employeeName, { exact: true }).last().click();
+    await reopenedPage.locator('tbody tr').filter({ hasText: employeeName }).first().click();
     await expect(reopenedPage.getByText(paymentNote, { exact: true })).toBeVisible();
     await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
@@ -318,6 +319,7 @@ test('Payroll data survives closing and reopening the browser process offline', 
 });
 
 test('legacy split Payroll workspace upgrades to canonical state and survives offline restart', async ({}, testInfo) => {
+  test.setTimeout(180_000);
   const status = localSupabaseStatus();
   const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   const creator = createClient(status.API_URL, status.ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -349,7 +351,7 @@ test('legacy split Payroll workspace upgrades to canonical state and survives of
     await firstPage.getByRole('button', { name: 'Manage Employees', exact: true }).first().click();
     await expect(firstPage.getByText(legacyEmployeeName, { exact: true })).toBeVisible({ timeout: 20_000 });
     await firstPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
-    await firstPage.getByText(legacyEmployeeName, { exact: true }).last().click();
+    await firstPage.locator('tbody tr').filter({ hasText: legacyEmployeeName }).first().click();
     await expect(firstPage.getByText('Pre-upgrade payment', { exact: true })).toBeVisible();
 
     const status = localSupabaseStatus();
@@ -378,7 +380,7 @@ test('legacy split Payroll workspace upgrades to canonical state and survives of
     await expect(reopenedPage.getByText('Available Balance:').locator('..')).toHaveText(balanceBeforeRestart ?? '');
     await reopenedPage.getByRole('button', { name: 'Payment History', exact: true }).first().click();
     await reopenedPage.getByPlaceholder('Search payment records...').fill(newPaymentNote);
-    await reopenedPage.getByText(legacyEmployeeName, { exact: true }).last().click();
+    await reopenedPage.locator('tbody tr').filter({ hasText: legacyEmployeeName }).first().click();
     await expect(reopenedPage.getByText(newPaymentNote, { exact: true })).toBeVisible();
 
     await setE2EOnline(persistent, status.API_URL);
