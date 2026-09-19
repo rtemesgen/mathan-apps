@@ -3,13 +3,14 @@ import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
 import { localSupabaseStatus } from './supabaseLocal';
+import { setE2EOffline, setE2EOnline } from './network';
 
 async function inspectTruckOfflineContract(page: import('playwright/test').Page, memo: string) {
   return page.evaluate(async (expectedMemo) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('mathan-erp-offline'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     const entries = await new Promise<Array<{ key: string; value: unknown }>>((resolve, reject) => { const transaction = database.transaction('records', 'readonly'); const store = transaction.objectStore('records'); const keys = store.getAllKeys(); const values = store.getAll(); transaction.oncomplete = () => resolve(keys.result.map((key, index) => ({ key: String(key), value: values.result[index] }))); transaction.onerror = () => reject(transaction.error); });
     database.close();
-    const cachedTransactions = entries.filter((entry) => entry.key.startsWith('truck:')).flatMap((entry) => (entry.value as { transactions?: Array<{ description?: string }> } | null)?.transactions ?? []);
+    const cachedTransactions = entries.filter((entry) => entry.key.startsWith('truck:') && !entry.key.startsWith('truck:confirmed:')).flatMap((entry) => (entry.value as { transactions?: Array<{ description?: string }> } | null)?.transactions ?? []);
     const queue = entries.find((entry) => entry.key === 'sync-queue-v1')?.value;
     return {
       effectiveCount: cachedTransactions.filter((transaction) => transaction.description === expectedMemo).length,
@@ -19,6 +20,7 @@ async function inspectTruckOfflineContract(page: import('playwright/test').Page,
 }
 
 test('Truck app is available through the workspace launcher and preserves data across app switches and offline reloads', async ({ page, context }) => {
+  const status = localSupabaseStatus();
   await signIn(page, 'admin');
   const launcher = page.getByLabel('Truck Equity');
   if (await launcher.count() === 0) test.skip(true, 'Truck access is not granted to this fixture workspace.');
@@ -39,10 +41,10 @@ test('Truck app is available through the workspace launcher and preserves data a
   await expect(page).toHaveURL(/\/book$/);
   await page.goto('/truck');
   await expect(page.locator('main').getByText('E2E Truck', { exact: true }).first()).toBeVisible();
-  await context.setOffline(true);
+  await setE2EOffline(context, status.API_URL);
   await page.reload();
   await expect(page.locator('main').getByText('E2E Truck', { exact: true }).first()).toBeVisible();
-  await context.setOffline(false);
+  await setE2EOnline(context, status.API_URL);
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Customers', exact: true }).click();
   await page.getByRole('button', { name: 'Add Customer', exact: true }).first().click();
@@ -53,9 +55,9 @@ test('Truck app is available through the workspace launcher and preserves data a
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Income (Trips)' }).click();
   await page.getByRole('button', { name: 'Cash received now', exact: true }).click();
-  await expect(page.getByRole('option', { name: 'E2E Customer', exact: true })).toBeVisible();
-  await page.getByRole('option', { name: 'E2E Customer', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'E2E Customer', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: /E2E Customer — will pay later/, exact: true })).toBeVisible();
+  await page.getByRole('option', { name: /E2E Customer — will pay later/, exact: true }).click();
+  await expect(page.getByRole('button', { name: /E2E Customer/ }).first()).toBeVisible();
   await page.locator('input[type=number]').first().fill('1000');
   await page.getByRole('button', { name: 'Save Income' }).click();
   await expect(page.getByRole('status')).toContainText(/Saved|Customer receivable saved successfully/);
@@ -63,9 +65,9 @@ test('Truck app is available through the workspace launcher and preserves data a
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Expenses & Payouts' }).click();
   await page.getByRole('button', { name: 'Cash paid now', exact: true }).click();
-  await expect(page.getByRole('option', { name: 'E2E Customer', exact: true })).toBeVisible();
-  await page.getByRole('option', { name: 'E2E Customer', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'E2E Customer', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: /E2E Customer — paid for Truck/, exact: true })).toBeVisible();
+  await page.getByRole('option', { name: /E2E Customer — paid for Truck/, exact: true }).click();
+  await expect(page.getByRole('button', { name: /E2E Customer/ }).first()).toBeVisible();
   await page.locator('input[type=number]').first().fill('400');
   await page.getByPlaceholder('Select or type category...').fill('Customer refund');
   await page.getByRole('button', { name: 'Save Expense' }).click();
@@ -89,6 +91,8 @@ test('Truck app is available through the workspace launcher and preserves data a
 });
 
 test('Truck transactions survive closing and reopening the browser process offline', async ({}, testInfo) => {
+  test.setTimeout(180_000);
+  const status = localSupabaseStatus();
   const profile = testInfo.outputPath('persistent-truck-profile');
   const baseURL = testInfo.project.use.baseURL as string;
   let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
@@ -111,7 +115,7 @@ test('Truck transactions survive closing and reopening the browser process offli
     await firstPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
     await firstPage.getByRole('button', { name: 'Income (Trips)' }).click();
 
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     const description = `Offline persistent income ${Date.now()}`;
     await firstPage.locator('input[type=number]').first().fill('555');
     await firstPage.getByPlaceholder('e.g. Trip from Dallas TX to Atlanta GA').fill(description);
@@ -122,17 +126,16 @@ test('Truck transactions survive closing and reopening the browser process offli
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    await setE2EOffline(persistent, status.API_URL);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/truck');
-    await persistent.setOffline(true);
     await reopenedPage.reload();
     await expect(reopenedPage.getByText('Loading Truck data…')).toBeHidden();
     await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
     await reopenedPage.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
     await expect(reopenedPage.getByText(description, { exact: true })).toBeVisible();
-    await persistent.setOffline(false);
+    await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
-    const status = localSupabaseStatus();
     const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
     await expect.poll(async () => {
       const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
@@ -194,7 +197,7 @@ test('customer projections and Pay Owner remain identical after restart and sync
     const ownerCard = firstPage.getByText(ownerName, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
     await expect(ownerCard).toContainText('$1,000.00');
 
-    await persistent.setOffline(true);
+    await setE2EOffline(persistent, status.API_URL);
     await ownerCard.getByRole('button', { name: 'Pay', exact: true }).click();
     await firstPage.locator('input[placeholder="0.00"]').fill('250');
     await firstPage.getByPlaceholder('e.g. Loan repayment check or Zelle transfer').fill(ownerPaymentMemo);
@@ -213,9 +216,9 @@ test('customer projections and Pay Owner remain identical after restart and sync
 
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    await setE2EOffline(persistent, status.API_URL);
     const reopenedPage = await persistent.newPage();
     await reopenedPage.goto('/truck');
-    await persistent.setOffline(true);
     await reopenedPage.reload();
     await expect(reopenedPage.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });
     await reopenedPage.locator('header button[aria-haspopup=listbox]').click();
@@ -236,7 +239,7 @@ test('customer projections and Pay Owner remain identical after restart and sync
     await reopenedPage.getByRole('button', { name: 'Activity History', exact: true }).click();
     await expect(reopenedPage.getByText(ownerPaymentMemo, { exact: true })).toBeVisible();
 
-    await persistent.setOffline(false);
+    await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
     await expect.poll(async () => {
       const { data } = await service.from('truck_transactions').select('id').eq('workspace_id', workspace!.id).eq('truck_id', truckId).eq('description', ownerPaymentMemo);

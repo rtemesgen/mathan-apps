@@ -2,6 +2,7 @@ import { expect, test, type Page } from 'playwright/test';
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
+import { setE2EOffline, setE2EOnline } from './network';
 import { localSupabaseStatus } from './supabaseLocal';
 
 type Labels = {
@@ -123,12 +124,12 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await page.getByRole('option', { name: `${truckName} (${unitNumber})`, exact: true }).dispatchEvent('click');
     await expect(page.locator('header button[aria-haspopup=listbox]')).toContainText(truckName);
     await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
-    await persistent.route(`${status.API_URL}/**`, (route) => route.abort('internetdisconnected'));
+    await setE2EOffline(persistent, status.API_URL);
 
     await navigateClientSide(page, '/book');
     await page.getByRole('heading', { name: firstBook }).click();
     await page.getByRole('button', { name: 'Cash In', exact: true }).last().click();
-    await page.locator('input[type=number]').fill('111');
+    await page.locator('input[inputmode=decimal]').fill('111');
     await page.getByPlaceholder('e.g. Counter sale, Payment received').fill(labels.cashIn);
     await page.getByRole('button', { name: 'Save Entry', exact: true }).click();
     await expect(page.getByText(labels.cashIn, { exact: true })).toBeVisible();
@@ -136,7 +137,7 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await page.getByRole('button', { name: 'Dashboard' }).click();
     await page.getByRole('heading', { name: secondBook }).click();
     await page.getByRole('button', { name: 'Cash Out', exact: true }).last().click();
-    await page.locator('input[type=number]').fill('111');
+    await page.locator('input[inputmode=decimal]').fill('111');
     await page.getByPlaceholder('e.g. Rent, Restock, Vendor payout').fill(labels.cashOut);
     await page.getByRole('button', { name: 'Save Entry', exact: true }).click();
     await expect(page.getByText(labels.cashOut, { exact: true })).toBeVisible();
@@ -195,6 +196,10 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await persistent.close();
     persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
     persistent.setDefaultTimeout(12_000);
+    // Restore the false-online API failure before the first navigation. If
+    // routing is installed afterwards, startup can flush the outbox and
+    // hydrate remote state before this restart is inspected.
+    await setE2EOffline(persistent, status.API_URL);
     const reopened = await persistent.newPage();
     await reopened.goto('/truck');
     await expect(reopened.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });
@@ -212,6 +217,18 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await reopened.getByRole('button', { name: 'Dashboard' }).click();
     await reopened.getByRole('heading', { name: secondBook }).click();
     await expect(reopened.getByText(labels.cashOut, { exact: true })).toBeVisible();
+
+    // The restart assertions above intentionally run offline. Reconnect and
+    // remount the app before checking Supabase rows so the online listener and
+    // startup sync can claim the persisted outbox.
+    await setE2EOnline(persistent, status.API_URL);
+    await reopened.reload();
+    await reopened.waitForLoadState('load');
+    await expect(reopened.getByText('Cash Book Overview')).toBeVisible({ timeout: 20_000 });
+    await reopened.evaluate(() => {
+      localStorage.removeItem('__mathan_e2e_offline__');
+      window.dispatchEvent(new Event('online'));
+    });
 
     await expect.poll(async () => {
       const [{ data: cash }, { data: payroll }, { count: ownerCount }, { data: transactions }] = await Promise.all([

@@ -1,5 +1,8 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { isJsonSerializable, jsonHash, jsonValue } from './sqliteJson';
+import { sqliteWriteStatement } from './sqliteStatements';
+import { createPersistenceCoordinator } from './persistenceCoordinator';
+import { NativeStoreError } from './nativeStoreErrors';
 import { diagnostic } from './diagnostics';
 
 const DATABASE_NAME = 'mathan-erp-offline';
@@ -59,6 +62,8 @@ export type MigrationStore = {
 
 let connection: SQLiteConnection | null = null;
 let databasePromise: Promise<SQLiteDBConnection> | null = null;
+let lifecycleClose: Promise<void> | null = null;
+const nativePersistence = createPersistenceCoordinator();
 
 function nativeDatabaseConnection() {
   connection ??= new SQLiteConnection(CapacitorSQLite);
@@ -66,11 +71,16 @@ function nativeDatabaseConnection() {
 }
 
 async function openDatabase() {
+  if (lifecycleClose) await lifecycleClose;
   if (databasePromise) return databasePromise;
   databasePromise = (async () => {
     const sqlite = nativeDatabaseConnection();
     diagnostic('local-schema-open', { database: DATABASE_NAME, expectedVersion: DATABASE_VERSION });
+    const databaseExists = (await sqlite.isDatabase(DATABASE_NAME)).result;
     if (!(await sqlite.isSecretStored()).result) {
+      if (databaseExists) {
+        throw new NativeStoreError('KEY_UNAVAILABLE', 'The existing encrypted offline database key is unavailable; data was preserved.');
+      }
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       const secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
       await sqlite.setEncryptionSecret(secret);
@@ -81,12 +91,40 @@ async function openDatabase() {
     }]);
     const consistent = (await sqlite.checkConnectionsConsistency()).result;
     const connected = (await sqlite.isConnection(DATABASE_NAME, false)).result;
+    // A WebView recreation creates a new JS SQLiteConnection wrapper while
+    // the native plugin can still own the old connection. If that old bridge
+    // was destroyed between BEGIN and COMMIT, creating a second connection
+    // leaves SQLCipher locked until the stale connection is closed. Closing
+    // only when this wrapper cannot retrieve a connection rolls back that
+    // incomplete native transaction without disturbing an active connection
+    // owned by this JS session.
+    if (!consistent && !connected && databaseExists) {
+      try {
+        await sqlite.closeConnection(DATABASE_NAME, false);
+        diagnostic('local-stale-connection-closed', { database: DATABASE_NAME });
+      } catch (error) {
+        diagnostic('local-stale-connection-close-failed', {
+          database: DATABASE_NAME,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     const database = consistent && connected
       ? await sqlite.retrieveConnection(DATABASE_NAME, false)
       : await sqlite.createConnection(DATABASE_NAME, true, 'secret', DATABASE_VERSION, false);
     await database.open();
-    await database.execute(SQLITE_CURRENT_SCHEMA_SQL);
-    const health = await inspectOpenDatabase(database);
+    const preflight = await inspectOpenDatabase(database);
+    if (shouldBootstrapNativeSchema(preflight)) {
+      await database.execute(SQLITE_CURRENT_SCHEMA_SQL);
+    } else if (!preflight.healthy) {
+      throw new NativeStoreError('SCHEMA_INVALID', `Offline database schema is invalid; data was preserved (${[
+        preflight.actualVersion !== preflight.expectedVersion ? `version ${preflight.actualVersion}` : '',
+        preflight.missingTables.length ? `missing tables: ${preflight.missingTables.join(', ')}` : '',
+        preflight.missingColumns.length ? `missing columns: ${preflight.missingColumns.join(', ')}` : '',
+        preflight.partialMigration ? 'partial migration detected' : '',
+      ].filter(Boolean).join('; ')})`);
+    }
+    const health = shouldBootstrapNativeSchema(preflight) ? await inspectOpenDatabase(database) : preflight;
     diagnostic('local-schema-health', {
       healthy: health.healthy,
       expectedVersion: health.expectedVersion,
@@ -95,20 +133,48 @@ async function openDatabase() {
       missingColumns: health.missingColumns.join(','),
       partialMigration: health.partialMigration,
     });
-    if (!health.healthy) {
-      throw new Error(`Offline database schema is invalid; data was preserved (${[
-        health.actualVersion !== health.expectedVersion ? `version ${health.actualVersion}` : '',
-        health.missingTables.length ? `missing tables: ${health.missingTables.join(', ')}` : '',
-        health.missingColumns.length ? `missing columns: ${health.missingColumns.join(', ')}` : '',
-        health.partialMigration ? 'partial migration detected' : '',
-      ].filter(Boolean).join('; ')})`);
-    }
+    if (!health.healthy) throw new NativeStoreError('SCHEMA_INVALID', 'Offline database schema failed its post-bootstrap health check');
     return database;
   })().catch((error) => {
     databasePromise = null;
     throw error;
   });
   return databasePromise;
+}
+
+/**
+ * Capacitor recreates the WebView during some Android activity transitions,
+ * but the SQLite plugin keeps its native connection on the old plugin
+ * instance. Close it while this bridge still owns that instance so an
+ * interrupted transaction is rolled back before the next WebView opens the
+ * encrypted database. This deliberately bypasses nativePersistence: waiting
+ * behind a transaction that is being interrupted would leave the native lock
+ * alive until the old bridge is gone.
+ */
+export async function closeNativeDatabaseForLifecycle(): Promise<void> {
+  if (lifecycleClose) return lifecycleClose;
+  lifecycleClose = (async () => {
+    const sqlite = connection;
+    connection = null;
+    databasePromise = null;
+    if (!sqlite) return;
+    try {
+      if ((await sqlite.isConnection(DATABASE_NAME, false)).result) {
+        await sqlite.closeConnection(DATABASE_NAME, false);
+        diagnostic('local-lifecycle-connection-closed', { database: DATABASE_NAME });
+      }
+    } catch (error) {
+      // A bridge may already have torn down the plugin. The next WebView
+      // still performs the guarded stale-connection recovery in openDatabase.
+      diagnostic('local-lifecycle-connection-close-failed', {
+        database: DATABASE_NAME,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      lifecycleClose = null;
+    }
+  })();
+  return lifecycleClose;
 }
 
 export function evaluateNativeDatabaseHealth(input: {
@@ -132,6 +198,10 @@ export function evaluateNativeDatabaseHealth(input: {
   };
 }
 
+export function shouldBootstrapNativeSchema(input: Pick<NativeDatabaseHealth, 'actualVersion' | 'missingTables'>) {
+  return input.actualVersion === 0 && input.missingTables.length === Object.keys(REQUIRED_TABLE_COLUMNS).length;
+}
+
 async function inspectOpenDatabase(database: SQLiteDBConnection): Promise<NativeDatabaseHealth> {
   const versionResult = await database.query('PRAGMA user_version;');
   const actualVersion = Number(versionResult.values?.[0]?.user_version ?? 0);
@@ -153,49 +223,67 @@ async function inspectOpenDatabase(database: SQLiteDBConnection): Promise<Native
 }
 
 export async function getNativeDatabaseHealth() {
-  return inspectOpenDatabase(await openDatabase());
+  return nativePersistence.run(async () => inspectOpenDatabase(await openDatabase()));
 }
 
 async function readTable<T>(table: 'records' | 'metadata', key: string): Promise<T | null> {
-  const database = await openDatabase();
-  const result = await database.query(`SELECT value FROM ${table} WHERE key = ? LIMIT 1`, [key]);
-  const raw = result.values?.[0]?.value as string | undefined;
-  if (raw === undefined) return null;
-  try { return JSON.parse(raw) as T; } catch { return null; }
+  return nativePersistence.run(async () => {
+    const database = await openDatabase();
+    let result;
+    try {
+      result = await database.query(`SELECT value FROM ${table} WHERE key = ? LIMIT 1`, [key]);
+    } catch (error) {
+      throw new NativeStoreError('NATIVE_READ_FAILED', `Native ${table} read failed for ${key}`, error);
+    }
+    const raw = result.values?.[0]?.value as string | undefined;
+    if (raw === undefined) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch (error) {
+      throw new NativeStoreError('RECORD_INVALID', `Invalid JSON in native ${table} record: ${key}`, error);
+    }
+  });
 }
 
 async function writeTable(table: 'records' | 'metadata', key: string, value: unknown) {
-  const serialized = jsonValue(value);
-  if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
-  const database = await openDatabase();
-  await database.run(
-    `INSERT INTO ${table} (key, value, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    [key, serialized, Date.now()],
-  );
+  return nativePersistence.run(async () => {
+    const serialized = jsonValue(value);
+    if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
+    const database = await openDatabase();
+    await database.run(
+      sqliteWriteStatement(table),
+      [key, serialized, Date.now()],
+    );
+  });
 }
 
 async function deleteTable(table: 'records' | 'metadata', key: string) {
-  const database = await openDatabase();
-  await database.run(`DELETE FROM ${table} WHERE key = ?`, [key]);
+  return nativePersistence.run(async () => {
+    const database = await openDatabase();
+    await database.run(`DELETE FROM ${table} WHERE key = ?`, [key]);
+  });
 }
 
 async function listTable(table: 'records' | 'metadata') {
-  const database = await openDatabase();
-  const result = await database.query(`SELECT key FROM ${table} ORDER BY key`);
-  return (result.values ?? []).map((row) => String(row.key));
+  return nativePersistence.run(async () => {
+    const database = await openDatabase();
+    const result = await database.query(`SELECT key FROM ${table} ORDER BY key`);
+    return (result.values ?? []).map((row) => String(row.key));
+  });
 }
 
 export async function readNativeRecord<T>(key: string) { return readTable<T>('records', key); }
 export async function writeNativeRecord(key: string, value: unknown) { return writeTable('records', key, value); }
 export async function writeNativeRecordsAtomic(entries: LegacyEntry[]) {
-  const database = await openDatabase();
-  const statements = entries.map(({ key, value }) => {
-    const serialized = jsonValue(value);
-    if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
-    return { statement: `INSERT INTO records (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, values: [key, serialized, Date.now()] };
+  return nativePersistence.run(async () => {
+    const database = await openDatabase();
+    const statements = entries.map(({ key, value }) => {
+      const serialized = jsonValue(value);
+      if (serialized === null) throw new Error(`Offline value for ${key} is not JSON serializable`);
+      return { statement: sqliteWriteStatement('records'), values: [key, serialized, Date.now()] };
+    });
+    if (statements.length) await database.executeTransaction(statements);
   });
-  if (statements.length) await database.executeTransaction(statements);
 }
 export async function deleteNativeRecord(key: string) { return deleteTable('records', key); }
 export async function listNativeRecords() { return listTable('records'); }
@@ -229,14 +317,16 @@ export async function migrateLegacyRecords(entries: LegacyEntry[], metadata: Leg
   const migrationStore: MigrationStore = store ?? {
     readMarker: () => readNativeMetadata<boolean>(MIGRATION_KEY),
     writeEntries: async (records, metadataEntries) => {
-      const database = await openDatabase();
-      // A migration can be interrupted after SQLite has written some rows but
-      // before verification/marker commit. Upsert on retry so a stale partial
-      // row is repaired from the still-preserved legacy stores instead of
-      // causing verification to fail forever.
-      const recordStatements = records.map(({ key, value }) => ({ statement: `INSERT INTO records (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, values: [key, jsonValue(value), Date.now()] }));
-      const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: `INSERT INTO metadata (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, values: [key, jsonValue(value), Date.now()] }));
-      if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
+      await nativePersistence.run(async () => {
+        const database = await openDatabase();
+        // A migration can be interrupted after SQLite has written some rows but
+        // before verification/marker commit. Replace on retry so a stale partial
+        // row is repaired from the still-preserved legacy stores instead of
+        // causing verification to fail forever.
+        const recordStatements = records.map(({ key, value }) => ({ statement: sqliteWriteStatement('records'), values: [key, jsonValue(value), Date.now()] }));
+        const metadataStatements = metadataEntries.map(({ key, value }) => ({ statement: sqliteWriteStatement('metadata'), values: [key, jsonValue(value), Date.now()] }));
+        if (recordStatements.length || metadataStatements.length) await database.executeTransaction([...recordStatements, ...metadataStatements]);
+      });
     },
     verifyEntries: (records, metadataEntries) => verifyMigratedEntries(records, metadataEntries),
     writeMarker: () => writeNativeMetadata(MIGRATION_KEY, true),

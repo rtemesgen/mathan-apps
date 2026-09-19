@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Local Supabase is reached through adb reverse during backend-connected
+         instrumentation only. Release builds retain Android's cleartext
+         protection because this manifest exists only in the debug variant. -->
+    <application android:usesCleartextTraffic="true" />
+</manifest>

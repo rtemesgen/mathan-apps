@@ -33,7 +33,7 @@ export default function App() {
   const [targetBookForTransaction, setTargetBookForTransaction] = useState<Book | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
   const [exportOpen, setExportOpen] = useState(false);
-  const [exportFilters, setExportFilters] = useState<{ transactionType?: string; query?: string }>({});
+  const [exportFilters, setExportFilters] = useState<{ transactionType?: string; query?: string; startDate?: string; endDate?: string }>({});
   const openExport = (filters: typeof exportFilters = {}) => { setExportFilters(filters); setExportOpen(true); };
 
   useAndroidBackHandler(() => {

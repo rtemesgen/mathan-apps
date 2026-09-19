@@ -4,6 +4,8 @@ import { X, Check, Calendar, Plus, Paperclip, FileText, Image as ImageIcon } fro
 import { getCurrentLocalDateTimeString } from '../utils/formatters';
 import { AppSelect } from '../../../components/AppSelect';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
+import { DEFAULT_TRANSACTION_CATEGORIES, formatTransactionAmount, parseTransactionAmount } from '../utils/transactionInput';
+import { validateEmbeddedAttachmentSize } from '../../../lib/attachmentPolicy';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -24,7 +26,7 @@ interface TransactionModalProps {
 
 const CATEGORY_PRESETS = {
   in: ['Sales', 'Customer Payment', 'Service Fee', 'Investment', 'Refund', 'Other Income'],
-  out: ['Vendor Payment', 'Inventory Restock', 'Rent', 'Utilities', 'Salary / Wages', 'Tax & Fees', 'Other Expense'],
+  out: ['Vendor Payment', 'Inventory Restock', 'Rent', 'Utilities', 'Salary / Wages', 'Tax & Fees', 'Other Expenses'],
 };
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({
@@ -37,7 +39,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 }) => {
   const [amount, setAmount] = useState<string>('');
   const [remark, setRemark] = useState<string>('');
-  const [category, setCategory] = useState<string>('');
+  const [category, setCategory] = useState<string>(DEFAULT_TRANSACTION_CATEGORIES.in);
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank Transfer' | 'UPI / Online' | 'Cheque'>('Cash');
   const [dateTime, setDateTime] = useState<string>(getCurrentLocalDateTimeString());
   const [attachmentUrl, setAttachmentUrl] = useState<string>('');
@@ -51,7 +53,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setDateTime(getCurrentLocalDateTimeString());
-      setCategory(isCashIn ? 'Sales' : 'Vendor Payment');
+      setCategory(isCashIn ? DEFAULT_TRANSACTION_CATEGORIES.in : DEFAULT_TRANSACTION_CATEGORIES.out);
       setAmount('');
       setRemark('');
       setAttachmentUrl('');
@@ -64,8 +66,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File size exceeds 5MB limit.');
+    const attachmentError = validateEmbeddedAttachmentSize(file.size);
+    if (attachmentError) {
+      setError(attachmentError);
       return;
     }
 
@@ -89,7 +92,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   if (!isOpen) return null;
 
   const validate = (): number | null => {
-    const parsed = parseFloat(amount);
+    const parsed = parseTransactionAmount(amount);
     if (isNaN(parsed) || parsed <= 0) {
       setError('Please enter a valid positive amount.');
       return null;
@@ -110,7 +113,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       operation: () => onSave({
         amount: numAmount,
         remark: remark.trim(),
-        category: category || (isCashIn ? 'General Income' : 'General Expense'),
+        category: category || (isCashIn ? DEFAULT_TRANSACTION_CATEGORIES.in : DEFAULT_TRANSACTION_CATEGORIES.out),
         paymentMode,
         dateTime: dateTime || getCurrentLocalDateTimeString(),
         attachmentUrl: attachmentUrl || undefined,
@@ -132,7 +135,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       operation: () => onSave({
         amount: numAmount,
         remark: remark.trim(),
-        category: category || (isCashIn ? 'General Income' : 'General Expense'),
+        category: category || (isCashIn ? DEFAULT_TRANSACTION_CATEGORIES.in : DEFAULT_TRANSACTION_CATEGORIES.out),
         paymentMode,
         dateTime: dateTime || getCurrentLocalDateTimeString(),
         attachmentUrl: attachmentUrl || undefined,
@@ -203,13 +206,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </label>
             <div>
               <input
-                type="number"
-                step="0.01"
-                min="0.01"
+                type="text"
+                inputMode="decimal"
                 required
                 value={amount}
                 onChange={(e) => {
-                  setAmount(e.target.value);
+                  setAmount(formatTransactionAmount(e.target.value));
                   if (error) setError('');
                 }}
                 placeholder="0"

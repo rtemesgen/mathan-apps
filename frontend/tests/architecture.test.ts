@@ -150,7 +150,7 @@ assert.ok(workspaceCacheSource.indexOf('localStorage.getItem(workspaceCacheKey')
 assert.match(read('lib/repositories/snapshotRepository.ts'), /offlineStore/);
 assert.match(read('lib/syncQueue.ts'), /offlineStore/);
 assert.match(read('lib/syncQueue.ts'), /mergeQueuedMutation/);
-assert.match(read('lib/syncQueue.ts'), /writeAtomic\(\[\.\.\.records, \{ key: KEY, value: nextQueue \}\]\)/);
+assert.match(read('lib/syncQueue.ts'), /writeAtomic\(\[\.\.\.records, \{ key: KEY, value: nextQueue \}, \{ key: SYNC_QUEUE_META_KEY/);
 assert.match(read('lib/syncQueue.ts'), /emitSyncProgress/);
 assert.equal(fs.existsSync(path.join(sourceRoot, 'components/EntitySyncBadge.tsx')), true, 'record-level sync badge component must exist');
 assert.match(read('components/EntitySyncBadge.tsx'), /useEntitySyncStatus/);

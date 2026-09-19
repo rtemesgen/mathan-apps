@@ -33,12 +33,12 @@ export function DataLayerGate({ children }: { children: ReactNode }) {
       }
       if (active) setHealth(result);
     }).catch((error) => {
-      if (active) setHealth({ healthy: false, adapter: 'indexeddb', schemaVersion: 0, message: error instanceof Error ? error.message : 'Local data validation failed.' });
+      if (active) setHealth({ healthy: false, adapter: 'indexeddb', schemaVersion: 0, failureCode: 'NATIVE_UNAVAILABLE', message: error instanceof Error ? error.message : 'Local data validation failed.' });
     });
     return () => { active = false; };
   }, []);
 
   if (!health) return <main className="flex min-h-screen items-center justify-center bg-[#f6f5ef] text-sm font-semibold text-zinc-500">Checking local data…</main>;
   if (health.healthy) return <>{children}</>;
-  return <main className="flex min-h-screen items-center justify-center bg-[#f6f5ef] p-5 text-zinc-900"><section role="alert" className="w-full max-w-md rounded-3xl border border-amber-200 bg-white p-6 shadow-xl"><h1 className="font-serif text-2xl font-bold">Local data needs recovery</h1><p className="mt-3 text-sm leading-6 text-zinc-600">Mathan ERP stopped before loading company records because the local database did not pass its safety check. No cache or pending mutation was deleted.</p><p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">{health.message}</p><button type="button" onClick={() => window.location.reload()} className="mt-5 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white">Check again</button></section></main>;
+  return <main className="flex min-h-screen items-center justify-center bg-[#f6f5ef] p-5 text-zinc-900"><section role="alert" className="w-full max-w-md rounded-3xl border border-amber-200 bg-white p-6 shadow-xl"><h1 className="font-serif text-2xl font-bold">Local data needs recovery</h1><p className="mt-3 text-sm leading-6 text-zinc-600">Mathan ERP stopped before loading company records because the {health.adapter === 'sqlite' ? 'encrypted Android SQLite database' : 'offline database'} did not pass its safety check. No cache or pending mutation was deleted.</p><p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-900"><span className="font-bold">{health.failureCode ?? 'STORAGE_CHECK_FAILED'}:</span> {health.message}</p><button type="button" onClick={() => window.location.reload()} className="mt-5 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white">Check again</button></section></main>;
 }
