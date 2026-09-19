@@ -129,7 +129,7 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await navigateClientSide(page, '/book');
     await page.getByRole('heading', { name: firstBook }).click();
     await page.getByRole('button', { name: 'Cash In', exact: true }).last().click();
-    await page.locator('input[type=number]').fill('111');
+    await page.locator('input[inputmode=decimal]').fill('111');
     await page.getByPlaceholder('e.g. Counter sale, Payment received').fill(labels.cashIn);
     await page.getByRole('button', { name: 'Save Entry', exact: true }).click();
     await expect(page.getByText(labels.cashIn, { exact: true })).toBeVisible();
@@ -137,7 +137,7 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await page.getByRole('button', { name: 'Dashboard' }).click();
     await page.getByRole('heading', { name: secondBook }).click();
     await page.getByRole('button', { name: 'Cash Out', exact: true }).last().click();
-    await page.locator('input[type=number]').fill('111');
+    await page.locator('input[inputmode=decimal]').fill('111');
     await page.getByPlaceholder('e.g. Rent, Restock, Vendor payout').fill(labels.cashOut);
     await page.getByRole('button', { name: 'Save Entry', exact: true }).click();
     await expect(page.getByText(labels.cashOut, { exact: true })).toBeVisible();

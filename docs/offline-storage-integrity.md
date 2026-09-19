@@ -3,7 +3,7 @@
 ## Current behavior
 
 - Cash Book books and transactions use `useCloudSnapshot`. Every accepted state change is written to the local offline store first and queued for cloud synchronization when the user is signed in.
-- The browser build stores records in IndexedDB (`mathan-erp-offline`, schema version 2) and uses `localStorage` only when IndexedDB is unavailable.
+- The browser build stores records in IndexedDB (`mathan-erp-offline`, schema version 2) and uses a receipt-backed `localStorage` recovery journal only while an IndexedDB commit is pending or unavailable.
 - Guest/standalone data remains device-local until it is explicitly imported. Signed-in data is retried when connectivity returns and uses server revisions to detect conflicting edits.
 - Cash Book's normal **Save** and **Save & Add New** paths both add a transaction through the same state update, so both follow the same offline persistence path.
 
@@ -11,7 +11,7 @@
 
 The fallback previously had a split-brain failure mode: a failed IndexedDB write was saved to `localStorage`, but after a reload a healthy IndexedDB read returned “missing” without checking that fallback. This could make a successfully accepted offline edit appear lost. Reads now consult the fallback when IndexedDB has no record, key enumeration merges both stores, deletes clear both stores, and writes wait for the IndexedDB transaction to commit rather than only for the individual request to succeed.
 
-The browser integrity tests also opened schema version 1 explicitly. Once the application upgraded the database to version 2, that request could fail with `VersionError`. Tests now open the current database version without forcing an obsolete version.
+The browser integrity tests previously opened an obsolete schema version explicitly. Once the application upgrades the database, that request can fail with `VersionError`. Tests now open the current database version without forcing an obsolete version.
 
 ## IndexedDB to SQLite migration
 

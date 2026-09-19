@@ -15,8 +15,8 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Schema preflight and key preservation | `sqlite-migration.test.ts`; `sqliteStore.ts` uses `isDatabase()` before generating a key and rejects damaged schemas | Pass for tested logic; real encrypted-key failure remains device-gated |
 | Authoritative Android reads | `localStore.ts` rejects typed native read failures and does not consult stale browser stores after native readiness | Implemented |
 | Offline create/update queue semantics | `queue-policy.test.ts` and `queuePolicy.ts` preserve never-attempted creates and protect attempted mutations | Pass for policy behavior |
-| Browser recovery supersession | `localStore.ts` removes recovery entries after successful writes | Fix implemented; full browser crash journal matrix remains partial |
-| Atomic Truck batch backend | `202609190001_truck_transaction_batches.sql`; `truck_batch_rpc.sql`; 56 local Supabase assertions pass | Pass locally |
+| Browser recovery supersession | `recoveryJournal.ts` and `localStore.ts` use v2 journal entries, same-store per-key receipts, and deletion tombstones; `local-store-recovery.test.ts` covers selection rules; persistent-browser E2E passes after the formatted-input selector was corrected | Implemented and browser-regression tested; real IndexedDB crash/cleanup-failure injection remains pending |
+| Atomic Truck batch backend | `202609190001_truck_transaction_batches.sql`; `truck_batch_rpc.sql`; 63 local Supabase assertions pass, including editor/read-only/unrelated authorization, changed-identity rejection, and invalid-row rollback | Pass locally |
 | Online Truck batch client path | `writeTruckTransactionBatchOnline()` and `createTruckTransactionBatch()` preserve batch identity | Implemented; backend-connected browser test remains pending |
 | Queued Truck batch integrity | `truckBatchPolicy.ts` and worker group submission path | Policy and wiring implemented; end-to-end retry/cache proof remains pending |
 | Snapshot keep-local conflict path | `resolveSnapshotConflict()` fetches remote state, three-way merges, allocates a new ID, and atomically replaces local layers | Implemented; UI/E2E proof remains pending |
@@ -26,11 +26,11 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 
 | Plan requirement | Current evidence | Status |
 | --- | --- | --- |
-| Full browser recovery journal v2, receipts, cleanup-failure behavior | Only supersession cleanup is implemented; no `local-store-recovery.test.ts` or real IndexedDB crash test exists | Missing |
+| Full browser recovery journal v2, receipts, cleanup-failure behavior | v2 journal/receipt/tombstone source and deterministic selection tests exist; no real IndexedDB crash/cleanup-failure test exists | Partially verified |
 | Snapshot acknowledgement race matrix | Current worker/repository code has protections, but no deferred-RPC test proves delayed acknowledgement cannot overwrite a newer save | Missing proof |
 | Truck conflict resolution | `resolveTruckConflict()` fetches the remote row, supports keep-local/use-server, and uses an updated-at race guard before atomic queue/cache replacement | Implemented; no backend-connected UI/E2E proof yet |
-| Backend authorization matrix | RPC contract tests cover the local owner path and privilege boundary; authenticated editor/read-only/unrelated-user RPC execution tests are not present | Incomplete |
-| Backend invalid-row rollback matrix | RPC has validation and is transaction-bound, but the requested valid-row-plus-invalid-row and duplicate/reference scenarios are not all tested | Incomplete |
+| Backend authorization matrix | `truck_batch_rpc.sql` exercises owner, permitted editor, read-only member, and unrelated user RPC execution paths | Pass locally for the covered batch RPC matrix; broader application policies remain outside this test |
+| Backend invalid-row rollback matrix | `truck_batch_rpc.sql` proves a valid first row plus invalid second truck reference leaves zero rows and zero receipt; duplicate/reference variants beyond this case remain future coverage | Partially verified |
 | Backend-connected Android sync | CI runs Android instrumentation, but the test harness still lacks a live Supabase backend and exact-once server-count verification | Unverified |
 | True process-death execution | Test source now calls `am force-stop`; no emulator was available locally and CI evidence was not inspected for this HEAD | Unverified |
 | Attachment capacity | Attachments remain base64 in snapshot payloads with a 5 MB UI limit; no physical-device SQLite capacity result exists | Unverified |
@@ -40,10 +40,11 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 
 ## Verification run for this audit
 
-- `frontend`: `npm run test:unit` — passed.
+- `frontend`: `npm run test:unit` — passed, including `test:local-store-recovery`.
 - `frontend`: `npm run lint` — passed during the latest implementation checkpoints.
+- `frontend`: `npm run test:e2e -- --grep "durable web state survives closing"` — passed with a real persistent Chromium profile and local Supabase.
 - `backend`: `supabase db reset --local --no-seed` — applied all migrations, including the Truck batch migration.
-- `backend`: `supabase test db` — passed 56 assertions across security and Truck batch RPC tests.
+- `backend`: `supabase test db` — passed 63 assertions across security and Truck batch RPC tests.
 - `mobile/android`: `./gradlew testDebugUnitTest` — passed.
 - `mobile/android`: `./gradlew compileDebugAndroidTestJavaWithJavac` — passed.
 - Local `adb devices` could not start an ADB daemon in this environment; physical/emulator runtime results therefore remain unverified.

@@ -192,12 +192,12 @@ test('durable web state survives closing and reopening the browser process offli
     await expect(firstPage.getByRole('heading', { name: bookName })).toBeVisible();
 
     await firstPage.getByRole('button', { name: 'Cash In', exact: true }).last().click();
-    await firstPage.locator('input[type=number]').fill('555');
+    await firstPage.locator('input[inputmode=decimal]').fill('555');
     await firstPage.getByPlaceholder('e.g. Counter sale, Payment received').fill('Offline Cash In');
     await firstPage.getByRole('button', { name: 'Save Entry', exact: true }).click();
     await expect(firstPage.getByText('Offline Cash In', { exact: true })).toBeVisible();
     await firstPage.getByRole('button', { name: 'Cash Out', exact: true }).last().click();
-    await firstPage.locator('input[type=number]').fill('100');
+    await firstPage.locator('input[inputmode=decimal]').fill('100');
     await firstPage.getByPlaceholder('e.g. Rent, Restock, Vendor payout').fill('Offline Cash Out');
     await firstPage.getByRole('button', { name: 'Save Entry', exact: true }).click();
     await expect(firstPage.getByText('Offline Cash Out', { exact: true })).toBeVisible();
