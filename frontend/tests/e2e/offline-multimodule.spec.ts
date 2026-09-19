@@ -2,7 +2,7 @@ import { expect, test, type Page } from 'playwright/test';
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { signIn } from './helpers';
-import { setE2EOffline } from './network';
+import { setE2EOffline, setE2EOnline } from './network';
 import { localSupabaseStatus } from './supabaseLocal';
 
 type Labels = {
@@ -217,6 +217,18 @@ test('Cash Book, Payroll, and Truck survive Android-style false-online restart a
     await reopened.getByRole('button', { name: 'Dashboard' }).click();
     await reopened.getByRole('heading', { name: secondBook }).click();
     await expect(reopened.getByText(labels.cashOut, { exact: true })).toBeVisible();
+
+    // The restart assertions above intentionally run offline. Reconnect and
+    // remount the app before checking Supabase rows so the online listener and
+    // startup sync can claim the persisted outbox.
+    await setE2EOnline(persistent, status.API_URL);
+    await reopened.reload();
+    await reopened.waitForLoadState('load');
+    await expect(reopened.getByText('Cash Book Overview')).toBeVisible({ timeout: 20_000 });
+    await reopened.evaluate(() => {
+      localStorage.removeItem('__mathan_e2e_offline__');
+      window.dispatchEvent(new Event('online'));
+    });
 
     await expect.poll(async () => {
       const [{ data: cash }, { data: payroll }, { count: ownerCount }, { data: transactions }] = await Promise.all([
