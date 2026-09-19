@@ -42,7 +42,10 @@ jobs:
         working-directory: backend
       - name: Verify migration from the supported legacy schema
         run: |
-          supabase db reset --local --version 202608260005 --sql-paths fixtures/legacy_upgrade_seed.sql
+          supabase db reset --local --version 202608260005 --no-seed
+          DB_URL="$(supabase status --output env | sed -n 's/^DB_URL="\(.*\)"$/\1/p')"
+          test -n "$DB_URL"
+          psql "$DB_URL" --set ON_ERROR_STOP=1 --file supabase/fixtures/legacy_upgrade_seed.sql
           supabase migration up --local
           supabase test db supabase/upgrade_tests/legacy_upgrade_contract.sql
         working-directory: backend
