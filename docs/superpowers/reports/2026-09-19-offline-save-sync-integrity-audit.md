@@ -23,7 +23,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Snapshot delayed acknowledgement and revision refresh | `snapshot-sync.test.ts`, `snapshot-save.test.ts`, and `snapshot-cache-repair.test.ts` cover newer intent preservation, post-flush revision rereads, and same-ID cache repair receipts | Focused tests pass |
 | Bounded diagnostics and attachment input policy | `diagnostics.test.ts` verifies redaction/retention; `attachment-policy.test.ts` verifies the 5 MB embedded limit | Pass for client policy |
 | Stale asynchronous state protection | Truck refresh generations and snapshot online-resync epochs prevent older async results from overwriting newer local state; focused TypeScript and repository tests pass | Implemented; Truck browser confirmation now passes |
-| Android force-stop test source | `OfflineSQLiteInstrumentedTest.java` uses target package plus `am force-stop` before relaunch | Compiles; emulator execution is unverified here |
+| Android force-stop test source | `OfflineSQLiteInstrumentedTest.java` uses target package plus `am force-stop` before relaunch; the backend scenario now queues a production Truck transaction while reachability is unavailable, restarts the process, synchronizes, and repeats the sync assertion | Compiles; emulator execution is unverified here |
 
 ## Partial or not yet proven
 
@@ -34,7 +34,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Truck conflict resolution | `resolveTruckConflict()` fetches the remote row, supports keep-local/use-server, and uses an updated-at race guard before atomic queue/cache replacement; the issue sheet now stays open and reports failures | Implemented; no backend-connected UI/E2E proof yet |
 | Backend authorization matrix | `truck_batch_rpc.sql` exercises owner, permitted editor, read-only member, and unrelated user RPC execution paths | Pass locally for the covered batch RPC matrix; broader application policies remain outside this test |
 | Backend invalid-row rollback matrix | `truck_batch_rpc.sql` proves zero rows and zero receipt for invalid second-row truck references, duplicate IDs, and invalid owner/customer/workspace references | Pass locally for the covered RPC matrix |
-| Backend-connected Android sync | CI now starts disposable Supabase, seeds an authenticated Truck fixture, uses `adb reverse`, and runs the production Truck repository after force-stop/relaunch | CI/device evidence required |
+| Backend-connected Android sync | CI now starts disposable Supabase, seeds an authenticated Truck fixture, uses `adb reverse`, and runs the production Truck repository through offline queueing, force-stop/relaunch, synchronization, and repeat-idempotency checks | CI/device evidence required |
 | True process-death execution | Test source now calls `am force-stop`; no emulator was available locally and CI evidence was not inspected for this HEAD | Unverified |
 | Attachment capacity | Attachments remain base64 in snapshot payloads with a 5 MB UI limit; no physical-device SQLite capacity result exists | Unverified |
 | 16 KB page-size release evidence | Existing artifact checks were previously recorded, but no final post-change release/device evidence is attached to this HEAD | Unverified |
@@ -57,6 +57,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - Focused verification after the harness corrections: `npm run test:unit`, `npm run lint`, `npm run test:snapshot-sync`, `npm run test:snapshot-save`, `npm run test:truck`, and `npm run build` — passed. The dedicated Truck restart and customer-projection scenarios pass; the ordinary Payroll restart scenario passes. The legacy split-Payroll restart remains unverified because its cold local run exceeded 180 seconds.
 - Fresh `npx supabase test db` passed all 75 database/security assertions. The reconnect helper now replays the online event after a persistent page reload, and restart-heavy tests have explicit cold-start budgets/selectors.
 - Current release checks: `npm run build` passed and a post-build string scan found no Android instrumentation API or E2E credential material in the production bundle. `./gradlew testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestJavaWithJavac` passed; Gradle's `flatDir` messages are warnings from the generated Capacitor Cordova plugin repository, not failures.
+- Latest instrumentation-source verification: `mobile`: `npm run build:instrumentation` completed; `mobile/android`: `./gradlew testDebugUnitTest lintDebug compileDebugAndroidTestJavaWithJavac` passed after adding the backend-connected offline Truck force-stop scenario. No emulator was available locally, so this remains source/build evidence rather than runtime evidence.
 
 ## Release decision
 

@@ -111,6 +111,18 @@ public class OfflineSQLiteInstrumentedTest {
         assertTrue(verified.getBoolean("localContains"));
     }
 
+    @Test public void offlineProductionTruckSaveSurvivesProcessRestartAndSyncsExactlyOnce() throws Exception {
+        JSONObject queued = object(js("return await api.backendOfflineTruckRoundTrip()", false));
+        assertEquals(1, queued.getInt("queued"));
+        forceStopAndRelaunchApplication();
+        JSONObject synced = object(js("return await api.backendSyncQueuedTruck(" + JSONObject.quote(queued.getString("workspaceId")) + "," + JSONObject.quote(queued.getString("transactionId")) + ")", false));
+        assertEquals(1, synced.getInt("serverCount"));
+        assertEquals(0, synced.getInt("queued"));
+        JSONObject repeated = object(js("return await api.backendSyncQueuedTruck(" + JSONObject.quote(queued.getString("workspaceId")) + "," + JSONObject.quote(queued.getString("transactionId")) + ")", false));
+        assertEquals(1, repeated.getInt("serverCount"));
+        assertEquals(0, repeated.getInt("queued"));
+    }
+
     private void save(String workspace, String domain, String id, int amount, String note) throws Exception {
         js("return await api.save(" + JSONObject.quote(workspace) + "," + JSONObject.quote(domain) + "," +
                 new JSONObject().put("id", id).put("amount", amount).put("note", note) + ")", true);
