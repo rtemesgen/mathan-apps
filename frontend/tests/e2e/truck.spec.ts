@@ -55,9 +55,9 @@ test('Truck app is available through the workspace launcher and preserves data a
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Income (Trips)' }).click();
   await page.getByRole('button', { name: 'Cash received now', exact: true }).click();
-  await expect(page.getByRole('option', { name: 'E2E Customer', exact: true })).toBeVisible();
-  await page.getByRole('option', { name: 'E2E Customer', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'E2E Customer', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: /E2E Customer — will pay later/, exact: true })).toBeVisible();
+  await page.getByRole('option', { name: /E2E Customer — will pay later/, exact: true }).click();
+  await expect(page.getByRole('button', { name: /E2E Customer/ }).first()).toBeVisible();
   await page.locator('input[type=number]').first().fill('1000');
   await page.getByRole('button', { name: 'Save Income' }).click();
   await expect(page.getByRole('status')).toContainText(/Saved|Customer receivable saved successfully/);
@@ -65,9 +65,9 @@ test('Truck app is available through the workspace launcher and preserves data a
   await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
   await page.getByRole('button', { name: 'Expenses & Payouts' }).click();
   await page.getByRole('button', { name: 'Cash paid now', exact: true }).click();
-  await expect(page.getByRole('option', { name: 'E2E Customer', exact: true })).toBeVisible();
-  await page.getByRole('option', { name: 'E2E Customer', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'E2E Customer', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: /E2E Customer — paid for Truck/, exact: true })).toBeVisible();
+  await page.getByRole('option', { name: /E2E Customer — paid for Truck/, exact: true }).click();
+  await expect(page.getByRole('button', { name: /E2E Customer/ }).first()).toBeVisible();
   await page.locator('input[type=number]').first().fill('400');
   await page.getByPlaceholder('Select or type category...').fill('Customer refund');
   await page.getByRole('button', { name: 'Save Expense' }).click();
