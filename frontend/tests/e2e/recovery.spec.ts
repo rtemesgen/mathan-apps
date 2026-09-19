@@ -34,6 +34,17 @@ test('IndexedDB failure recovery survives reload before a later primary commit',
   await setE2EOffline(context, status.API_URL);
   await expect(page.getByRole('heading', { name: bookName })).toBeVisible();
 
+  await page.evaluate(() => {
+    const originalRemoveItem = Storage.prototype.removeItem;
+    let failCleanup = true;
+    Storage.prototype.removeItem = function (key: string) {
+      if (failCleanup && key === 'mathan_erp_offline_atomic_recovery_v2') {
+        failCleanup = false;
+        throw new DOMException('Simulated recovery cleanup failure', 'QuotaExceededError');
+      }
+      return originalRemoveItem.call(this, key);
+    };
+  });
   await page.getByRole('button', { name: 'Cash In', exact: true }).last().click();
   await page.locator('input[inputmode=decimal]').fill('321');
   await page.getByPlaceholder('e.g. Counter sale, Payment received').fill('Recovery journal cash in');
@@ -42,7 +53,7 @@ test('IndexedDB failure recovery survives reload before a later primary commit',
   await expect(page.getByText('Recovery journal cash in', { exact: true })).toBeVisible();
 
   const journal = await page.evaluate(() => localStorage.getItem('mathan_erp_offline_atomic_recovery_v2'));
-  expect(journal).toBeNull();
+  expect(journal).not.toBeNull();
   await page.reload();
   await setE2EOffline(context, status.API_URL);
   await expect(page.getByRole('heading', { name: bookName })).toBeVisible();
