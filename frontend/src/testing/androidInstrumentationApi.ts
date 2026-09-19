@@ -126,11 +126,19 @@ export function installAndroidInstrumentationApi() {
       // cooldown is cleared before the process-death boundary; release code
       // never calls these controls.
       markBackendUnreachable(Date.now(), 60_000);
-      const transaction = await createTruckTransaction(workspaceId, {
-        truckId: String(trucks[0].id), date: new Date().toISOString(), type: 'INCOME', category: 'Android offline instrumentation', amount: 1, description: `android-offline-${crypto.randomUUID()}`,
-      }, false, userId);
+      const onlineDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'onLine');
+      Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+      let transaction: Awaited<ReturnType<typeof createTruckTransaction>>;
+      try {
+        transaction = await createTruckTransaction(workspaceId, {
+          truckId: String(trucks[0].id), date: new Date().toISOString(), type: 'INCOME', category: 'Android offline instrumentation', amount: 1, description: `android-offline-${crypto.randomUUID()}`,
+        }, false, userId);
+      } finally {
+        if (onlineDescriptor) Object.defineProperty(window.navigator, 'onLine', onlineDescriptor);
+        else delete (window.navigator as { onLine?: boolean }).onLine;
+        markBackendReachable();
+      }
       const queued = (await getQueuedMutations()).filter((mutation) => mutation.entityId === transaction.id).length;
-      markBackendReachable();
       return { workspaceId, transactionId: transaction.id, queued };
     },
     async backendSyncQueuedTruck(workspaceId: string, transactionId: string) {
