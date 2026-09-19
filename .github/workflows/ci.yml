@@ -117,31 +117,8 @@ jobs:
         env:
           SUPABASE_TELEMETRY_DISABLED: 'true'
       - name: Configure Android instrumentation backend
-        run: |
-          SUPABASE_STATUS="$(supabase status -o json | sed -n '/^{/,$p')"
-          api_url="http://127.0.0.1:54321"
-          anon_key="$(printf '%s' "$SUPABASE_STATUS" | jq -r .ANON_KEY)"
-          email='admin@mathan-e2e.local'
-          password='Admin-E2E-pass-123!'
-          auth_code='000'
-          for attempt in $(seq 1 15); do
-            auth_code="$(curl -sS -o /tmp/android-auth-probe.json -w '%{http_code}' \
-              -X POST "$api_url/auth/v1/token?grant_type=password" \
-              -H "apikey: $anon_key" -H 'Content-Type: application/json' \
-              --data "{\"email\":\"$email\",\"password\":\"$password\"}" || true)"
-            [ "$auth_code" = 200 ] && break
-            sleep 2
-          done
-          if [ "$auth_code" != 200 ]; then
-            printf 'Android auth probe failed with HTTP %s: ' "$auth_code"
-            sed -E 's/(access_token|refresh_token)":"[^"]+"/\1":"<redacted>"/g' /tmp/android-auth-probe.json || true
-            exit 1
-          fi
-          echo "VITE_SUPABASE_URL=$api_url" >> "$GITHUB_ENV"
-          echo "VITE_SUPABASE_ANON_KEY=$anon_key" >> "$GITHUB_ENV"
-          echo "VITE_ANDROID_E2E_EMAIL=$email" >> "$GITHUB_ENV"
-          echo "VITE_ANDROID_E2E_PASSWORD=$password" >> "$GITHUB_ENV"
-        working-directory: backend
+        run: npx tsx tests/e2e/androidBackendSetup.ts
+        working-directory: frontend
       - run: npm run build:instrumentation
         working-directory: mobile
       - name: Run native Android unit tests, lint, and build
