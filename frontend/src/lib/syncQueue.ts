@@ -6,6 +6,13 @@ import { withConnectionTimeout } from './connectivity';
 import { threeWayMergeSnapshot, affectedEntityIds } from './reconciliation';
 
 export interface QueuedMutation {
+  formatVersion?: 2;
+  localSequence?: number;
+  intentBase?: unknown;
+  supersedesMutationId?: string;
+  batchId?: string;
+  batchSize?: number;
+  batchIndex?: number;
   id: string;
   mutationId: string;
   userId: string;
@@ -30,7 +37,9 @@ export interface QueuedMutation {
   lastError?: string;
 }
 export const SYNC_QUEUE_KEY = 'sync-queue-v1';
+export const SYNC_QUEUE_META_KEY = 'sync-queue-meta-v2';
 const KEY = SYNC_QUEUE_KEY;
+export type QueueMetadataV2 = { formatVersion: 2; queueGeneration: number; nextLocalSequence: number };
 export const SYNC_LEASE_MS = 60_000;
 let queueTail: Promise<void> = Promise.resolve();
 
@@ -73,15 +82,15 @@ function withQueueLock<T>(operation: () => Promise<T>) {
 
 export async function waitForQueueIdle() { await queueTail; }
 
-function queuedMutation(mutation: QueuedMutationInput): QueuedMutation {
+function queuedMutation(mutation: QueuedMutationInput, localSequence: number): QueuedMutation {
   const mutationId = mutation.mutationId ?? crypto.randomUUID();
   const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
   const entityId = mutation.entityId ?? String(mutation.payload.id ?? mutation.payload.client_id ?? mutation.payload.domain ?? '');
   const now = new Date().toISOString();
-  return { ...mutation, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: now, updatedAt: now, baseServerUpdatedAt: mutation.baseServerUpdatedAt ?? null, lastAttemptAt: null, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, syncStatus: 'pending', retryCount: 0 };
+  return { ...mutation, formatVersion: 2, localSequence, id: mutationId, mutationId, userId: mutation.userId ?? 'unknown', companyId, entityType: mutation.entityType ?? mutation.table, entityId, baseRevision: mutation.baseRevision ?? Number(mutation.payload.expected_revision ?? 0), queuedAt: now, updatedAt: now, baseServerUpdatedAt: mutation.baseServerUpdatedAt ?? null, lastAttemptAt: null, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, syncStatus: 'pending', retryCount: 0 };
 }
 
-function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string; operation: QueuedMutation['operation']; payload: Record<string, unknown> }): QueuedMutation {
+function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string; operation: QueuedMutation['operation']; payload: Record<string, unknown> }, fallbackSequence = 0): QueuedMutation {
   const queuedAt = item.queuedAt ?? item.updatedAt ?? new Date(0).toISOString();
   const entityType = item.entityType ?? item.table;
   const entityId = item.entityId ?? String(item.payload.id ?? item.payload.client_id ?? item.payload.domain ?? '');
@@ -91,6 +100,8 @@ function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string
   const mutationId = item.mutationId ?? item.id ?? `${item.table}:${entityId}:${queuedAt}`;
   const normalized: QueuedMutation = {
     ...item,
+    formatVersion: 2,
+    localSequence: Number.isSafeInteger(item.localSequence) && Number(item.localSequence) > 0 ? Number(item.localSequence) : fallbackSequence,
     id: mutationId,
     mutationId,
     userId: item.userId ?? 'unknown',
@@ -111,12 +122,39 @@ function normalizeQueuedMutation(item: Partial<QueuedMutation> & { table: string
   return normalized;
 }
 
+function normalizeQueueMetadata(raw: unknown, queue: QueuedMutation[]): QueueMetadataV2 {
+  const candidate = raw && typeof raw === 'object' ? raw as Partial<QueueMetadataV2> : {};
+  const largestSequence = queue.reduce((largest, mutation) => Math.max(largest, mutation.localSequence ?? 0), 0);
+  const nextLocalSequence = Number.isSafeInteger(candidate.nextLocalSequence) && Number(candidate.nextLocalSequence) > largestSequence
+    ? Number(candidate.nextLocalSequence)
+    : largestSequence + 1;
+  return {
+    formatVersion: 2,
+    queueGeneration: Number.isSafeInteger(candidate.queueGeneration) && Number(candidate.queueGeneration) >= 0 ? Number(candidate.queueGeneration) : 0,
+    nextLocalSequence,
+  };
+}
+
+async function loadQueueState() {
+  const rawQueue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+  const queue = rawQueue.map((item, index) => normalizeQueuedMutation(item, index + 1));
+  const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), queue);
+  return { queue, metadata };
+}
+
+async function persistQueueState(queue: QueuedMutation[], metadata: QueueMetadataV2, records: Array<{ key: string; value: unknown }> = []) {
+  const nextMetadata: QueueMetadataV2 = { ...metadata, queueGeneration: metadata.queueGeneration + 1 };
+  await offlineStore.writeAtomic([...records, { key: KEY, value: queue }, { key: SYNC_QUEUE_META_KEY, value: nextMetadata }]);
+  return nextMetadata;
+}
+
 /** Persist local records and their mutations in one durable storage transaction. */
 export async function enqueueMutationsAtomic(mutations: QueuedMutationInput[], records: Array<{ key: string; value: unknown }>) {
   return withQueueLock(async () => {
-    const queue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-  const nextQueue = mutations.reduce((current, mutation) => mergeQueuedMutation(current, queuedMutation(mutation)), queue);
-    await offlineStore.writeAtomic([...records, { key: KEY, value: nextQueue }]);
+    const { queue, metadata } = await loadQueueState();
+    let nextLocalSequence = metadata.nextLocalSequence;
+    const nextQueue = mutations.reduce((current, mutation) => mergeQueuedMutation(current, queuedMutation(mutation, nextLocalSequence++)), queue);
+    await offlineStore.writeAtomic([...records, { key: KEY, value: nextQueue }, { key: SYNC_QUEUE_META_KEY, value: { ...metadata, queueGeneration: metadata.queueGeneration + 1, nextLocalSequence } }]);
     // Keep Settings' pending/error counters current even when the device is
     // offline and no sync worker will emit a later progress event. This is a
     // progress event, not a toast; AppToast only reacts to attention states.
@@ -142,7 +180,7 @@ export async function enqueueMutation(mutation: QueuedMutationInput) {
 export async function getQueuedMutations() {
   await queueTail;
   const queue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-  return queue.map((item) => recoverQueuedMutation(normalizeQueuedMutation(item)));
+  return queue.map((item, index) => recoverQueuedMutation(normalizeQueuedMutation(item, index + 1)));
 }
 
 /** Durably reclaim mutations left in `syncing` by a killed process. Active
@@ -150,10 +188,13 @@ export async function getQueuedMutations() {
 export async function recoverStaleQueuedMutations(now = Date.now()) {
   return withQueueLock(async () => {
     const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const normalized = raw.map((item) => normalizeQueuedMutation(item));
+    const normalized = raw.map((item, index) => normalizeQueuedMutation(item, index + 1));
     const recovered = normalized.map((item) => recoverQueuedMutation(item, now));
     const changed = recovered.some((item, index) => item.syncStatus !== raw[index]?.syncStatus || item.leaseExpiresAt !== raw[index]?.leaseExpiresAt || item.syncAttemptId !== raw[index]?.syncAttemptId);
-    if (changed) await offlineStore.write(KEY, recovered);
+    if (changed) {
+      const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), recovered);
+      await persistQueueState(recovered, metadata);
+    }
     return recovered;
   });
 }
@@ -165,7 +206,7 @@ export async function scopeLegacyQueuedMutations(userId: string, workspaceIds: s
   return withQueueLock(async () => {
     const allowed = new Set(workspaceIds);
     const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const queue = raw.map((item) => normalizeQueuedMutation(item));
+    const queue = raw.map((item, index) => normalizeQueuedMutation(item, index + 1));
     let changed = false;
     const scoped = queue.map((mutation) => {
       const next = scopeQueuedMutationForUser(mutation, userId, allowed);
@@ -174,7 +215,10 @@ export async function scopeLegacyQueuedMutations(userId: string, workspaceIds: s
       }
       return next;
     });
-    if (changed) await offlineStore.write(KEY, scoped);
+    if (changed) {
+      const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), scoped);
+      await persistQueueState(scoped, metadata);
+    }
     return scoped;
   });
 }
@@ -191,7 +235,7 @@ export async function claimQueuedMutations(workspaceIds: string[], workerId: str
   return withQueueLock(async () => {
     const allowed = new Set(workspaceIds);
     const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const queue = raw.map((item) => recoverQueuedMutation(normalizeQueuedMutation(item), now));
+    const queue = raw.map((item, index) => recoverQueuedMutation(normalizeQueuedMutation(item, index + 1), now));
     const startedAt = new Date(now).toISOString();
     const leaseExpiresAt = new Date(now + leaseMs).toISOString();
     const claimedIds = new Set(queue
@@ -200,7 +244,10 @@ export async function claimQueuedMutations(workspaceIds: string[], workerId: str
     const leased = queue.map((mutation) => claimedIds.has(mutation.mutationId)
       ? { ...mutation, syncStatus: 'syncing' as const, syncStartedAt: startedAt, syncAttemptId: `${workerId}:${mutation.mutationId}`, leaseExpiresAt, lastAttemptAt: startedAt, updatedAt: startedAt }
       : mutation);
-    if (claimedIds.size || leased.some((item, index) => item.syncStatus !== raw[index]?.syncStatus)) await offlineStore.write(KEY, leased);
+    if (claimedIds.size || leased.some((item, index) => item.syncStatus !== raw[index]?.syncStatus)) {
+      const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), leased);
+      await persistQueueState(leased, metadata);
+    }
     return { queue: leased, claimed: leased.filter((mutation) => claimedIds.has(mutation.mutationId)) };
   });
 }
@@ -227,7 +274,7 @@ export async function getWorkspaceMutationStatus(workspaceId: string, tables?: s
 
 export async function replaceQueue(queue: QueuedMutation[], processedMutationIds: string[] = [], acknowledgedSnapshotRevisions: Map<string, number> = new Map()) {
   return withQueueLock(async () => {
-    const latest = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const { queue: latest, metadata } = await loadQueueState();
     const processed = new Set(processedMutationIds);
     const rebase = (mutation: QueuedMutation): QueuedMutation => {
       const snapshotKey = `${queuedMutationCompanyId(mutation)}:${String(mutation.payload.domain ?? mutation.entityId)}`;
@@ -237,9 +284,9 @@ export async function replaceQueue(queue: QueuedMutation[], processedMutationIds
     const rebasedQueue = queue.map(rebase);
     const additions = latest
       .filter((mutation) => !processed.has(mutation.mutationId ?? mutation.id))
-      .map((mutation) => rebase(normalizeQueuedMutation(mutation)));
+      .map((mutation, index) => rebase(normalizeQueuedMutation(mutation, index + 1)));
     const merged = additions.reduce((current, mutation) => mergeQueuedMutation(current, mutation), rebasedQueue);
-    await offlineStore.write(KEY, merged);
+    await persistQueueState(merged, metadata);
   });
 }
 
@@ -256,7 +303,7 @@ export async function reconcilePendingSnapshotMutation(
 ) {
   return withQueueLock(async () => {
     const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const queue = raw.map((item) => normalizeQueuedMutation(item));
+    const queue = raw.map((item, index) => normalizeQueuedMutation(item, index + 1));
     const target = queue.find((mutation) => mutation.mutationId === mutationId);
     if (!target || target.table !== 'app_state_snapshots' || target.syncStatus !== 'pending' || target.lastAttemptAt) return false;
     const next = queue.map((mutation) => mutation.mutationId === mutationId ? {
@@ -271,7 +318,8 @@ export async function reconcilePendingSnapshotMutation(
       },
       updatedAt: new Date().toISOString(),
     } : mutation);
-    await offlineStore.writeAtomic([...records, { key: KEY, value: next }]);
+    const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), next);
+    await persistQueueState(next, metadata, records);
     return true;
   });
 }
@@ -283,12 +331,13 @@ export async function retryQueuedMutations(workspaceId: string) {
     // Read directly while holding the queue lock. Calling getQueuedMutations
     // here would await the lock's own tail and deadlock the manual retry.
     const rawQueue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const queue = rawQueue.map((mutation) => normalizeQueuedMutation(mutation));
+    const queue = rawQueue.map((mutation, index) => normalizeQueuedMutation(mutation, index + 1));
     const now = new Date().toISOString();
     const retried = queue.map((mutation) => queuedMutationCompanyId(mutation) === workspaceId && mutation.syncStatus === 'error'
       ? { ...mutation, syncStatus: 'pending' as const, updatedAt: now, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, errorCode: undefined, errorMessage: undefined, lastError: undefined }
       : mutation);
-    await offlineStore.write(KEY, retried);
+    const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), retried);
+    await persistQueueState(retried, metadata);
   });
 }
 
@@ -300,13 +349,16 @@ export async function retryQueuedMutation(mutationId: string, includeConflict = 
     const now = new Date().toISOString();
     let retried = false;
     const queue = rawQueue.map((raw) => {
-      const mutation = normalizeQueuedMutation(raw);
+      const mutation = normalizeQueuedMutation(raw, rawQueue.indexOf(raw) + 1);
       const retryable = mutation.syncStatus === 'error' || (includeConflict && mutation.syncStatus === 'conflicted');
       if (mutation.mutationId !== mutationId || !retryable) return mutation;
       retried = true;
       return { ...mutation, syncStatus: 'pending' as const, updatedAt: now, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, errorCode: undefined, errorMessage: undefined, lastError: undefined };
     });
-    if (retried) await offlineStore.write(KEY, queue);
+    if (retried) {
+      const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), queue);
+      await persistQueueState(queue, metadata);
+    }
     return retried;
   });
 }
@@ -331,6 +383,7 @@ export async function resolveSnapshotConflict(mutationId: string) {
   const nextMutationId = crypto.randomUUID();
   const next: QueuedMutation = {
     ...target,
+    formatVersion: 2,
     id: nextMutationId,
     mutationId: nextMutationId,
     baseRevision: remote.revision,
@@ -357,16 +410,21 @@ export async function resolveSnapshotConflict(mutationId: string) {
   const storageKey = `${target.userId}:${workspaceId}:${domain}`;
   return withQueueLock(async () => {
     const latestRaw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const latest = latestRaw.map((item) => normalizeQueuedMutation(item));
+    const latest = latestRaw.map((item, index) => normalizeQueuedMutation(item, index + 1));
     const current = latest.find((item) => item.mutationId === mutationId);
     if (!current || current.updatedAt !== target.updatedAt || current.syncStatus !== 'conflicted') return false;
-    const replacement = latest.map((item) => item.mutationId === mutationId ? next : item);
-    await offlineStore.writeAtomic([
+    const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), latest);
+    const replacement = latest.map((item) => item.mutationId === mutationId ? {
+      ...next,
+      localSequence: metadata.nextLocalSequence,
+      supersedesMutationId: mutationId,
+    } : item);
+    const replacementMetadata = { ...metadata, nextLocalSequence: metadata.nextLocalSequence + 1 };
+    await persistQueueState(replacement, replacementMetadata, [
       { key: storageKey, value: merged },
       { key: `${storageKey}:revision`, value: remote.revision },
       { key: `${storageKey}:confirmed`, value: remote.payload },
       { key: `${storageKey}:confirmed:revision`, value: remote.revision },
-      { key: KEY, value: replacement },
     ]);
     return true;
   });
@@ -380,14 +438,15 @@ export async function replaceConflictedMutationAtomically(
 ) {
   return withQueueLock(async () => {
     const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const queue = raw.map((item) => normalizeQueuedMutation(item));
+    const queue = raw.map((item, index) => normalizeQueuedMutation(item, index + 1));
     const current = queue.find((item) => item.mutationId === mutationId);
     if (!current || current.syncStatus !== 'conflicted' || (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt)) return false;
     const next = queue.flatMap((item) => {
       if (item.mutationId !== mutationId) return [item];
       return replacement ? [replacement] : [];
     });
-    await offlineStore.writeAtomic([...records, { key: KEY, value: next }]);
+    const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), next);
+    await persistQueueState(next, metadata, records);
     return true;
   });
 }
@@ -406,7 +465,7 @@ export async function replaceConflictedMutationUnitAtomically(
     const selected = new Set(mutationIds);
     if (!mutationIds.length || new Set(replacements.map((item) => item.mutationId)).size !== replacements.length) return false;
     const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const queue = raw.map((item) => normalizeQueuedMutation(item));
+    const queue = raw.map((item, index) => normalizeQueuedMutation(item, index + 1));
     const current = queue.filter((item) => selected.has(item.mutationId));
     if (current.length !== selected.size || current.some((item) => !['conflicted', 'error'].includes(item.syncStatus))) return false;
     if (current.some((item) => expectedUpdatedAt[item.mutationId] !== undefined && expectedUpdatedAt[item.mutationId] !== item.updatedAt)) return false;
@@ -417,7 +476,8 @@ export async function replaceConflictedMutationUnitAtomically(
       const replacement = replacementBySource.get(item.mutationId);
       return replacement ? [replacement] : [];
     });
-    await offlineStore.writeAtomic([...records, { key: KEY, value: next }]);
+    const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), next);
+    await persistQueueState(next, metadata, records);
     return true;
   });
 }
@@ -427,10 +487,11 @@ export async function replaceConflictedMutationUnitAtomically(
 export async function discardQueuedMutation(mutationId: string) {
   return withQueueLock(async () => {
     const rawQueue = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
-    const queue = rawQueue.map((item) => normalizeQueuedMutation(item));
+    const queue = rawQueue.map((item, index) => normalizeQueuedMutation(item, index + 1));
     const next = queue.filter((mutation) => mutation.mutationId !== mutationId);
     if (next.length === queue.length) return false;
-    await offlineStore.write(KEY, next);
+    const metadata = normalizeQueueMetadata(await offlineStore.read<QueueMetadataV2>(SYNC_QUEUE_META_KEY), next);
+    await persistQueueState(next, metadata);
     return true;
   });
 }

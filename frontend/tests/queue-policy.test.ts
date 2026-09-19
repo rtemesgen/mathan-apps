@@ -36,8 +36,13 @@ const newerQueuedSnapshot = { ...queuedSnapshot, mutationId: 'newer-snapshot', i
 let durableQueue: QueuedMutation[] = [newerQueuedSnapshot];
 const originalRead = offlineStore.read;
 const originalWrite = offlineStore.write;
+const originalWriteAtomic = offlineStore.writeAtomic;
 offlineStore.read = (async (key: string) => key === SYNC_QUEUE_KEY ? durableQueue : null) as typeof offlineStore.read;
 offlineStore.write = (async (key: string, value: unknown) => { if (key === SYNC_QUEUE_KEY) durableQueue = value as QueuedMutation[]; }) as typeof offlineStore.write;
+offlineStore.writeAtomic = (async (writes: Array<{ key: string; value: unknown }>) => {
+  const queueWrite = writes.find((write) => write.key === SYNC_QUEUE_KEY);
+  if (queueWrite) durableQueue = queueWrite.value as QueuedMutation[];
+}) as typeof offlineStore.writeAtomic;
 try {
   await replaceQueue([], ['older-snapshot'], new Map([['company-a:cash_book:state', 5]]));
   assert.equal(durableQueue[0].baseRevision, 5, 'a save enqueued during an in-flight acknowledgement rebases onto the acknowledged revision');
@@ -45,6 +50,7 @@ try {
 } finally {
   offlineStore.read = originalRead;
   offlineStore.write = originalWrite;
+  offlineStore.writeAtomic = originalWriteAtomic;
 }
 
 const ordered = orderQueuedMutations([
@@ -53,6 +59,11 @@ const ordered = orderQueuedMutations([
   mutation('trucks', 'truck', '2026-01-01'),
 ]);
 assert.deepEqual(ordered.map((item) => item.table), ['trucks', 'truck_owners', 'truck_transactions'], 'parent Truck mutations synchronize before dependent transactions');
+const sequenceOrdered = orderQueuedMutations([
+  { ...mutation('trucks', 'truck', '2026-01-01'), localSequence: 20 },
+  { ...mutation('trucks', 'truck', '2025-01-01'), localSequence: 10 },
+]);
+assert.equal(sequenceOrdered[0].localSequence, 10, 'local intent sequence is authoritative over wall-clock ordering');
 const syncing = mutation('trucks', 'truck', '2026-01-01');
 syncing.syncStatus = 'syncing';
 assert.equal(recoverQueuedMutation(syncing).syncStatus, 'pending', 'interrupted syncing mutations recover as pending after restart');

@@ -54,7 +54,9 @@ function diagnoseSyncError(workspaceId: string, table: string, error: { code?: s
 
 export function orderQueuedMutations(queue: QueuedMutation[]) {
   const rank = (item: QueuedMutation) => item.entityType.includes('transaction') || item.table.includes('transaction') ? 3 : item.entityType.includes('owner') || item.entityType.includes('membership') ? 2 : 1;
-  return [...queue].sort((a, b) => rank(a) - rank(b) || a.queuedAt.localeCompare(b.queuedAt));
+  return [...queue].sort((a, b) => rank(a) - rank(b)
+    || (a.localSequence ?? Number.MAX_SAFE_INTEGER) - (b.localSequence ?? Number.MAX_SAFE_INTEGER)
+    || a.queuedAt.localeCompare(b.queuedAt));
 }
 
 /** Apply a Truck row directly while the app is online. Offline writes use the

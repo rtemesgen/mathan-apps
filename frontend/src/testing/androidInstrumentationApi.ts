@@ -1,5 +1,5 @@
 import { offlineStore } from '../lib/localStore';
-import { enqueueMutationsAtomic, getQueuedMutations, replaceQueue } from '../lib/syncQueue';
+import { enqueueMutationsAtomic, getQueuedMutations, recoverStaleQueuedMutations, replaceQueue } from '../lib/syncQueue';
 import { getNativeDatabaseHealth, migrateLegacyRecords } from '../lib/sqliteStore';
 import { supabase } from '../lib/supabase';
 import { markBackendReachable, markBackendUnreachable } from '../lib/connectivity';
@@ -7,7 +7,6 @@ import { createTruckTransaction, refreshTruckDataFromCloud, synchronizeTruckData
 
 type Entry = { id: string; amount: number; note: string };
 const instrumentationEnv = import.meta.env as Record<string, string | undefined>;
-const queueKey = 'sync-queue-v1';
 const key = (workspace: string, domain: string) => `instrumentation:${workspace}:${domain}`;
 
 /** Test-only API compiled into emulator builds by mobile:build:instrumentation.
@@ -38,10 +37,7 @@ export function installAndroidInstrumentationApi() {
       return (await getQueuedMutations()).filter((item) => item.mutationId === mutationId).length;
     },
     async recoverQueue() {
-      // Reading normalizes expired leases; persist the recovered representation.
-      const recovered = await getQueuedMutations();
-      await offlineStore.write(queueKey, recovered);
-      return recovered;
+      return recoverStaleQueuedMutations();
     },
     async failWrite() {
       // Use the atomic business-write path here. The general single-record
@@ -54,8 +50,9 @@ export function installAndroidInstrumentationApi() {
       for (const recordKey of await offlineStore.listKeys()) {
         if (recordKey.includes(`:${workspace}:`)) await offlineStore.delete(recordKey);
       }
-      const queue = (await getQueuedMutations()).filter((item) => item.companyId !== workspace);
-      await offlineStore.write(queueKey, queue);
+      const allQueue = await getQueuedMutations();
+      const queue = allQueue.filter((item) => item.companyId !== workspace);
+      await replaceQueue(queue, allQueue.filter((item) => item.companyId === workspace).map((item) => item.mutationId));
       await offlineStore.flush();
     },
     async exerciseInterruptedLegacyMigration() {
