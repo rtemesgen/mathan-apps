@@ -38,7 +38,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Backend-connected Android sync | CI now starts disposable Supabase, seeds an authenticated Truck fixture, uses `adb reverse`, and runs the production Truck repository through offline queueing, force-stop/relaunch, synchronization, and repeat-idempotency checks | CI/device evidence required |
 | True process-death execution | Test source now calls `am force-stop`; no emulator was available locally and CI evidence was not inspected for this HEAD | Unverified |
 | Attachment capacity | Attachments remain base64 in snapshot payloads with a 5 MB UI limit; no physical-device SQLite capacity result exists | Unverified |
-| 16 KB page-size release evidence | Existing artifact checks were previously recorded, but no final post-change release/device evidence is attached to this HEAD | Unverified |
+| 16 KB page-size release evidence | Locally built `app-release-unsigned.apk` passed `zipalign -c -P 16 -v 4`; all bundled `libsqlcipher.so` ELF `LOAD` segments report `0x4000` alignment | Static artifact evidence passes; device/runtime evidence unverified |
 | APK replacement/data preservation | No supported old-APK-to-new-APK instrumentation run is recorded | Missing |
 | Deployment, rollback, mixed-client, and pilot handoff | [offline-sync-rollout.md](../../offline-sync-rollout.md) records additive order, stop-ship triggers, rollback restrictions, and required evidence; pilot/device artifacts remain pending | Documented; evidence pending |
 
@@ -59,6 +59,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - Fresh `npx supabase test db` passed all 75 database/security assertions. The reconnect helper now replays the online event after a persistent page reload, and restart-heavy tests have explicit cold-start budgets/selectors.
 - Current release checks: `npm run build` passed and a post-build string scan found no Android instrumentation API or E2E credential material in the production bundle. `./gradlew testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestJavaWithJavac` passed; Gradle's `flatDir` messages are warnings from the generated Capacitor Cordova plugin repository, not failures.
 - Latest instrumentation-source verification: `mobile`: `npm run build:instrumentation` completed; `mobile/android`: `./gradlew testDebugUnitTest lintDebug compileDebugAndroidTestJavaWithJavac` passed after adding the backend-connected offline Truck force-stop scenario. No emulator was available locally, so this remains source/build evidence rather than runtime evidence.
+- Latest local release artifact verification: `mobile/android`: `./gradlew assembleRelease` produced `app-release-unsigned.apk`; `zipalign -c -P 16 -v 4` passed and every bundled native ELF `LOAD` segment was `0x4000` aligned. This is unsigned local artifact evidence; signed CI artifact and device/runtime verification remain pending.
 - Latest browser regression verification: `SUPABASE_TELEMETRY_DISABLED=true npx playwright test tests/e2e/persistence-regressions.spec.ts --trace on` passed 2/2 against disposable local Supabase.
 
 ## Release decision
