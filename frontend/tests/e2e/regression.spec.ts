@@ -304,6 +304,12 @@ test('Payroll data survives closing and reopening the browser process offline', 
     await expect(reopenedPage.getByText(paymentNote, { exact: true })).toBeVisible();
     await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.reload();
+    await reopenedPage.waitForLoadState('load');
+    await expect(reopenedPage.getByText('Payroll Tracker').first()).toBeVisible({ timeout: 20_000 });
+    await reopenedPage.evaluate(() => {
+      localStorage.removeItem('__mathan_e2e_offline__');
+      window.dispatchEvent(new Event('online'));
+    });
     const service = e2eService();
     await expect.poll(async () => {
       const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Member Company').single();
