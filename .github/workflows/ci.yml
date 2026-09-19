@@ -143,7 +143,10 @@ jobs:
           ram-size: 2048M
           cores: 2
           emulator-boot-timeout: 600
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          # The force-stop/relaunch coverage exercises a second WebView process.
+          # Use the stable software renderer and disable Vulkan so the runner
+          # does not lose ColorBuffer handles during that process boundary.
+          emulator-options: -no-window -gpu software -feature -Vulkan -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: mobile/android
           script: |
