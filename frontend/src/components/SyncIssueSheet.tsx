@@ -3,6 +3,7 @@ import { AlertTriangle, X } from 'lucide-react';
 import type { EntitySyncStatus } from '../lib/reconciliation';
 import { discardQueuedMutation, resolveSnapshotConflict, retryQueuedMutation } from '../lib/syncQueue';
 import { syncWorkspaceQueues } from '../lib/offlineSync';
+import { resolveTruckConflict } from '../apps/truck/truckRepository';
 
 export function SyncIssueSheet() {
   const [issue, setIssue] = useState<EntitySyncStatus | null>(null);
@@ -18,6 +19,8 @@ export function SyncIssueSheet() {
     try {
       const resolved = keepLocal && issue.table === 'app_state_snapshots'
         ? await resolveSnapshotConflict(issue.mutationId)
+        : keepLocal && (issue.table.startsWith('truck_') || issue.table === 'trucks')
+          ? await resolveTruckConflict(issue.mutationId, 'keep-local')
         : await retryQueuedMutation(issue.mutationId, false);
       if (resolved && issue.workspaceId) await syncWorkspaceQueues(issue.workspaceId);
     } finally { setBusy(false); setIssue(null); }
@@ -26,7 +29,9 @@ export function SyncIssueSheet() {
     if (!window.confirm('Use the server version? Your unsynchronized local change will be removed.')) return;
     setBusy(true);
     try {
-      if (await discardQueuedMutation(issue.mutationId)) window.location.reload();
+      if (issue.table.startsWith('truck_') || issue.table === 'trucks') {
+        if (await resolveTruckConflict(issue.mutationId, 'use-server') && issue.workspaceId) await syncWorkspaceQueues(issue.workspaceId);
+      } else if (await discardQueuedMutation(issue.mutationId)) window.location.reload();
     }
     finally { setBusy(false); }
   };

@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase';
 import { offlineStore } from '../../lib/localStore';
-import { getQueuedMutations, getWorkspaceMutationStatus, type QueuedMutation } from '../../lib/syncQueue';
+import { getQueuedMutations, getWorkspaceMutationStatus, replaceConflictedMutationAtomically, type QueuedMutation } from '../../lib/syncQueue';
 import { syncQueue, writeTruckMutationOnline, writeTruckTransactionBatchOnline } from '../../lib/offlineSync';
 import { reportPersistenceNotice, type PersistenceState } from '../../lib/repositories/types';
 import { canAttemptBackend, isConnectivityFailure, withConnectionTimeout } from '../../lib/connectivity';
@@ -252,6 +252,59 @@ export async function synchronizeTruckData(workspaceId: string, userId?: string)
   await refreshTruckDataFromCloud(workspaceId, userId);
   await syncQueue(workspaceId);
   return refreshTruckDataFromCloud(workspaceId, userId);
+}
+
+export async function resolveTruckConflict(mutationId: string, decision: 'keep-local' | 'use-server') {
+  const queue = await getQueuedMutations();
+  const target = queue.find((mutation) => mutation.mutationId === mutationId);
+  if (!target || !TRUCK_TABLES.includes(target.table) || target.syncStatus !== 'conflicted') return false;
+  const workspaceId = target.companyId || String(target.payload.workspace_id ?? '');
+  const userId = target.userId || 'unknown';
+  const { data, error } = await withConnectionTimeout(supabase.from(target.table).select('*').eq('workspace_id', workspaceId).eq('id', target.entityId).maybeSingle());
+  if (error) throw error;
+  const remote = data as Record<string, unknown> | null;
+  if (decision === 'keep-local' && !remote) throw new Error('The Truck row was deleted remotely; restoring it requires an explicit new create.');
+  const confirmedStorageKey = confirmedCacheKey(workspaceId, userId);
+  const effectiveStorageKey = `truck:${userId}:${workspaceId}`;
+  const confirmed = (await offlineStore.read<TruckCache>(confirmedStorageKey)) ?? emptyCache();
+  const currentEffectiveQueue = queue.filter((mutation) => mutation.mutationId !== mutationId);
+  const write = { table: target.table, payload: target.payload, operation: target.operation } as TruckQueueWrite;
+  const confirmedNext = remote
+    ? applyConfirmedTruckRows(confirmed, [write], [remote])
+    : (() => {
+      const next = { ...confirmed, trucks: [...confirmed.trucks], owners: [...confirmed.owners], customers: [...confirmed.customers], transactions: [...confirmed.transactions] };
+      const collection = target.table === 'trucks' ? next.trucks : target.table === 'truck_owners' ? next.owners : target.table === 'truck_customers' ? next.customers : next.transactions;
+      const index = collection.findIndex((item) => item.id === target.entityId);
+      if (index >= 0) collection.splice(index, 1);
+      return next;
+    })();
+  let replacement: QueuedMutation | null = null;
+  if (decision === 'keep-local') {
+    const replacementId = crypto.randomUUID();
+    replacement = {
+      ...target,
+      id: replacementId,
+      mutationId: replacementId,
+      baseServerUpdatedAt: updatedAt(remote ?? {} ) ?? null,
+      lastAttemptAt: null,
+      syncStartedAt: null,
+      syncAttemptId: null,
+      leaseExpiresAt: null,
+      syncStatus: 'pending',
+      retryCount: 0,
+      errorCode: undefined,
+      errorMessage: undefined,
+      lastError: undefined,
+      updatedAt: new Date().toISOString(),
+      payload: { ...target.payload, workspace_id: workspaceId, mutation_id: replacementId },
+    };
+    currentEffectiveQueue.push(replacement);
+  }
+  const effective = replayTruckMutations(confirmedNext, currentEffectiveQueue.filter((mutation) => mutation.companyId === workspaceId && TRUCK_TABLES.includes(mutation.table)));
+  return replaceConflictedMutationAtomically(mutationId, replacement, [
+    { key: confirmedStorageKey, value: confirmedNext },
+    { key: effectiveStorageKey, value: effective },
+  ], target.updatedAt);
 }
 
 export async function createTruck(workspaceId: string, v: Omit<Truck, 'id'>, localOnly = false, userId?: string) {

@@ -29,7 +29,8 @@ export interface QueuedMutation {
   errorMessage?: string;
   lastError?: string;
 }
-const KEY = 'sync-queue-v1';
+export const SYNC_QUEUE_KEY = 'sync-queue-v1';
+const KEY = SYNC_QUEUE_KEY;
 export const SYNC_LEASE_MS = 60_000;
 let queueTail: Promise<void> = Promise.resolve();
 
@@ -367,6 +368,26 @@ export async function resolveSnapshotConflict(mutationId: string) {
       { key: `${storageKey}:confirmed:revision`, value: remote.revision },
       { key: KEY, value: replacement },
     ]);
+    return true;
+  });
+}
+
+export async function replaceConflictedMutationAtomically(
+  mutationId: string,
+  replacement: QueuedMutation | null,
+  records: Array<{ key: string; value: unknown }>,
+  expectedUpdatedAt?: string,
+) {
+  return withQueueLock(async () => {
+    const raw = (await offlineStore.read<QueuedMutation[]>(KEY)) ?? [];
+    const queue = raw.map((item) => normalizeQueuedMutation(item));
+    const current = queue.find((item) => item.mutationId === mutationId);
+    if (!current || current.syncStatus !== 'conflicted' || (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt)) return false;
+    const next = queue.flatMap((item) => {
+      if (item.mutationId !== mutationId) return [item];
+      return replacement ? [replacement] : [];
+    });
+    await offlineStore.writeAtomic([...records, { key: KEY, value: next }]);
     return true;
   });
 }
