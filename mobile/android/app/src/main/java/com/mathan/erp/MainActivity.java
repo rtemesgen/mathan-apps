@@ -53,9 +53,11 @@ public class MainActivity extends BridgeActivity {
             Object implementation = implementationField.get(plugin);
             if (implementation == null) return;
 
+            Method rollbackTransaction = implementation.getClass().getMethod("rollbackTransaction", String.class);
+            rollbackTransaction.invoke(implementation, OFFLINE_DATABASE);
             Method closeConnection = implementation.getClass().getMethod("closeConnection", String.class, Boolean.class);
             closeConnection.invoke(implementation, OFFLINE_DATABASE, false);
-            Log.d(TAG, "Closed offline SQLite connection before activity pause");
+            Log.d(TAG, "Rolled back and closed offline SQLite connection before activity pause");
         } catch (NoSuchFieldException | NoSuchMethodException ignored) {
             Log.w(TAG, "SQLite lifecycle close API is unavailable; JavaScript recovery remains enabled");
         } catch (Exception error) {
