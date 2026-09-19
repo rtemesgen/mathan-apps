@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited implementation checkpoint: `fix-andriod` at `ded3fe4` after the Android lifecycle, rollback, and process-death harness fixes.
+Audited implementation checkpoint: `fix-andriod` at `0d0cafb` after the Android lifecycle, rollback, process-death harness, and conflict-resolution fixes.
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
@@ -21,6 +21,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Online Truck batch client path | `writeTruckTransactionBatchOnline()` and `createTruckTransactionBatch()` preserve batch identity; `validateTruckBatchResponse()` now requires matching batch identity, row count, row IDs, and `last_mutation_id` values before queue settlement | Implemented and unit-tested; backend-connected browser test remains pending |
 | Queued Truck batch integrity | `truckBatchPolicy.ts` and worker group submission path | Policy and wiring implemented; end-to-end retry/cache proof remains pending |
 | Snapshot keep-local conflict path | `resolveSnapshotConflict()` fetches remote state, three-way merges, allocates a new ID, and atomically replaces local layers; the issue sheet now stays open and reports failures | Implemented; UI/E2E proof remains pending |
+| Snapshot use-server conflict path and review scope | `resolveSnapshotConflict(..., 'use-server')` verifies the active owner, fetches the remote snapshot before locking, removes only the selected conflict, rebases safe later pending intent, and atomically commits confirmed/effective layers with the queue; Truck resolution applies the same owner check | Implemented and unit/lint tested; backend-connected UI/E2E proof remains pending |
 | Snapshot delayed acknowledgement and revision refresh | `snapshot-sync.test.ts`, `snapshot-save.test.ts`, and `snapshot-cache-repair.test.ts` cover newer intent preservation, post-flush revision rereads, same-ID cache repair receipts, and `written`/`already_applied` acknowledgement of cache plus queue in one atomic write | Focused tests pass |
 | Bounded diagnostics and attachment input policy | `diagnostics.test.ts` verifies redaction/retention; `attachment-policy.test.ts` verifies the 5 MB embedded limit | Pass for client policy |
 | Browser create/delete and storage-failure regressions | `frontend/tests/e2e/persistence-regressions.spec.ts` verifies offline unattempted Cash Book create→delete removes local/outbox intent and leaves zero remote rows; a forced IndexedDB plus fallback-storage failure keeps the form open and emits no success | Passed against local Supabase |
@@ -83,6 +84,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - CI run `35458574243` passed the ordinary Android instrumentation suite (10/10 app tests), including the former SQLCipher-lock cases. Its process-death boundary then failed because a second Gradle connected-test invocation cleared/reinstalled app state.
 - CI run `35459355609` again passed the ordinary Android instrumentation suite (10/10 app tests), but the direct process-death phase could not find instrumentation info because the generated `androidTest` APK had been removed after the Gradle test task.
 - Commit `ded3fe4` reinstalls the generated `androidTest` APK, discovers its installed instrumentation component, and runs prepare/verify directly without clearing the production app package. CI run `35460083846` is still in progress, so this runtime gate remains unverified.
+- Commit `0d0cafb` adds active-session scope validation and transactional snapshot “use server” conflict resolution. Frontend `npm test` and `npm run build` pass locally. CI run `35460663977` is validating this commit; its frontend job has passed while database/Android/E2E remain in progress.
 
 ## Release decision
 
