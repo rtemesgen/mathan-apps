@@ -6,6 +6,8 @@ adb reverse tcp:54321 tcp:54321
 echo "Android page size: $(adb shell getconf PAGE_SIZE | tr -d '\r')"
 adb shell dumpsys package com.google.android.webview | grep -m1 versionName || true
 
+gradle_test_args=()
+
 if [ "${ANDROID_16KB_MEMORY_MODE:-}" = "true" ]; then
   # The Google 16 KB image starts many optional services which consume the
   # guest's limited RAM before the WebView-based instrumentation app launches.
@@ -28,11 +30,16 @@ if [ "${ANDROID_16KB_MEMORY_MODE:-}" = "true" ]; then
     adb shell am force-stop "$package_name" >/dev/null 2>&1 || true
     adb shell pm disable-user --user 0 "$package_name" >/dev/null 2>&1 || true
   done
+  # The 16 KB image can run the SQLite/WebView path, but it cannot reliably
+  # move a 4.9 MB multi-attachment JSON payload through evaluateJavascript.
+  # Keep the 1 MB smoke test in this job; the complete capacity matrix runs in
+  # the normal Android job and on the physical-device release checklist.
+  gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.skipLargeAttachmentCapacity=true")
 fi
 
 adb logcat -c
 
-./gradlew connectedDebugAndroidTest --stacktrace
+./gradlew connectedDebugAndroidTest "${gradle_test_args[@]}" --stacktrace
 test_status=$?
 
 if [ "$test_status" -eq 0 ]; then

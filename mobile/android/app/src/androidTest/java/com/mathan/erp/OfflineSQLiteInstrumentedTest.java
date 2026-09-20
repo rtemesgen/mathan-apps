@@ -157,7 +157,13 @@ public class OfflineSQLiteInstrumentedTest {
     }
 
     @Test public void embeddedAttachmentCapacitySurvivesReadAndActivityRecreation() throws Exception {
-        int[] sourceBytes = {1_048_576, 3_145_728, 4_900_000};
+        // The 16 KB Google image has a materially smaller WebView/native
+        // memory budget. Keep a useful embedded-attachment smoke check there,
+        // while reserving the full 4.9 MB capacity gate for the normal Android
+        // runtime and physical-device runbook.
+        int[] sourceBytes = skipLargeAttachmentCapacity()
+                ? new int[] {1_048_576}
+                : new int[] {1_048_576, 3_145_728, 4_900_000};
         for (int sourceByteCount : sourceBytes) {
             JSONObject written = object(js("return await api.writeAttachmentCapacity(" + sourceByteCount + ")", false));
             System.out.println("ATTACHMENT_CAPACITY " + written);
@@ -175,6 +181,7 @@ public class OfflineSQLiteInstrumentedTest {
     }
 
     @Test public void multipleAttachmentsAndQueuedCopiesSurviveReadAndActivityRecreation() throws Exception {
+        Assume.assumeFalse("Large attachment matrix is covered on normal Android and physical devices.", skipLargeAttachmentCapacity());
         JSONObject written = object(js("return await api.writeAttachmentCapacity(4900000, 3, 2)", false));
         System.out.println("ATTACHMENT_CAPACITY_MATRIX " + written);
         assertEquals(3, written.getInt("attachmentCount"));
@@ -203,6 +210,10 @@ public class OfflineSQLiteInstrumentedTest {
 
     private String processDeathPhase() {
         return InstrumentationRegistry.getArguments().getString("processDeathPhase", "");
+    }
+
+    private boolean skipLargeAttachmentCapacity() {
+        return "true".equals(InstrumentationRegistry.getArguments().getString("skipLargeAttachmentCapacity", "false"));
     }
 
     private void awaitApi() throws Exception {
