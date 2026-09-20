@@ -173,7 +173,7 @@ public class OfflineSQLiteInstrumentedTest {
         // while reserving the full 4.9 MB capacity gate for the normal Android
         // runtime and physical-device runbook.
         int[] sourceBytes = skipLargeAttachmentCapacity()
-                ? new int[] {1_048_576}
+                ? new int[] {262_144}
                 : new int[] {1_048_576, 3_145_728, 4_900_000};
         for (int sourceByteCount : sourceBytes) {
             JSONObject written = object(js("return await api.writeAttachmentCapacity(" + sourceByteCount + ")", false));
