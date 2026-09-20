@@ -178,48 +178,58 @@ async function seedDurableSnapshotConflict(page: import('playwright/test').Page,
 
 test('durable snapshot conflict can be resolved with the server version from the UI', async ({ page }) => {
   const localValue = [{ id: `local-book-${Date.now()}`, name: 'Local conflict value' }];
-  const { storageKey } = await seedDurableSnapshotConflict(page, [], localValue);
-  await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
-  page.once('dialog', (dialog) => void dialog.accept());
-  await page.getByRole('button', { name: 'Use server version' }).click();
-  await expect(page.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
-  await expect.poll(() => page.evaluate((key) => new Promise<{ queue: unknown[]; value: unknown }>((resolve, reject) => {
-    const request = indexedDB.open('mathan-erp-offline', 2);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const database = request.result;
-      const transaction = database.transaction('records', 'readonly');
-      const store = transaction.objectStore('records');
-      const queueRequest = store.get('sync-queue-v1');
-      const valueRequest = store.get(key);
-      transaction.oncomplete = () => { database.close(); resolve({ queue: (queueRequest.result as unknown[] | undefined) ?? [], value: valueRequest.result }); };
-      transaction.onerror = () => reject(transaction.error);
-    };
-  }), storageKey)).toMatchObject({ queue: [], value: [] });
+  const { service, workspaceId, storageKey } = await seedDurableSnapshotConflict(page, [], localValue);
+  try {
+    await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: 'Use server version' }).click();
+    await expect(page.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
+    await expect.poll(() => page.evaluate((key) => new Promise<{ queue: unknown[]; value: unknown }>((resolve, reject) => {
+      const request = indexedDB.open('mathan-erp-offline', 2);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('records', 'readonly');
+        const store = transaction.objectStore('records');
+        const queueRequest = store.get('sync-queue-v1');
+        const valueRequest = store.get(key);
+        transaction.oncomplete = () => { database.close(); resolve({ queue: (queueRequest.result as unknown[] | undefined) ?? [], value: valueRequest.result }); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    }), storageKey)).toMatchObject({ queue: [], value: [] });
+  } finally {
+    const { error } = await service.from('app_state_snapshots').update({ payload: [], revision: 1 }).eq('workspace_id', workspaceId).eq('domain', 'cash_book:books');
+    if (error) throw error;
+  }
 });
 
 test('durable snapshot conflict can keep the local change and synchronize it from the UI', async ({ page }) => {
   const remoteValue = [{ id: `remote-book-${Date.now()}`, name: 'Remote conflict value' }];
   const localValue = [{ id: `local-book-${Date.now()}`, name: 'Local conflict value' }];
   const { service, workspaceId, storageKey } = await seedDurableSnapshotConflict(page, remoteValue, localValue);
-  await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
-  await page.getByRole('button', { name: 'Keep my saved change' }).click();
-  await expect(page.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
-  await expect.poll(async () => {
-    const { data, error } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspaceId).eq('domain', 'cash_book:books').single();
+  try {
+    await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
+    await page.getByRole('button', { name: 'Keep my saved change' }).click();
+    await expect(page.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
+    await expect.poll(async () => {
+      const { data, error } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspaceId).eq('domain', 'cash_book:books').single();
+      if (error) throw error;
+      return data?.payload;
+    }).toEqual([...remoteValue, ...localValue]);
+    await expect.poll(() => page.evaluate(() => new Promise<unknown[]>((resolve, reject) => {
+      const request = indexedDB.open('mathan-erp-offline', 2);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('records', 'readonly');
+        const result = transaction.objectStore('records').get('sync-queue-v1');
+        transaction.oncomplete = () => { database.close(); resolve((result.result as unknown[] | undefined) ?? []); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    }))).toEqual([]);
+    expect(storageKey).toContain(workspaceId);
+  } finally {
+    const { error } = await service.from('app_state_snapshots').update({ payload: [], revision: 1 }).eq('workspace_id', workspaceId).eq('domain', 'cash_book:books');
     if (error) throw error;
-    return data?.payload;
-  }).toEqual([...remoteValue, ...localValue]);
-  await expect.poll(() => page.evaluate(() => new Promise<unknown[]>((resolve, reject) => {
-    const request = indexedDB.open('mathan-erp-offline', 2);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const database = request.result;
-      const transaction = database.transaction('records', 'readonly');
-      const result = transaction.objectStore('records').get('sync-queue-v1');
-      transaction.oncomplete = () => { database.close(); resolve((result.result as unknown[] | undefined) ?? []); };
-      transaction.onerror = () => reject(transaction.error);
-    };
-  }))).toEqual([]);
-  expect(storageKey).toContain(workspaceId);
+  }
 });
