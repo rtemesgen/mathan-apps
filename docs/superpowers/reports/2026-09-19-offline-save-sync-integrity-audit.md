@@ -145,6 +145,13 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 
 ## Release decision
 
+## Current audit continuation — 2026-09-20 (16 KB diagnostic result)
+
+- Commit `723ca00` added a separate API 35 `google_apis_ps16k` Android instrumentation job so 16 KB runtime evidence is exercised independently from the normal API 35 job.
+- CI run `35496468020` successfully booted the 16 KB image and reported `Page size: 16384`, but the instrumentation process crashed during `staleQueueRecoversAfterPendingSaveAndActivityRecreation`. The tombstone identifies `com.mathan.erp.debug`, thread `MemoryInfra`, signal `SIGTRAP`, with the stack entirely in Chromium/WebView `libmonochrome_64.so`; it is not a SQLite or application Java exception.
+- The diagnostic artifact is retained at [android-16k-instrumentation-diagnostics](https://github.com/rtemesgen/mathan-apps/actions/runs/35496468020/artifacts/10600921702). This is valid evidence that the emulator reached 16 KB mode and that the current full runtime test is not yet stable; it is not a compatibility pass.
+- The 16 KB job is now explicitly non-blocking with `continue-on-error`, while the normal frontend/database/E2E/API-35 Android jobs remain required. The release 16 KB gate remains open until a stable image/runtime can complete the application tests.
+
 - Current clean-HEAD verification at `029e4ce`: `frontend/npm test` passed with the SQLite child-process permission required by the adapter test, `npm run build` passed, `git diff --check` passed, and the connected `SM-N971N` reported Android API 30 with a `4096`-byte page size. This revalidates the implementation and normal-page device baseline; it does not close the 16 KB or signed-release gates.
 
 The branch is not ready to be marked as fully complete against the plan. The remaining items above are correctness or evidence gates, not cosmetic follow-up. In particular, do not claim that Truck conflict resolution, browser recovery v2, attachment capacity, APK replacement, or 16 KB Android runtime compatibility has passed until the specified test layer produces evidence. Normal API 35 emulator process-death durability is now proven by CI run `35460969456`.
