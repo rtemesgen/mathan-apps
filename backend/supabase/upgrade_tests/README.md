@@ -6,7 +6,9 @@ to exist before the repair migration is applied.
 From `backend/`, run against the disposable local Supabase stack:
 
 ```sh
-npx supabase db reset --local --version 202608260005 --sql-paths fixtures/legacy_upgrade_seed.sql
+npx supabase db reset --local --version 202608260005 --no-seed
+DB_URL="$(npx supabase status --output env | sed -n 's/^DB_URL="\(.*\)"$/\1/p')"
+psql "$DB_URL" --set ON_ERROR_STOP=1 --file supabase/fixtures/legacy_upgrade_seed.sql
 npx supabase migration up --local
 npx supabase test db supabase/upgrade_tests/legacy_upgrade_contract.sql
 npx supabase db reset --local --no-seed
