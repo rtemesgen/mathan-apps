@@ -240,7 +240,7 @@ jobs:
   required:
     name: Required CI gates
     if: always()
-    needs: [frontend, database, e2e, android, android-16k]
+    needs: [frontend, database, e2e, android, android_16k]
     runs-on: ubuntu-latest
     steps:
       - name: Require every production-critical job
