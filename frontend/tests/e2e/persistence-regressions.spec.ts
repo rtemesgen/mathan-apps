@@ -379,3 +379,99 @@ test('Truck conflict can keep local changes against a fresh server timestamp fro
     await service.from('truck_transactions').delete().eq('id', transactionId);
   }
 });
+
+test('two browser clients surface and resolve a Truck edit conflict without losing the local change', async ({ browser }, testInfo) => {
+  test.setTimeout(180_000);
+  const status = localSupabaseStatus();
+  const baseURL = testInfo.project.use.baseURL as string;
+  const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const originalDescription = `Two-client conflict ${Date.now()}`;
+  const localDescription = `${originalDescription} local`;
+  const remoteDescription = `${originalDescription} remote`;
+  const { data: workspace, error: workspaceError } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
+  if (workspaceError || !workspace) throw workspaceError ?? new Error('Admin Company fixture is missing.');
+  const { data: truck, error: truckError } = await service.from('trucks').select('id').eq('workspace_id', workspace.id).limit(1).single();
+  if (truckError || !truck) throw truckError ?? new Error('Truck fixture is missing.');
+  const transactionId = crypto.randomUUID();
+  const { error: insertError } = await service.from('truck_transactions').insert({
+    id: transactionId,
+    workspace_id: workspace.id,
+    truck_id: truck.id,
+    occurred_on: '2026-09-20',
+    transaction_type: 'INCOME',
+    category: 'Two-client conflict test',
+    amount: 111,
+    description: originalDescription,
+  });
+  if (insertError) throw insertError;
+
+  const contextA = await browser.newContext({ baseURL });
+  const contextB = await browser.newContext({ baseURL });
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+  pageA.setDefaultTimeout(15_000);
+  pageB.setDefaultTimeout(15_000);
+  try {
+    await signIn(pageA, 'admin');
+    await signIn(pageB, 'admin');
+    for (const page of [pageA, pageB]) {
+      await page.goto('/truck');
+      await expect(page.getByText('DASHBOARD')).toBeVisible();
+      await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+      await page.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
+      await expect(page.getByText(originalDescription, { exact: true })).toBeVisible();
+    }
+
+    // Client A accepts a local edit while disconnected.
+    await setE2EOffline(contextA, status.API_URL);
+    const localRow = pageA.locator('tr').filter({ hasText: originalDescription }).first();
+    await localRow.getByRole('button', { name: 'Edit' }).click();
+    const localDialog = pageA.locator('div.fixed.inset-0').filter({ hasText: 'Edit Cash / Ledger Entry' });
+    await localDialog.locator('input[type=number]').fill('222');
+    await localDialog.locator('input[placeholder="Details of load or repair"]').fill(localDescription);
+    await localDialog.getByRole('button', { name: 'Record Entry' }).click();
+    await expect(pageA.getByText(localDescription, { exact: true })).toBeVisible();
+
+    // Client B independently commits a newer server edit while online.
+    const remoteRow = pageB.locator('tr').filter({ hasText: originalDescription }).first();
+    await remoteRow.getByRole('button', { name: 'Edit' }).click();
+    const remoteDialog = pageB.locator('div.fixed.inset-0').filter({ hasText: 'Edit Cash / Ledger Entry' });
+    await remoteDialog.locator('input[type=number]').fill('333');
+    await remoteDialog.locator('input[placeholder="Details of load or repair"]').fill(remoteDescription);
+    await remoteDialog.getByRole('button', { name: 'Record Entry' }).click();
+    await expect(pageB.getByText(remoteDescription, { exact: true })).toBeVisible();
+    await expect.poll(async () => {
+      const { data, error } = await service.from('truck_transactions').select('amount,description').eq('id', transactionId).single();
+      if (error) throw error;
+      return data;
+    }).toEqual({ amount: 333, description: remoteDescription });
+
+    // Reconnect client A. The worker must surface a conflict, not retry the
+    // stale precondition silently or discard the local edit.
+    await setE2EOnline(contextA, status.API_URL);
+    await pageA.reload();
+    await expect(pageA.getByRole('dialog', { name: 'Sync issue' })).toBeVisible({ timeout: 30_000 });
+    await pageA.getByRole('button', { name: 'Keep my saved change' }).click();
+    await expect(pageA.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
+    await expect.poll(async () => {
+      const { data, error } = await service.from('truck_transactions').select('amount,description').eq('id', transactionId).single();
+      if (error) throw error;
+      return data;
+    }, { timeout: 30_000 }).toEqual({ amount: 222, description: localDescription });
+    await expect.poll(() => pageA.evaluate(() => new Promise<unknown[]>((resolve, reject) => {
+      const request = indexedDB.open('mathan-erp-offline');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('records', 'readonly');
+        const result = transaction.objectStore('records').get('sync-queue-v1');
+        transaction.oncomplete = () => { database.close(); resolve(Array.isArray(result.result) ? result.result : []); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    })), { timeout: 30_000 }).toHaveLength(0);
+  } finally {
+    await contextA.close();
+    await contextB.close();
+    await service.from('truck_transactions').delete().eq('id', transactionId);
+  }
+});
