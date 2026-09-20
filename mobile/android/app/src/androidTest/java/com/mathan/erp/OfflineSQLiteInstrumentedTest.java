@@ -206,7 +206,11 @@ public class OfflineSQLiteInstrumentedTest {
     }
 
     private void awaitApi() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        // The 16 KB Google image can take longer to recreate WebView after
+        // several ActivityScenario restarts.  This only extends readiness
+        // polling; the actual SQLite operation assertions retain their
+        // existing timeout and failure behavior.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
         while (System.nanoTime() < deadline) {
             if ("true".equals(js("return !!window.__mathanAndroidTest", false))) return;
             Thread.sleep(200);
