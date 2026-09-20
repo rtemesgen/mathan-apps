@@ -397,25 +397,50 @@ export async function acknowledgeSnapshotMutation(
     if (!target || target.table !== 'app_state_snapshots') return false;
 
     const snapshotKey = `${queuedMutationCompanyId(target)}:${String(target.payload.domain ?? target.entityId)}`;
+    const confirmedPayload = await offlineStore.read<unknown>(recordKeys.confirmedKey);
+    const confirmedRevision = await offlineStore.read<number>(recordKeys.confirmedRevisionKey);
+    const priorRevision = Number.isFinite(Number(confirmedRevision)) ? Number(confirmedRevision) : -1;
+    // A delayed receipt must not move the confirmed layer backwards. The
+    // effective layer is rebuilt from the newest confirmed payload below.
+    const nextRevision = revision > priorRevision ? revision : priorRevision;
+    const nextConfirmedPayload = priorRevision < 0 || revision > priorRevision
+      ? acknowledgedPayload
+      : confirmedPayload;
     const remaining = queue
       .filter((mutation) => mutation.mutationId !== mutationId)
-      .map((mutation) => mutation.localSequence > target.localSequence
-        ? rebaseSnapshotMutation(mutation, revision)
-        : mutation);
+      .map((mutation) => {
+        const mutationKey = `${queuedMutationCompanyId(mutation)}:${String(mutation.payload.domain ?? mutation.entityId)}`;
+        if (mutationKey !== snapshotKey || mutation.localSequence <= target.localSequence) return mutation;
+        if (mutation.table !== 'app_state_snapshots' || mutation.syncStatus !== 'pending' || mutation.lastAttemptAt) return mutation;
+        const basePayload = mutation.payload.base_payload;
+        if (basePayload === undefined) return mutation;
+        const effectivePayload = threeWayMergeSnapshot(basePayload, nextConfirmedPayload, mutation.payload.payload);
+        return {
+          ...mutation,
+          baseRevision: nextRevision,
+          payload: {
+            ...mutation.payload,
+            base_payload: nextConfirmedPayload,
+            payload: effectivePayload,
+            expected_revision: nextRevision,
+            affected_client_ids: affectedEntityIds(nextConfirmedPayload, effectivePayload),
+          },
+        };
+      });
     const successor = remaining
       .filter((mutation) => mutation.table === 'app_state_snapshots'
         && `${queuedMutationCompanyId(mutation)}:${String(mutation.payload.domain ?? mutation.entityId)}` === snapshotKey
         && mutation.syncStatus !== 'completed')
       .sort((left, right) => (right.localSequence ?? 0) - (left.localSequence ?? 0))[0];
-    const effectivePayload = successor?.payload.payload ?? acknowledgedPayload;
+    const effectivePayload = successor?.payload.payload ?? nextConfirmedPayload;
     await persistQueueState(remaining, metadata, [
       ...extraRecords,
       { key: recordKeys.effectiveKey, value: effectivePayload },
-      { key: recordKeys.revisionKey, value: revision },
-      { key: recordKeys.confirmedKey, value: acknowledgedPayload },
-      { key: recordKeys.confirmedRevisionKey, value: revision },
+      { key: recordKeys.revisionKey, value: nextRevision },
+      { key: recordKeys.confirmedKey, value: nextConfirmedPayload },
+      { key: recordKeys.confirmedRevisionKey, value: nextRevision },
     ]);
-    return { effectivePayload, revision };
+    return { effectivePayload, revision: nextRevision };
   });
 }
 

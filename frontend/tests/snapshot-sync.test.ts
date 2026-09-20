@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { enqueueMutationsAtomic, SYNC_QUEUE_KEY, type QueuedMutation } from '../src/lib/syncQueue';
+import { acknowledgeSnapshotMutation, enqueueMutationsAtomic, SYNC_QUEUE_KEY, type QueuedMutation } from '../src/lib/syncQueue';
 import { offlineStore } from '../src/lib/localStore';
 import { supabase } from '../src/lib/supabase';
 import { syncWorkspaceQueues } from '../src/lib/offlineSync';
@@ -37,7 +37,7 @@ try {
   await rpcReady;
   await enqueueMutationsAtomic([{
     mutationId: 'new-snapshot', userId: 'user-a', companyId: 'workspace-a', entityType: 'app_state_snapshot', entityId: 'cash_book:state', baseRevision: 1,
-    table: 'app_state_snapshots', operation: 'upsert', payload: { workspace_id: 'workspace-a', domain: 'cash_book:state', payload: { transactions: [{ id: 'new' }] }, expected_revision: 1, affected_client_ids: ['new'] },
+    table: 'app_state_snapshots', operation: 'upsert', payload: { workspace_id: 'workspace-a', domain: 'cash_book:state', base_payload: { transactions: [{ id: 'old' }] }, payload: { transactions: [{ id: 'new' }] }, expected_revision: 1, affected_client_ids: ['new'] },
   }], [{ key: storageKey, value: { transactions: [{ id: 'new' }] } }]);
   releaseRpc();
   await sync;
@@ -48,6 +48,56 @@ try {
   assert.deepEqual(durable.get(`${storageKey}:confirmed`), { transactions: [{ id: 'old' }] }, 'already-applied receipts update the confirmed layer');
   assert.ok(atomicWrites.some((writes) => writes.some((write) => write.key === SYNC_QUEUE_KEY)
     && writes.some((write) => write.key === storageKey)), 'snapshot acknowledgement removes the mutation and updates cache layers in one atomic write');
+
+  const acknowledgementTarget: QueuedMutation = {
+    ...oldMutation,
+    id: 'ack-target',
+    mutationId: 'ack-target',
+    localSequence: 10,
+    payload: {
+      workspace_id: 'workspace-a', domain: 'cash_book:state',
+      payload: { transactions: [{ id: 'local', amount: 1 }] }, expected_revision: 1,
+    },
+  };
+  const newerLocalSnapshot: QueuedMutation = {
+    ...oldMutation,
+    id: 'newer-local',
+    mutationId: 'newer-local',
+    localSequence: 11,
+    payload: {
+      workspace_id: 'workspace-a', domain: 'cash_book:state',
+      base_payload: { transactions: [{ id: 'local', amount: 1 }] },
+      payload: { transactions: [{ id: 'local', amount: 2 }] }, expected_revision: 1,
+    },
+  };
+  const unrelatedSnapshot: QueuedMutation = {
+    ...oldMutation,
+    id: 'unrelated-payroll',
+    mutationId: 'unrelated-payroll',
+    entityId: 'payroll:state',
+    localSequence: 12,
+    payload: { workspace_id: 'workspace-a', domain: 'payroll:state', payload: { employees: [] }, expected_revision: 7 },
+  };
+  durable.set(SYNC_QUEUE_KEY, [acknowledgementTarget, newerLocalSnapshot, unrelatedSnapshot]);
+  durable.set(`${storageKey}:confirmed`, { transactions: [{ id: 'local', amount: 1 }] });
+  durable.set(`${storageKey}:confirmed:revision`, 1);
+  await acknowledgeSnapshotMutation('ack-target', { transactions: [{ id: 'local', amount: 1 }, { id: 'remote', amount: 99 }] }, 2, {
+    effectiveKey: storageKey,
+    revisionKey: `${storageKey}:revision`,
+    confirmedKey: `${storageKey}:confirmed`,
+    confirmedRevisionKey: `${storageKey}:confirmed:revision`,
+  });
+  const rebasedQueue = durable.get(SYNC_QUEUE_KEY) as QueuedMutation[];
+  const rebasedCash = rebasedQueue.find((item) => item.mutationId === 'newer-local');
+  const untouchedPayroll = rebasedQueue.find((item) => item.mutationId === 'unrelated-payroll');
+  assert.deepEqual((durable.get(storageKey) as { transactions: unknown[] }).transactions, [
+    { id: 'local', amount: 2 }, { id: 'remote', amount: 99 },
+  ], 'a successor must preserve remote records outside its local delta');
+  assert.equal(rebasedCash?.payload.expected_revision, 2, 'only the acknowledged snapshot entity is rebased');
+  assert.deepEqual(rebasedCash?.payload.payload, { transactions: [
+    { id: 'local', amount: 2 }, { id: 'remote', amount: 99 },
+  ] });
+  assert.equal(untouchedPayroll?.payload.expected_revision, 7, 'an acknowledgement must not rebase another snapshot domain');
 } finally {
   offlineStore.read = originalRead;
   offlineStore.write = originalWrite;
