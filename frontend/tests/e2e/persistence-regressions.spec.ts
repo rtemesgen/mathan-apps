@@ -97,3 +97,96 @@ test('local storage failure keeps Cash Book save open and never reports success'
   await expect(page.getByRole('heading', { name: 'Create New Book' })).toBeVisible();
   await expect(page.getByText(bookName, { exact: true })).toHaveCount(0);
 });
+
+test('durable snapshot conflict can be resolved with the server version from the UI', async ({ page }) => {
+  const status = localSupabaseStatus();
+  const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: users, error: usersError } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (usersError) throw usersError;
+  const member = (users.users as Array<{ id: string; email?: string }>).find((user) => user.email === 'member@mathan-e2e.local');
+  expect(member).toBeTruthy();
+  const { data: workspace, error: workspaceError } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
+  if (workspaceError || !workspace) throw workspaceError ?? new Error('Admin Company fixture is missing.');
+  const domain = 'cash_book:books';
+  const mutationId = `e2e-conflict-${Date.now()}`;
+  const updatedAt = new Date().toISOString();
+  const localValue = [{ id: `local-book-${Date.now()}`, name: 'Local conflict value' }];
+  const storageKey = `${member!.id}:${workspace.id}:${domain}`;
+  const mutation = {
+    formatVersion: 2,
+    id: mutationId,
+    mutationId,
+    userId: member!.id,
+    companyId: workspace.id,
+    entityType: 'app_state_snapshot',
+    entityId: domain,
+    baseRevision: 1,
+    table: 'app_state_snapshots',
+    operation: 'upsert',
+    payload: {
+      workspace_id: workspace.id,
+      domain,
+      payload: localValue,
+      base_payload: [],
+      expected_revision: 1,
+      affected_client_ids: [localValue[0].id],
+      mutation_id: mutationId,
+    },
+    queuedAt: updatedAt,
+    updatedAt,
+    baseServerUpdatedAt: null,
+    lastAttemptAt: updatedAt,
+    syncStartedAt: null,
+    syncAttemptId: null,
+    leaseExpiresAt: null,
+    syncStatus: 'conflicted',
+    retryCount: 1,
+    errorCode: 'CONFLICT',
+    errorMessage: 'Remote revision changed',
+    lastError: 'Remote revision changed',
+    localSequence: 1,
+  };
+
+  await signIn(page, 'member');
+  await page.evaluate(({ storageKey: key, mutation: queued, mutationId: id, localValue: value }) => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('mathan-erp-offline', 2);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction('records', 'readwrite');
+      const store = transaction.objectStore('records');
+      store.put(value, key);
+      store.put([], `${key}:confirmed`);
+      store.put(1, `${key}:revision`);
+      store.put([], `${key}:confirmed:revision`);
+      store.put([queued], 'sync-queue-v1');
+      store.put({ formatVersion: 2, queueGeneration: 1, nextLocalSequence: 2 }, 'sync-queue-meta-v2');
+      transaction.oncomplete = () => {
+        database.close();
+        window.dispatchEvent(new CustomEvent('mathan:open-sync-issue', {
+          detail: { table: 'app_state_snapshots', entityId: 'cash_book:books', mutationId: id, state: 'needs_attention', workspaceId: key.split(':')[1], operation: 'upsert', updatedAt: queued.updatedAt },
+        }));
+        resolve();
+      };
+      transaction.onerror = () => reject(transaction.error);
+    };
+  }), { storageKey, mutation, mutationId, localValue });
+
+  await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: 'Use server version' }).click();
+  await expect(page.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
+  await expect.poll(() => page.evaluate((key) => new Promise<{ queue: unknown[]; value: unknown }>((resolve, reject) => {
+    const request = indexedDB.open('mathan-erp-offline', 2);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction('records', 'readonly');
+      const store = transaction.objectStore('records');
+      const queueRequest = store.get('sync-queue-v1');
+      const valueRequest = store.get(key);
+      transaction.oncomplete = () => { database.close(); resolve({ queue: (queueRequest.result as unknown[] | undefined) ?? [], value: valueRequest.result }); };
+      transaction.onerror = () => reject(transaction.error);
+    };
+  }), storageKey)).toMatchObject({ queue: [], value: [] });
+});
