@@ -202,8 +202,9 @@ test('an offline Truck create followed by an edit survives restart and synchroni
 
     await setE2EOnline(persistent, status.API_URL);
     await reopenedPage.goto('/truck');
+    await expect(reopenedPage.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });
     // The reconnect event is the production sync trigger; replay it after the
-    // new document has mounted so this test does not depend on event timing
+    // Truck hook has mounted so this test does not depend on event timing
     // during navigation.
     await reopenedPage.evaluate(() => window.dispatchEvent(new Event('online')));
     await expect.poll(() => reopenedPage.evaluate(() => new Promise<unknown[]>((resolve, reject) => {
