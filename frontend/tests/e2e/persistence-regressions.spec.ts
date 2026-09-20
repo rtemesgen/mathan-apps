@@ -98,7 +98,7 @@ test('local storage failure keeps Cash Book save open and never reports success'
   await expect(page.getByText(bookName, { exact: true })).toHaveCount(0);
 });
 
-test('durable snapshot conflict can be resolved with the server version from the UI', async ({ page }) => {
+async function seedDurableSnapshotConflict(page: import('playwright/test').Page, remoteValue: Array<{ id: string; name: string }>, localValue: Array<{ id: string; name: string }>) {
   const status = localSupabaseStatus();
   const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: users, error: usersError } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
@@ -110,8 +110,9 @@ test('durable snapshot conflict can be resolved with the server version from the
   const domain = 'cash_book:books';
   const mutationId = `e2e-conflict-${Date.now()}`;
   const updatedAt = new Date().toISOString();
-  const localValue = [{ id: `local-book-${Date.now()}`, name: 'Local conflict value' }];
   const storageKey = `${member!.id}:${workspace.id}:${domain}`;
+  const { error: remoteUpdateError } = await service.from('app_state_snapshots').update({ payload: remoteValue }).eq('workspace_id', workspace.id).eq('domain', domain);
+  if (remoteUpdateError) throw remoteUpdateError;
   const mutation = {
     formatVersion: 2,
     id: mutationId,
@@ -172,6 +173,12 @@ test('durable snapshot conflict can be resolved with the server version from the
     };
   }), { storageKey, mutation, mutationId, localValue });
 
+  return { service, workspaceId: workspace.id, storageKey, mutationId, localValue };
+}
+
+test('durable snapshot conflict can be resolved with the server version from the UI', async ({ page }) => {
+  const localValue = [{ id: `local-book-${Date.now()}`, name: 'Local conflict value' }];
+  const { storageKey } = await seedDurableSnapshotConflict(page, [], localValue);
   await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.getByRole('button', { name: 'Use server version' }).click();
@@ -189,4 +196,30 @@ test('durable snapshot conflict can be resolved with the server version from the
       transaction.onerror = () => reject(transaction.error);
     };
   }), storageKey)).toMatchObject({ queue: [], value: [] });
+});
+
+test('durable snapshot conflict can keep the local change and synchronize it from the UI', async ({ page }) => {
+  const remoteValue = [{ id: `remote-book-${Date.now()}`, name: 'Remote conflict value' }];
+  const localValue = [{ id: `local-book-${Date.now()}`, name: 'Local conflict value' }];
+  const { service, workspaceId, storageKey } = await seedDurableSnapshotConflict(page, remoteValue, localValue);
+  await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
+  await page.getByRole('button', { name: 'Keep my saved change' }).click();
+  await expect(page.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
+  await expect.poll(async () => {
+    const { data, error } = await service.from('app_state_snapshots').select('payload').eq('workspace_id', workspaceId).eq('domain', 'cash_book:books').single();
+    if (error) throw error;
+    return data?.payload;
+  }).toEqual([...remoteValue, ...localValue]);
+  await expect.poll(() => page.evaluate(() => new Promise<unknown[]>((resolve, reject) => {
+    const request = indexedDB.open('mathan-erp-offline', 2);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction('records', 'readonly');
+      const result = transaction.objectStore('records').get('sync-queue-v1');
+      transaction.oncomplete = () => { database.close(); resolve((result.result as unknown[] | undefined) ?? []); };
+      transaction.onerror = () => reject(transaction.error);
+    };
+  }))).toEqual([]);
+  expect(storageKey).toContain(workspaceId);
 });

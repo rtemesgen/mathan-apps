@@ -60,6 +60,17 @@ export function threeWayMergeSnapshot<T>(base: T, remote: T, local: T): T {
   if (!base || !remote || !local || typeof base !== 'object' || typeof remote !== 'object' || typeof local !== 'object') {
     return (same(base, local) ? remote : local) as T;
   }
+  // Some legacy snapshot domains (for example cash_book:books) store the
+  // identified collection directly as the top-level payload rather than
+  // under a named property. Preserve that array shape during conflict
+  // resolution; spreading it into an object would make a durable server
+  // record unreadable to the repository on the next reload.
+  if (Array.isArray(base) && Array.isArray(remote) && Array.isArray(local)) {
+    if ([...base, ...remote, ...local].every(identified)) {
+      return mergeIdentifiedArray(base, remote, local) as T;
+    }
+    return (same(base, local) ? remote : local) as T;
+  }
   const baseRecord = base as Record<string, unknown>;
   const remoteRecord = remote as Record<string, unknown>;
   const localRecord = local as Record<string, unknown>;
