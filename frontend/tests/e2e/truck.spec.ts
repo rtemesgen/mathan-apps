@@ -148,6 +148,91 @@ test('Truck transactions survive closing and reopening the browser process offli
   }
 });
 
+test('an offline Truck create followed by an edit survives restart and synchronizes one final row', async ({}, testInfo) => {
+  test.setTimeout(180_000);
+  const status = localSupabaseStatus();
+  const profile = testInfo.outputPath('persistent-truck-create-edit-profile');
+  const baseURL = testInfo.project.use.baseURL as string;
+  const originalDescription = `Offline create ${Date.now()}`;
+  const editedDescription = `${originalDescription} edited`;
+  const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  let persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+  persistent.setDefaultTimeout(12_000);
+  try {
+    const page = await persistent.newPage();
+    await signIn(page, 'admin');
+    const launcher = page.getByLabel('Truck Equity');
+    await expect(launcher).toHaveCount(1);
+    await launcher.click();
+    await expect(page.getByText('Loading Truck data…')).toBeHidden({ timeout: 20_000 });
+    await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await page.getByRole('button', { name: 'Income (Trips)' }).click();
+    await expect(page.getByRole('button', { name: 'Save Income' })).toBeVisible({ timeout: 20_000 });
+
+    await setE2EOffline(persistent, status.API_URL);
+    await page.locator('input[type=number]').first().fill('321');
+    await page.getByPlaceholder('e.g. Trip from Dallas TX to Atlanta GA').fill(originalDescription);
+    await page.getByRole('button', { name: 'Save Income' }).click();
+    await expect(page.getByRole('button', { name: 'Save Income' })).toBeVisible({ timeout: 30_000 });
+
+    await page.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await page.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
+    const originalRow = page.locator('tr').filter({ hasText: originalDescription }).first();
+    await expect(originalRow).toBeVisible();
+    await originalRow.getByRole('button', { name: 'Edit' }).click();
+    await expect(page.getByRole('heading', { name: 'Edit Cash / Ledger Entry' })).toBeVisible();
+    const editDialog = page.locator('div.fixed.inset-0').filter({ hasText: 'Edit Cash / Ledger Entry' });
+    await editDialog.locator('input[type=number]').fill('654');
+    await editDialog.locator('input[placeholder="Details of load or repair"]').fill(editedDescription);
+    await editDialog.getByRole('button', { name: 'Record Entry' }).click();
+    await expect(page.getByRole('heading', { name: 'Edit Cash / Ledger Entry' })).toHaveCount(0);
+    await expect(page.getByText(editedDescription, { exact: true })).toBeVisible();
+    await expect(page.getByText(originalDescription, { exact: true })).toHaveCount(0);
+
+    await persistent.close();
+    persistent = await chromium.launchPersistentContext(profile, { baseURL, headless: true });
+    persistent.setDefaultTimeout(12_000);
+    await setE2EOffline(persistent, status.API_URL);
+    const reopenedPage = await persistent.newPage();
+    await reopenedPage.goto('/truck');
+    await reopenedPage.getByRole('button', { name: /TRUCK EQUITY/ }).click();
+    await reopenedPage.getByRole('button', { name: 'Cash Report (Flow)', exact: true }).click();
+    await expect(reopenedPage.getByText(editedDescription, { exact: true })).toBeVisible();
+    await expect(reopenedPage.getByText(originalDescription, { exact: true })).toHaveCount(0);
+
+    await setE2EOnline(persistent, status.API_URL);
+    await reopenedPage.goto('/truck');
+    // The reconnect event is the production sync trigger; replay it after the
+    // new document has mounted so this test does not depend on event timing
+    // during navigation.
+    await reopenedPage.evaluate(() => window.dispatchEvent(new Event('online')));
+    await expect.poll(() => reopenedPage.evaluate(() => new Promise<unknown[]>((resolve, reject) => {
+      const request = indexedDB.open('mathan-erp-offline');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('records', 'readonly');
+        const result = transaction.objectStore('records').get('sync-queue-v1');
+        transaction.oncomplete = () => { database.close(); resolve(Array.isArray(result.result) ? result.result : []); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    })), { timeout: 30_000 }).toHaveLength(0);
+    await expect.poll(async () => {
+      const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
+      if (!workspace) return { edited: 0, original: 0 };
+      const { data: rows } = await service.from('truck_transactions').select('description').eq('workspace_id', workspace.id).in('description', [originalDescription, editedDescription]);
+      return {
+        edited: rows?.filter((row) => row.description === editedDescription).length ?? 0,
+        original: rows?.filter((row) => row.description === originalDescription).length ?? 0,
+      };
+    }, { timeout: 20_000 }).toEqual({ edited: 1, original: 0 });
+  } finally {
+    const { data: workspace } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
+    if (workspace) await service.from('truck_transactions').delete().eq('workspace_id', workspace.id).in('description', [originalDescription, editedDescription]);
+    await persistent.close();
+  }
+});
+
 test('customer projections and Pay Owner remain identical after restart and sync exactly once', async ({}, testInfo) => {
   const profile = testInfo.outputPath('persistent-truck-projections-profile');
   const baseURL = testInfo.project.use.baseURL as string;
