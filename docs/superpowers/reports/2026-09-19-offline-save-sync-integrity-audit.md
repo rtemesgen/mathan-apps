@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited implementation checkpoint: `fix-andriod` at `5f6a61c` after the Android lifecycle, rollback, process-death harness, conflict-resolution, and runtime-evidence updates.
+Audited implementation checkpoint: `fix-andriod` at `6db8d68` after the Android API 30 lifecycle fix, physical-device run, release-artifact checks, and CI run `35477217574`.
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
@@ -28,6 +28,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Stale asynchronous state protection | Truck refresh generations and snapshot online-resync epochs prevent older async results from overwriting newer local state; focused TypeScript and repository tests pass | Implemented; Truck browser confirmation now passes |
 | Android force-stop test source | `OfflineSQLiteInstrumentedTest.java` uses target package plus `am force-stop` before relaunch; the helper now drains the shell command and waits for `pidof` to clear before starting the new Activity; the backend scenario queues a production Truck transaction while reachability is unavailable, restarts the process, synchronizes, and repeats the sync assertion | Runtime-proven in CI run `35460969456`: the ordinary suite completed with 0 failures and the external prepare/force-stop/verify boundary completed successfully |
 | Android WebView recreation and stale SQLite connection recovery | CI run `35452984181` isolated the remaining failure to SQLCipher `database is locked` after `ActivityThread` relaunched the activity during `BEGIN`/`COMMIT`; the first replacement-connection recovery was insufficient because the new plugin instance cannot close the old instance's private connection. The current fix rolls back any active transaction and closes the native connection from the old Activity's `onPause` while the old plugin still owns it, then reopens it safely in the next WebView | CI run `35456076515` proved the native close executed but left one pooled connection in use; three Android tests still failed with `database is locked`. Explicit native rollback was added in `fa1acb7`; a fresh CI run is required |
+| Android WebView recreation and stale SQLite connection recovery | `MainActivity.onPause()` now schedules cleanup on Capacitor's worker without blocking the Android lifecycle thread, rolls back only an active transaction, and treats an already-absent connection as normal teardown | Physical API 30 full instrumentation suite passed: 12 reported tests, 2 intentional process-death boundary skips, 0 failures; CI run `35477217574` also passed Android |
 
 ## Partial or not yet proven
 
@@ -78,6 +79,16 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - CI run `35456076515` passed database, frontend, and browser E2E jobs, but Android failed the same three lifecycle/database tests. Its logcat showed `MathanMainActivity: Closed offline SQLite connection before activity pause`, followed by `SQLiteConnectionPool: ... closed but there are still 1 connections in use`; this confirms the hook was reached but did not roll back the interrupted transaction. Added explicit `rollbackTransaction` before `closeConnection` in `fa1acb7`.
 - CI run `35456880898` reached the emulator and reported 10/10 instrumentation tests passing before the wrapper failed with `sh: Syntax error: end of file (expecting "fi")`. The reactivecircus runner executes each multiline `script` line independently, so the conditional process-death flow was moved to `.github/scripts/run-android-instrumentation.sh` in `f7261a4`; `bash -n` passes and a fresh CI run is required to evaluate the rollback fix.
 - Latest local verification after explicit rollback: `mobile/android` `./gradlew testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestJavaWithJavac` passed. No local emulator was attached for connected execution.
+
+## Current verification checkpoint — commit `6db8d68`
+
+- Physical device `SM-N971N`, Android API 30, page size `4096`: focused activity-recreation test passed, then the full instrumentation suite passed with 0 failures. The two process-death boundary tests were intentionally skipped in the ordinary invocation; the hosted API 35 CI run covers the external force-stop boundary.
+- `frontend`: `npm test` passed with TypeScript and the complete unit suite, including SQLite adapter, recovery, queue, snapshot, conflict, batch, and architecture tests.
+- `backend/supabase`: `npx --yes supabase@2.84.2 test db` passed 75 assertions across the security and Truck-batch SQL tests.
+- `mobile/android`: full `connectedDebugAndroidTest` passed on the physical API 30 device. The `flatDir` messages are warnings from generated Capacitor Cordova dependencies, not test failures.
+- GitHub Actions run `35477217574` for commit `6db8d68` passed frontend, database, Android emulator, browser E2E, and required-gates jobs.
+- Release artifact: `app-release-unsigned.apk` passed `zipalign -c -P 16 -v 4`; all four packaged `libsqlcipher.so` variants report `0x4000` ELF `LOAD` alignment. This is static evidence only; no 16 KB runtime image was available locally.
+- A temporary Android 35 16 KB system-image download was stopped at approximately 1.7 GB because the host filesystem fell below 1 GB free; only the temporary SDK download directory was removed. The source worktree remains clean.
 
 ## Latest Android harness evidence
 
