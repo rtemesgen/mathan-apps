@@ -56,7 +56,6 @@ public class OfflineSQLiteInstrumentedTest {
     @After public void close() { if (scenario != null) scenario.close(); }
 
     @Test public void cashPayrollAndTruckSurviveRestartAndSynchronizeExactlyOnce() throws Exception {
-        Assume.assumeFalse("Multi-domain restart stress runs in the normal Android job.", skipRestartStress());
         save("alpha", "cash_book", "cash-1", 125, "fuel");
         save("alpha", "payroll", "payroll-1", 800, "weekly wage");
         save("alpha", "truck_equity", "truck-1", 2500, "owner equity");
@@ -230,10 +229,6 @@ public class OfflineSQLiteInstrumentedTest {
 
     private boolean skipBackendIntegration() {
         return "true".equals(InstrumentationRegistry.getArguments().getString("skipBackendIntegration", "false"));
-    }
-
-    private boolean skipRestartStress() {
-        return "true".equals(InstrumentationRegistry.getArguments().getString("skipRestartStress", "false"));
     }
 
     private void awaitApi() throws Exception {

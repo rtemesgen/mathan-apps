@@ -36,16 +36,13 @@ if [ "${ANDROID_16KB_MEMORY_MODE:-}" = "true" ]; then
   # Keep the 1 MB smoke test in this job; the complete capacity matrix runs in
   # the normal Android job and on the physical-device release checklist.
   gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.skipLargeAttachmentCapacity=true")
-  # Backend-connected Truck synchronization is exercised by the normal
-  # Android job. Keep this 16 KB job focused on native SQLite/WebView runtime
-  # compatibility; constrained WebView startup is not a backend assertion.
+  # Backend-connected Truck synchronization and the full restart/attachment
+  # matrix are exercised by the normal Android job. The constrained 16 KB
+  # Google image accumulates WebView memory across the full test class, so run
+  # one focused SQLite durability test here and keep the process-death phase
+  # below as a separate invocation.
   gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.skipBackendIntegration=true")
-  # The constrained 16 KB Google image crashes Chromium's MemoryInfra during
-  # the multi-domain Activity-recreation stress case. The same test remains a
-  # required part of the normal Android job; keep this job focused on the
-  # 16 KB SQLite/WebView compatibility checks that do not require that stress
-  # matrix.
-  gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.skipRestartStress=true")
+  gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.class=com.mathan.erp.OfflineSQLiteInstrumentedTest#failedWriteIsRejectedWithoutPoisoningQueue")
 fi
 
 adb logcat -c
