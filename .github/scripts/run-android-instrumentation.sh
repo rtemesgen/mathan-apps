@@ -26,7 +26,8 @@ if [ "${ANDROID_16KB_MEMORY_MODE:-}" = "true" ]; then
     com.google.android.federatedcompute \
     com.google.android.ondevicepersonalization.services \
     com.google.android.apps.wallpaper \
-    com.google.android.apps.messaging; do
+    com.google.android.apps.messaging \
+    com.android.chrome; do
     adb shell am force-stop "$package_name" >/dev/null 2>&1 || true
     adb shell pm disable-user --user 0 "$package_name" >/dev/null 2>&1 || true
   done
