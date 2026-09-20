@@ -222,10 +222,13 @@ jobs:
           # services in addition to the app.  At 2048M the emulator's low
           # memory killer terminates those processes and instrumentation
           # reports a misleading "Process crashed" before SQLite assertions
-          # execute.  Keep the same required runtime test, but give this
-          # image enough memory to run deterministically.
-          ram-size: 3072M
-          cores: 2
+          # execute.  3072M still killed Chrome during the first test, while
+          # 4096M made the hosted runner's adb daemon unstable.  Use the
+          # middle value and one emulator core so the guest has more memory
+          # without exhausting the runner while Gradle and Supabase remain
+          # active.
+          ram-size: 3584M
+          cores: 1
           emulator-boot-timeout: 600
           emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
