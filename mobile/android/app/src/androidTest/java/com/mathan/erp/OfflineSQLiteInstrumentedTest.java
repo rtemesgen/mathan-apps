@@ -174,6 +174,21 @@ public class OfflineSQLiteInstrumentedTest {
         }
     }
 
+    @Test public void multipleAttachmentsAndQueuedCopiesSurviveReadAndActivityRecreation() throws Exception {
+        JSONObject written = object(js("return await api.writeAttachmentCapacity(4900000, 3, 2)", false));
+        System.out.println("ATTACHMENT_CAPACITY_MATRIX " + written);
+        assertEquals(3, written.getInt("attachmentCount"));
+        assertEquals(2, written.getInt("queueCopies"));
+        assertTrue(written.getInt("queueSerializedBytes") >= written.getInt("serializedBytes") * 2);
+
+        recreateApplication();
+        JSONObject restarted = object(js("return await api.readAttachmentCapacity()", false));
+        System.out.println("ATTACHMENT_CAPACITY_MATRIX_RESTART " + restarted);
+        assertEquals(3, restarted.getInt("attachmentCount"));
+        assertEquals(2, restarted.getInt("queueCopies"));
+        js("return await api.clearAttachmentCapacity()", true);
+    }
+
     private void save(String workspace, String domain, String id, int amount, String note) throws Exception {
         js("return await api.save(" + JSONObject.quote(workspace) + "," + JSONObject.quote(domain) + "," +
                 new JSONObject().put("id", id).put("amount", amount).put("note", note) + ")", true);

@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited implementation checkpoint: `fix-andriod` at `0daaa3d` after the snapshot acknowledgement fix, Android API 30 lifecycle/physical-device run, release-artifact checks, and CI run `35479612578`.
+Audited implementation checkpoint: `fix-andriod` at `8daf31b` plus the current attachment-capacity matrix verification after the snapshot acknowledgement fix, Android API 30 lifecycle/physical-device run, release-artifact checks, and CI run `35482429392`.
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
@@ -42,7 +42,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Backend invalid-row rollback matrix | `truck_batch_rpc.sql` proves zero rows and zero receipt for invalid second-row truck references, duplicate IDs, and invalid owner/customer/workspace references | Pass locally for the covered RPC matrix |
 | Backend-connected Android sync | CI run `35460969456` started disposable Supabase, seeded an authenticated Truck fixture, used `adb reverse`, and completed the production Truck repository’s offline queueing, force-stop/relaunch, synchronization, and repeat-idempotency checks with no Android failures | Passed in CI; physical-device coverage remains separate |
 | True process-death execution | CI run `35460969456` completed the ordinary instrumentation suite with 0 failures, then passed direct `processDeathPrepareBoundary`, host `am force-stop`, and `processDeathVerifyBoundary` invocations | Passed on the API 35 emulator; not a 16 KB runtime result |
-| Attachment capacity | Test-only physical API 30 instrumentation wrote/read/reloaded one base64-equivalent embedded payload at 1 MB, 3 MB, and 4.9 MB source sizes. Results: serialized sizes 1,398,141 / 4,194,343 / 6,533,373 bytes; restart reads completed in 452 / 949 / 1,029 ms. Multiple attachments and accumulated pending-queue duplication are not yet measured. | Single-attachment baseline passes; full capacity gate remains partial |
+| Attachment capacity | Test-only physical API 30 instrumentation wrote/read/reloaded one base64-equivalent embedded payload at 1 MB, 3 MB, and 4.9 MB source sizes. It also wrote/read/reloaded a 4.9 MB record split across 3 attachments with 2 queued copies: 6,533,342 encoded bytes, 6,533,402 serialized bytes, 1,515 ms write, 1,842 ms restart read, and 13,066,804 approximate duplicated queue-payload bytes. | Single- and multi-attachment baseline passes; full capacity gate remains partial because the broader large-queue/peak-memory matrix is not yet measured |
 | 16 KB page-size release evidence | Locally built `app-release-unsigned.apk` passed `zipalign -c -P 16 -v 4`; all bundled `libsqlcipher.so` ELF `LOAD` segments report `0x4000` alignment | Static artifact evidence passes; device/runtime evidence unverified |
 | APK replacement/data preservation | Physical `SM-N971N` test installed the previous supported debug APK from `6db8d68`, wrote a durable record/queue entry, installed the current debug APK with the same application ID/signing key, and passed the current test APK's post-replacement verification. A signed-release replacement remains unverified. | Debug replacement passed; signed-release gate remains open |
 | Deployment, rollback, mixed-client, and pilot handoff | [offline-sync-rollout.md](../../offline-sync-rollout.md) records additive order, stop-ship triggers, rollback restrictions, and required evidence; pilot/device artifacts remain pending | Documented; evidence pending |
@@ -109,6 +109,12 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - APK replacement/data preservation passed for the supported debug test artifacts: old `6db8d68` target APK → current `0daaa3d` target APK using `adb install -r`, with the old durable record and pending queue verified by the new instrumentation APK. The release-signed replacement path remains unverified because no supported release keystore/artifact is available in this workspace.
 - Physical attachment-capacity baseline passed on `SM-N971N` (API 30, 4096-byte pages) using the real encrypted SQLite adapter: 1 MB source → 1,398,141 serialized bytes / 177 ms write / 452 ms restart read; 3 MB → 4,194,343 / 637 ms / 949 ms; 4.9 MB → 6,533,373 / 632 ms / 1,029 ms. This is a single embedded attachment per record; the plan's multiple-attachment and large-pending-queue cases remain open.
 - This run does not establish 16 KB compatibility, signed APK replacement, or attachment-capacity limits; those remain explicit release gates.
+
+## Latest attachment-capacity matrix verification — current worktree
+
+- The first run of `multipleAttachmentsAndQueuedCopiesSurviveReadAndActivityRecreation` failed as intended before implementation because the test-only API had no attachment-count/queue metadata.
+- After rebuilding the instrumentation bundle, the focused physical `SM-N971N` run passed, and the existing single-attachment restart test also passed. The matrix result was: source `4,900,000` bytes, encoded `6,533,334` bytes, 3 attachments, serialized `6,533,402` bytes, 2 queued copies, approximately `13,066,804` duplicated queue-payload bytes, `1,515 ms` write, and `1,842 ms` restart read.
+- The implementation uses the same encrypted SQLite-backed `offlineStore.writeAtomic`/outbox transaction path as the application and removes only the test entity type during cleanup. This is a capacity baseline, not a claim that all attachment sizes, queue depths, memory conditions, or 16 KB runtimes are safe.
 
 ## Release decision
 

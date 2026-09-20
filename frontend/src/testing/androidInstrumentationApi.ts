@@ -48,27 +48,72 @@ export function installAndroidInstrumentationApi() {
       // snapshots/outbox commits must be JSON-safe for SQLite.
       await offlineStore.writeAtomic([{ key: 'instrumentation:failed-write', value: { unsupported: BigInt(1) } }]);
     },
-    async writeAttachmentCapacity(sourceBytes: number) {
+    async writeAttachmentCapacity(sourceBytes: number, attachmentCount = 1, queueCopies = 0) {
       if (!Number.isInteger(sourceBytes) || sourceBytes <= 0) throw new Error('Attachment capacity input must be a positive integer.');
+      if (!Number.isInteger(attachmentCount) || attachmentCount <= 0 || attachmentCount > 8) throw new Error('Attachment count must be an integer from 1 to 8.');
+      if (!Number.isInteger(queueCopies) || queueCopies < 0 || queueCopies > 8) throw new Error('Queue copy count must be an integer from 0 to 8.');
       // A base64 payload is about 4/3 the original file size. Repeating one
       // character keeps this deterministic while exercising the same JSON and
       // SQLite row-size path as an embedded attachment.
       const encodedBytes = Math.ceil(sourceBytes * 4 / 3);
-      const attachment = 'A'.repeat(encodedBytes);
-      const value = { sourceBytes, attachment };
+      const baseLength = Math.floor(encodedBytes / attachmentCount);
+      const remainder = encodedBytes % attachmentCount;
+      const attachments = Array.from({ length: attachmentCount }, (_, index) =>
+        'A'.repeat(baseLength + (index < remainder ? 1 : 0)));
+      const value = { sourceBytes, attachmentCount, attachments };
       const serializedBytes = JSON.stringify(value).length;
       const startedAt = performance.now();
-      await offlineStore.writeAtomic([{ key: attachmentCapacityKey, value }]);
+      if (queueCopies > 0) {
+        const group = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await enqueueMutationsAtomic(Array.from({ length: queueCopies }, (_, index) => ({
+          mutationId: `instrumentation-capacity-${group}-${index}`,
+          userId: 'instrumentation-user',
+          companyId: 'instrumentation-capacity',
+          entityType: 'attachment_capacity',
+          entityId: `instrumentation-capacity-${group}-${index}`,
+          table: 'app_state_snapshots' as const,
+          operation: 'upsert' as const,
+          payload: { ...value, copyIndex: index },
+        })), [{ key: attachmentCapacityKey, value }]);
+      } else {
+        await offlineStore.writeAtomic([{ key: attachmentCapacityKey, value }]);
+      }
       await offlineStore.flush();
-      return { sourceBytes, encodedBytes: attachment.length, serializedBytes, writeMs: Math.round(performance.now() - startedAt) };
+      return {
+        sourceBytes,
+        encodedBytes,
+        attachmentCount,
+        serializedBytes,
+        queueCopies,
+        queueSerializedBytes: serializedBytes * queueCopies,
+        writeMs: Math.round(performance.now() - startedAt),
+      };
     },
     async readAttachmentCapacity() {
       const startedAt = performance.now();
-      const value = await offlineStore.read<{ sourceBytes?: number; attachment?: string }>(attachmentCapacityKey);
-      if (!value || typeof value.sourceBytes !== 'number' || typeof value.attachment !== 'string') throw new Error('Attachment capacity record was not readable.');
-      return { sourceBytes: value.sourceBytes, encodedBytes: value.attachment.length, serializedBytes: JSON.stringify(value).length, readMs: Math.round(performance.now() - startedAt) };
+      const value = await offlineStore.read<{ sourceBytes?: number; attachment?: string; attachments?: string[] }>(attachmentCapacityKey);
+      const attachments = Array.isArray(value?.attachments)
+        ? value.attachments
+        : typeof value?.attachment === 'string' ? [value.attachment] : [];
+      if (!value || typeof value.sourceBytes !== 'number' || attachments.length === 0 || attachments.some((item) => typeof item !== 'string')) {
+        throw new Error('Attachment capacity record was not readable.');
+      }
+      const serializedBytes = JSON.stringify(value).length;
+      const queueCopies = (await getQueuedMutations()).filter((item) => item.entityType === 'attachment_capacity').length;
+      return {
+        sourceBytes: value.sourceBytes,
+        encodedBytes: attachments.reduce((total, item) => total + item.length, 0),
+        attachmentCount: attachments.length,
+        serializedBytes,
+        queueCopies,
+        queueSerializedBytes: serializedBytes * queueCopies,
+        readMs: Math.round(performance.now() - startedAt),
+      };
     },
     async clearAttachmentCapacity() {
+      const queue = await getQueuedMutations();
+      const capacityMutationIds = queue.filter((item) => item.entityType === 'attachment_capacity').map((item) => item.mutationId);
+      await replaceQueue(queue.filter((item) => item.entityType !== 'attachment_capacity'), capacityMutationIds);
       await offlineStore.delete(attachmentCapacityKey);
       await offlineStore.flush();
     },
