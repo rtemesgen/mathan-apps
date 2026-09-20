@@ -1,10 +1,12 @@
 import type { Book, Transaction } from './types';
 import type { PersistenceState, RepositoryResult } from '../../lib/repositories/types';
 import { useSnapshotRepository } from '../../lib/repositories/useSnapshotRepository';
+import { createUuid } from '../../lib/uuid';
 
 export type NewBook = Omit<Book, 'id' | 'createdAt' | 'updatedAt'>;
 export type BookUpdate = Pick<Book, 'name' | 'openingBalance'>;
-export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | 'type'>;
+export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | 'updatedAt' | 'type'>;
+export type TransactionUpdate = NewTransaction;
 type Persist<T> = (next: T) => Promise<PersistenceState>;
 type PersistUpdate<T> = (update: (current: T) => T) => Promise<PersistenceState>;
 export type CashBookImport = { book: NewBook; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] };
@@ -84,10 +86,21 @@ export function useCashBookRepository() {
         const persistence = await updateState((value) => ({ ...value, transactions: value.transactions.filter((transaction) => transaction.id !== transactionId) }));
         return { ...result, persistence };
       },
+      updateTransaction: async (transactionId: string, input: TransactionUpdate) => {
+        const transaction = current.transactions.find((item) => item.id === transactionId);
+        if (!transaction) return Promise.resolve(undefined);
+        const result = updateTransaction(transaction, input);
+        const touchedAt = now();
+        const persistence = await updateState((value) => ({
+          books: value.books.map((book) => book.id === transaction.bookId ? { ...book, updatedAt: touchedAt } : book),
+          transactions: value.transactions.map((item) => item.id === transactionId ? result.data : item),
+        }));
+        return { ...result, persistence };
+      },
       importBooks: async (input: CashBookImport[]) => {
         const timestamp = now();
-        const importedBooks = input.map(({ book }) => ({ ...book, id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp }));
-        const importedTransactions = input.flatMap(({ transactions: rows }, index) => rows.map((transaction) => ({ ...transaction, id: crypto.randomUUID(), bookId: importedBooks[index].id, createdAt: timestamp })));
+        const importedBooks = input.map(({ book }) => ({ ...book, id: createUuid(), createdAt: timestamp, updatedAt: timestamp }));
+        const importedTransactions = input.flatMap(({ transactions: rows }, index) => rows.map((transaction) => ({ ...transaction, id: createUuid(), bookId: importedBooks[index].id, createdAt: timestamp })));
         const persistence = await updateState((value) => ({ books: [...importedBooks, ...value.books], transactions: [...importedTransactions, ...value.transactions] }));
         return { data: { books: [...importedBooks, ...current.books], transactions: [...importedTransactions, ...current.transactions] }, persistence };
       },
@@ -96,7 +109,7 @@ export function useCashBookRepository() {
 }
 
 const now = () => new Date().toISOString();
-const id = (_prefix: string) => crypto.randomUUID();
+const id = (_prefix: string) => createUuid();
 
 
 export function createBook(input: NewBook, timestamp = now()): RepositoryResult<Book> {
@@ -113,6 +126,10 @@ export function updateBook(book: Book, changes: BookUpdate, timestamp = now()): 
 
 export function createTransaction(bookId: string, type: Transaction['type'], input: NewTransaction, timestamp = now()): RepositoryResult<Transaction> {
   return { data: { ...input, type, id: id('tx'), bookId, createdAt: timestamp }, persistence: 'saving' };
+}
+
+export function updateTransaction(transaction: Transaction, input: TransactionUpdate, timestamp = now()): RepositoryResult<Transaction> {
+  return { data: { ...transaction, ...input, updatedAt: timestamp }, persistence: 'saving' };
 }
 
 export function removeBook(bookId: string, books: Book[], transactions: Transaction[]): RepositoryResult<{ books: Book[]; transactions: Transaction[] }> {
@@ -186,10 +203,10 @@ export async function saveRemovedTransaction(transactionId: string, transactions
 
 export async function saveImportedBooks(importedBooks: CashBookImport[], books: Book[], transactions: Transaction[], persistBooks: Persist<Book[]>, persistTransactions: Persist<Transaction[]>, updateBooks?: PersistUpdate<Book[]>, updateTransactions?: PersistUpdate<Transaction[]>) {
   const timestamp = now();
-  const newBooks = importedBooks.map(({ book }) => ({ ...book, id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp }));
+  const newBooks = importedBooks.map(({ book }) => ({ ...book, id: createUuid(), createdAt: timestamp, updatedAt: timestamp }));
   const newTransactions = importedBooks.flatMap(({ transactions: importedTransactions }, index) => importedTransactions.map((transaction, transactionIndex) => ({
     ...transaction,
-    id: crypto.randomUUID(),
+    id: createUuid(),
     bookId: newBooks[index].id,
     createdAt: timestamp,
   })));

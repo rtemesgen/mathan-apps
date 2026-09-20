@@ -1,30 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { TransactionType } from '../types';
+import type { Transaction, TransactionType } from '../types';
 import { X, Check, Calendar, Plus, Paperclip, FileText, Image as ImageIcon } from 'lucide-react';
 import { getCurrentLocalDateTimeString } from '../utils/formatters';
 import { AppSelect } from '../../../components/AppSelect';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
+import { DEFAULT_TRANSACTION_CATEGORIES, formatTransactionAmount, parseTransactionAmount } from '../utils/transactionInput';
+import { validateEmbeddedAttachmentSize } from '../../../lib/attachmentPolicy';
+
+export type TransactionFormData = {
+  amount: number;
+  remark: string;
+  category: string;
+  paymentMode: 'Cash' | 'Bank Transfer' | 'UPI / Online' | 'Cheque';
+  dateTime: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+};
 
 interface TransactionModalProps {
   isOpen: boolean;
   type: TransactionType; // 'in' | 'out'
   bookName: string;
   currencySymbol?: string;
+  initialTransaction?: Transaction;
   onClose: () => void;
-  onSave: (data: {
-    amount: number;
-    remark: string;
-    category: string;
-    paymentMode: 'Cash' | 'Bank Transfer' | 'UPI / Online' | 'Cheque';
-    dateTime: string;
-    attachmentUrl?: string;
-    attachmentName?: string;
-  }) => void;
+  onSave: (data: TransactionFormData) => void;
 }
 
 const CATEGORY_PRESETS = {
   in: ['Sales', 'Customer Payment', 'Service Fee', 'Investment', 'Refund', 'Other Income'],
-  out: ['Vendor Payment', 'Inventory Restock', 'Rent', 'Utilities', 'Salary / Wages', 'Tax & Fees', 'Other Expense'],
+  out: ['Vendor Payment', 'Inventory Restock', 'Rent', 'Utilities', 'Salary / Wages', 'Tax & Fees', 'Other Expenses'],
 };
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({
@@ -32,12 +37,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   type,
   bookName,
   currencySymbol = '$',
+  initialTransaction,
   onClose,
   onSave,
 }) => {
   const [amount, setAmount] = useState<string>('');
   const [remark, setRemark] = useState<string>('');
-  const [category, setCategory] = useState<string>('');
+  const [category, setCategory] = useState<string>(DEFAULT_TRANSACTION_CATEGORIES.in);
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank Transfer' | 'UPI / Online' | 'Cheque'>('Cash');
   const [dateTime, setDateTime] = useState<string>(getCurrentLocalDateTimeString());
   const [attachmentUrl, setAttachmentUrl] = useState<string>('');
@@ -47,25 +53,28 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const { submitting, runAction } = useAsyncAction();
 
   const isCashIn = type === 'in';
+  const isEditing = !!initialTransaction;
 
   useEffect(() => {
     if (isOpen) {
-      setDateTime(getCurrentLocalDateTimeString());
-      setCategory(isCashIn ? 'Sales' : 'Vendor Payment');
-      setAmount('');
-      setRemark('');
-      setAttachmentUrl('');
-      setAttachmentName('');
+      setDateTime(initialTransaction?.dateTime ?? getCurrentLocalDateTimeString());
+      setCategory(initialTransaction?.category ?? (isCashIn ? DEFAULT_TRANSACTION_CATEGORIES.in : DEFAULT_TRANSACTION_CATEGORIES.out));
+      setAmount(initialTransaction ? formatTransactionAmount(String(initialTransaction.amount)) : '');
+      setRemark(initialTransaction?.remark ?? '');
+      setPaymentMode(initialTransaction?.paymentMode ?? 'Cash');
+      setAttachmentUrl(initialTransaction?.attachmentUrl ?? '');
+      setAttachmentName(initialTransaction?.attachmentName ?? '');
       setError('');
     }
-  }, [isOpen, type, isCashIn]);
+  }, [isOpen, type, isCashIn, initialTransaction]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File size exceeds 5MB limit.');
+    const attachmentError = validateEmbeddedAttachmentSize(file.size);
+    if (attachmentError) {
+      setError(attachmentError);
       return;
     }
 
@@ -89,7 +98,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   if (!isOpen) return null;
 
   const validate = (): number | null => {
-    const parsed = parseFloat(amount);
+    const parsed = parseTransactionAmount(amount);
     if (isNaN(parsed) || parsed <= 0) {
       setError('Please enter a valid positive amount.');
       return null;
@@ -110,13 +119,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       operation: () => onSave({
         amount: numAmount,
         remark: remark.trim(),
-        category: category || (isCashIn ? 'General Income' : 'General Expense'),
+        category: category || (isCashIn ? DEFAULT_TRANSACTION_CATEGORIES.in : DEFAULT_TRANSACTION_CATEGORIES.out),
         paymentMode,
         dateTime: dateTime || getCurrentLocalDateTimeString(),
         attachmentUrl: attachmentUrl || undefined,
         attachmentName: attachmentName || undefined,
       }),
-      successMessage: 'Cash Book transaction saved successfully.',
+      successMessage: isEditing ? 'Cash Book transaction updated successfully.' : 'Cash Book transaction saved successfully.',
       errorMessage: 'Could not save the Cash Book transaction. Your form has been kept open.',
     });
 
@@ -132,7 +141,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       operation: () => onSave({
         amount: numAmount,
         remark: remark.trim(),
-        category: category || (isCashIn ? 'General Income' : 'General Expense'),
+        category: category || (isCashIn ? DEFAULT_TRANSACTION_CATEGORIES.in : DEFAULT_TRANSACTION_CATEGORIES.out),
         paymentMode,
         dateTime: dateTime || getCurrentLocalDateTimeString(),
         attachmentUrl: attachmentUrl || undefined,
@@ -203,13 +212,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </label>
             <div>
               <input
-                type="number"
-                step="0.01"
-                min="0.01"
+                type="text"
+                inputMode="decimal"
                 required
                 value={amount}
                 onChange={(e) => {
-                  setAmount(e.target.value);
+                  setAmount(formatTransactionAmount(e.target.value));
                   if (error) setError('');
                 }}
                 placeholder="0"
@@ -338,15 +346,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </button>
 
             <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={handleSaveAndAddNew}
-                className="px-2.5 py-1.5 text-[11px] font-bold border border-[#D8D3C5] bg-[#F7F5EE] hover:bg-[#EFECE3] text-[#121212] rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
-              >
-                <Plus className="w-3 h-3" />
-                Add & Next
-              </button>
+              {!isEditing && <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleSaveAndAddNew}
+                  className="px-2.5 py-1.5 text-[11px] font-bold border border-[#D8D3C5] bg-[#F7F5EE] hover:bg-[#EFECE3] text-[#121212] rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add & Next
+                </button>}
 
               <button
                 type="submit"
@@ -358,7 +366,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 }`}
               >
                 <Check className="w-3.5 h-3.5" />
-                {submitting ? 'Saving…' : 'Save Entry'}
+                {submitting ? 'Saving…' : isEditing ? 'Update Entry' : 'Save Entry'}
               </button>
             </div>
           </div>

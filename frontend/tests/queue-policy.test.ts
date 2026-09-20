@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { mergeQueuedMutation, type QueuePolicyEntry } from '../src/lib/queuePolicy';
 import { orderQueuedMutations } from '../src/lib/offlineSync';
-import { isSyncEligible, queuedMutationCompanyId, recoverQueuedMutation, rebaseSnapshotMutation, scopeQueuedMutationForUser, type QueuedMutation } from '../src/lib/syncQueue';
+import { isSyncEligible, queuedMutationCompanyId, recoverQueuedMutation, rebaseSnapshotMutation, replaceQueue, scopeQueuedMutationForUser, SYNC_QUEUE_KEY, type QueuedMutation } from '../src/lib/syncQueue';
+import { offlineStore } from '../src/lib/localStore';
 import { cacheKeysSafeToClear } from '../src/lib/offlinePrefetch';
 
 const entry = (mutationId: string, entityId: string, syncStatus: QueuePolicyEntry['syncStatus'] = 'pending', operation?: QueuePolicyEntry['operation']): QueuePolicyEntry => ({ mutationId, table: 'truck_transactions', companyId: 'workspace-a', entityId, syncStatus, operation });
@@ -15,6 +16,8 @@ assert.deepEqual(mergeQueuedMutation([entry('active', 'transaction-a', 'syncing'
 assert.deepEqual(mergeQueuedMutation([entry('uncertain', 'transaction-a', 'retrying')], replacement), [entry('uncertain', 'transaction-a', 'retrying'), replacement], 'a mutation with an uncertain server outcome is not replaced');
 assert.deepEqual(mergeQueuedMutation([entry('conflict', 'transaction-a', 'conflicted')], replacement), [entry('conflict', 'transaction-a', 'conflicted'), replacement], 'conflicts must remain visible');
 assert.deepEqual(mergeQueuedMutation([entry('create', 'transaction-a', 'pending', 'create')], entry('delete', 'transaction-a', 'pending', 'delete')), [], 'offline create followed by delete should cancel both operations');
+assert.equal(mergeQueuedMutation([entry('create', 'transaction-a', 'pending', 'create')], entry('edit', 'transaction-a', 'pending', 'update'))[0].operation, 'create', 'offline create followed by update must remain a create');
+assert.equal(mergeQueuedMutation([{ ...entry('create', 'transaction-a', 'pending', 'create'), lastAttemptAt: '2026-09-19T00:00:00Z' }], entry('edit', 'transaction-a', 'pending', 'update')).length, 2, 'an attempted create must not be coalesced with a later edit');
 assert.deepEqual(mergeQueuedMutation([first], entry('one', 'transaction-a', 'pending')), [entry('one', 'transaction-a', 'pending')], 'the same mutation id replaces its existing queue row');
 
 const mutation = (table: string, entityType: string, queuedAt: string): QueuedMutation => ({ id: crypto.randomUUID(), mutationId: crypto.randomUUID(), userId: 'user-a', companyId: 'company-a', entityType, entityId: crypto.randomUUID(), baseRevision: 0, table, operation: 'upsert', payload: {}, queuedAt, updatedAt: queuedAt, baseServerUpdatedAt: null, lastAttemptAt: null, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, syncStatus: 'pending', retryCount: 0 });
@@ -26,6 +29,29 @@ const rebasedSnapshot = rebaseSnapshotMutation(queuedSnapshot, 5);
 assert.equal(rebasedSnapshot.baseRevision, 5, 'a newer queued snapshot must rebase onto the acknowledged revision');
 assert.equal(rebasedSnapshot.payload.expected_revision, 5, 'the RPC payload must carry the acknowledged revision');
 assert.deepEqual(rebasedSnapshot.payload.payload, queuedSnapshot.payload.payload, 'rebasing must preserve the newer local snapshot payload');
+const attemptedSnapshot = { ...queuedSnapshot, syncStatus: 'retrying' as const, lastAttemptAt: '2026-01-01T00:01:00.000Z' };
+assert.equal(rebaseSnapshotMutation(attemptedSnapshot, 6), attemptedSnapshot, 'an attempted snapshot successor keeps its original revision and payload');
+
+const newerQueuedSnapshot = { ...queuedSnapshot, mutationId: 'newer-snapshot', id: 'newer-snapshot', baseRevision: 4, payload: { ...queuedSnapshot.payload, expected_revision: 4 } };
+let durableQueue: QueuedMutation[] = [newerQueuedSnapshot];
+const originalRead = offlineStore.read;
+const originalWrite = offlineStore.write;
+const originalWriteAtomic = offlineStore.writeAtomic;
+offlineStore.read = (async (key: string) => key === SYNC_QUEUE_KEY ? durableQueue : null) as typeof offlineStore.read;
+offlineStore.write = (async (key: string, value: unknown) => { if (key === SYNC_QUEUE_KEY) durableQueue = value as QueuedMutation[]; }) as typeof offlineStore.write;
+offlineStore.writeAtomic = (async (writes: Array<{ key: string; value: unknown }>) => {
+  const queueWrite = writes.find((write) => write.key === SYNC_QUEUE_KEY);
+  if (queueWrite) durableQueue = queueWrite.value as QueuedMutation[];
+}) as typeof offlineStore.writeAtomic;
+try {
+  await replaceQueue([], ['older-snapshot'], new Map([['company-a:cash_book:state', 5]]));
+  assert.equal(durableQueue[0].baseRevision, 5, 'a save enqueued during an in-flight acknowledgement rebases onto the acknowledged revision');
+  assert.equal(durableQueue[0].payload.expected_revision, 5, 'the durable successor carries the acknowledged revision');
+} finally {
+  offlineStore.read = originalRead;
+  offlineStore.write = originalWrite;
+  offlineStore.writeAtomic = originalWriteAtomic;
+}
 
 const ordered = orderQueuedMutations([
   mutation('truck_transactions', 'truck_transaction', '2026-01-03'),
@@ -33,6 +59,11 @@ const ordered = orderQueuedMutations([
   mutation('trucks', 'truck', '2026-01-01'),
 ]);
 assert.deepEqual(ordered.map((item) => item.table), ['trucks', 'truck_owners', 'truck_transactions'], 'parent Truck mutations synchronize before dependent transactions');
+const sequenceOrdered = orderQueuedMutations([
+  { ...mutation('trucks', 'truck', '2026-01-01'), localSequence: 20 },
+  { ...mutation('trucks', 'truck', '2025-01-01'), localSequence: 10 },
+]);
+assert.equal(sequenceOrdered[0].localSequence, 10, 'local intent sequence is authoritative over wall-clock ordering');
 const syncing = mutation('trucks', 'truck', '2026-01-01');
 syncing.syncStatus = 'syncing';
 assert.equal(recoverQueuedMutation(syncing).syncStatus, 'pending', 'interrupted syncing mutations recover as pending after restart');

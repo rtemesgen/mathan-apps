@@ -16,6 +16,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
+import { createUuid } from '../../../lib/uuid';
 
 interface AddRaiseViewProps {
   employees: Employee[];
@@ -75,7 +76,7 @@ export const AddRaiseView: React.FC<AddRaiseViewProps> = ({
     }
 
     const raise: SalaryChange = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       effectiveDate,
       newMonthlySalary: numNewSalary,
       reason: reason.trim() || 'Salary adjustment',

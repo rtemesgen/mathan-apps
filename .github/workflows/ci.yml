@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   push:
     branches: [main]
   pull_request:
@@ -20,27 +21,38 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
-      - run: npm run lint
+      # Keep the complete persistence, migration, queue, recovery, export, and
+      # architecture suite as a required PR gate. Running only a hand-picked
+      # subset here allowed offline-storage regressions to bypass CI.
+      - name: Run complete frontend test suite
+        run: npm test
         working-directory: frontend
-      - run: npm run test:accounting
-        working-directory: frontend
-      - run: npm run test:admin-backup
-        working-directory: frontend
-      - run: npm run build
+      - name: Build frontend
+        run: npm run build
         working-directory: frontend
 
   database:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.84.2
       - run: supabase start
         working-directory: backend
-      - run: supabase db reset
+      - name: Verify migration from the supported legacy schema
+        run: |
+          supabase db reset --local --version 202608260005 --no-seed
+          DB_URL="$(supabase status --output env | sed -n 's/^DB_URL="\(.*\)"$/\1/p')"
+          test -n "$DB_URL"
+          psql "$DB_URL" --set ON_ERROR_STOP=1 --file supabase/fixtures/legacy_upgrade_seed.sql
+          supabase migration up --local
+          supabase test db supabase/upgrade_tests/legacy_upgrade_contract.sql
         working-directory: backend
-      - run: supabase test db
+      - name: Verify fresh database and security contracts
+        run: |
+          supabase db reset --local --no-seed
+          supabase test db
         working-directory: backend
 
   e2e:
@@ -48,9 +60,9 @@ jobs:
     needs: database
     steps:
       - uses: actions/checkout@v6
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.84.2
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -73,13 +85,24 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
-    needs: frontend
+    needs: [frontend, database]
     steps:
       - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.84.2
+      - name: Start disposable Supabase backend
+        run: supabase start
+        working-directory: backend
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/*.gradle
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+            mobile/android/app/*.gradle
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -91,7 +114,156 @@ jobs:
         working-directory: frontend
       - run: npm ci
         working-directory: mobile
-      - run: npm run build
+      - name: Seed disposable Android backend account
+        run: npx tsx tests/e2e/globalSetup.ts
+        working-directory: frontend
+        env:
+          SUPABASE_TELEMETRY_DISABLED: 'true'
+      - name: Configure Android instrumentation backend
+        run: npx tsx tests/e2e/androidBackendSetup.ts
+        working-directory: frontend
+      - run: npm run build:instrumentation
         working-directory: mobile
-      - run: ./gradlew assembleDebug
+      - name: Run native Android unit tests, lint, and build
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
         working-directory: mobile/android
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run application/SQLite instrumentation tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 2048M
+          cores: 2
+          emulator-boot-timeout: 600
+          # The force-stop/relaunch coverage exercises a second WebView process.
+          # Use direct SwiftShader for deterministic WebView GLES/Vulkan
+          # rendering on API 35; the indirect backend reports missing ES
+          # configs and crashes the renderer during Activity recreation.
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          working-directory: mobile/android
+          script: bash ../../.github/scripts/run-android-instrumentation.sh
+      - name: Upload Android test reports and database diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumentation-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            mobile/android/app/build/reports/androidTests/
+            mobile/android/app/build/outputs/androidTest-results/
+            mobile/android/app/build/android-diagnostics/
+
+  android_16k:
+    name: Android 16 KB runtime
+    runs-on: ubuntu-latest
+    needs: [frontend, database]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.84.2
+      - name: Start disposable Supabase backend
+        run: supabase start
+        working-directory: backend
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/*.gradle
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+            mobile/android/app/*.gradle
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            mobile/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm ci
+        working-directory: mobile
+      - name: Seed disposable Android backend account
+        run: npx tsx tests/e2e/globalSetup.ts
+        working-directory: frontend
+        env:
+          SUPABASE_TELEMETRY_DISABLED: 'true'
+      - name: Configure Android instrumentation backend
+        run: npx tsx tests/e2e/androidBackendSetup.ts
+        working-directory: frontend
+      - run: npm run build:instrumentation
+        working-directory: mobile
+      - name: Run native Android unit tests and build
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
+        working-directory: mobile/android
+      - name: Enable KVM for the Android 16 KB emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run SQLite instrumentation tests on 16 KB emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_16KB_MEMORY_MODE: 'true'
+        with:
+          api-level: 35
+          target: google_apis_ps16k
+          arch: x86_64
+          profile: pixel_6
+          # The Google 16 KB system image runs WebView and several Google
+          # services in addition to the app.  At 2048M the emulator's low
+          # memory killer terminates those processes and instrumentation
+          # reports a misleading "Process crashed" before SQLite assertions
+          # execute.  3072M still killed Chrome during the first test, while
+          # 3584M and 4096M can trigger the guest low-memory killer during
+          # WebView/SQLite activity recreation. Keep the constrained image at
+          # 4096M with one emulator core; the heaviest restart stress case is
+          # isolated below while the normal Android job runs the full matrix.
+          ram-size: 4096M
+          cores: 1
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          working-directory: mobile/android
+          script: bash ../../.github/scripts/run-android-instrumentation.sh
+      - name: Upload Android 16 KB diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-16k-instrumentation-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            mobile/android/app/build/reports/androidTests/
+            mobile/android/app/build/outputs/androidTest-results/
+            mobile/android/app/build/android-diagnostics/
+
+  required:
+    name: Required CI gates
+    if: always()
+    needs: [frontend, database, e2e, android, android_16k]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every production-critical job
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          DATABASE_RESULT: ${{ needs.database.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          ANDROID_16K_RESULT: ${{ needs.android_16k.result }}
+        run: |
+          test "$FRONTEND_RESULT" = success
+          test "$DATABASE_RESULT" = success
+          test "$E2E_RESULT" = success
+          test "$ANDROID_RESULT" = success
+          test "$ANDROID_16K_RESULT" = success

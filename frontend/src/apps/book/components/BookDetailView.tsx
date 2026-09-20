@@ -14,12 +14,15 @@ import {
   Download,
   Paperclip,
   FileText,
-  X
+  X,
+  MoreVertical,
+  Pencil,
 } from 'lucide-react';
 import { ExportButton } from '../../../components/ExportButton';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
 import { AppSelect } from '../../../components/AppSelect';
 import { EntitySyncBadge } from '../../../components/EntitySyncBadge';
+import { calculateRunningBalances, filterAndSortTransactions, type TransactionListSort, type TransactionTypeFilter } from '../utils/transactionList';
 
 interface BookDetailViewProps {
   book: Book;
@@ -28,7 +31,8 @@ interface BookDetailViewProps {
   onOpenCashInModal: () => void;
   onOpenCashOutModal: () => void;
   onDeleteTransaction: (id: string) => void | Promise<void>;
-  onOpenExport: (filters?: { transactionType?: string; query?: string }) => void;
+  onEditTransaction: (transaction: Transaction) => void;
+  onOpenExport: (filters?: { transactionType?: string; query?: string; startDate?: string; endDate?: string }) => void;
 }
 
 export const BookDetailView: React.FC<BookDetailViewProps> = ({
@@ -38,13 +42,17 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   onOpenCashInModal,
   onOpenCashOutModal,
   onDeleteTransaction,
+  onEditTransaction,
   onOpenExport,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'in' | 'out'>('all');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'highest'>('newest');
+  const [typeFilter, setTypeFilter] = useState<TransactionTypeFilter>('all');
+  const [sortBy, setSortBy] = useState<TransactionListSort>('newest');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [previewAttachment, setPreviewAttachment] = useState<{ url: string; name: string } | null>(null);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+  const [openTransactionMenu, setOpenTransactionMenu] = useState<string | null>(null);
 
   // Book Statistics
   const bookTransactions = useMemo(() => {
@@ -55,58 +63,15 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
     return calculateBookStats(bookTransactions, book.id, book.openingBalance ?? 0);
   }, [bookTransactions, book.id, book.openingBalance]);
 
-  // Compute running balance map: tx.id -> net balance after that entry
   const runningBalanceMap = useMemo(() => {
-    const sortedChronologically = [...bookTransactions].sort((a, b) => {
-      const timeA = new Date(a.dateTime).getTime();
-      const timeB = new Date(b.dateTime).getTime();
-      if (timeA !== timeB) return timeA - timeB;
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    });
-
-    const map = new Map<string, number>();
-    let currentBalance = book.openingBalance ?? 0;
-
-    for (const tx of sortedChronologically) {
-      if (tx.type === 'in') {
-        currentBalance += tx.amount;
-      } else {
-        currentBalance -= tx.amount;
-      }
-      map.set(tx.id, currentBalance);
-    }
-
-    return map;
+    return calculateRunningBalances(bookTransactions, book.openingBalance ?? 0);
   }, [bookTransactions, book.openingBalance]);
 
-  // Filtered & Sorted Transactions
   const filteredTransactions = useMemo(() => {
-    return bookTransactions
-      .filter(t => {
-        if (typeFilter !== 'all' && t.type !== typeFilter) return false;
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
-          const matchRemark = t.remark.toLowerCase().includes(q);
-          const matchCategory = t.category?.toLowerCase().includes(q);
-          const matchMode = t.paymentMode?.toLowerCase().includes(q);
-          const matchAmount = t.amount.toString().includes(q);
-          return matchRemark || matchCategory || matchMode || matchAmount;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === 'newest') {
-          return new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime() || b.id.localeCompare(a.id);
-        }
-        if (sortBy === 'oldest') {
-          return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime() || a.id.localeCompare(b.id);
-        }
-        if (sortBy === 'highest') {
-          return b.amount - a.amount;
-        }
-        return 0;
-      });
-  }, [bookTransactions, typeFilter, searchQuery, sortBy]);
+    return filterAndSortTransactions(bookTransactions, { typeFilter, searchQuery, sortBy, startDate, endDate });
+  }, [bookTransactions, typeFilter, searchQuery, sortBy, startDate, endDate]);
+
+  const hasListFilters = Boolean(searchQuery || typeFilter !== 'all' || startDate || endDate);
 
   return (
     <div className="min-h-screen pb-20">
@@ -133,7 +98,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             )}
           </div>
 
-          <ExportButton onClick={() => onOpenExport({ transactionType: typeFilter === 'all' ? undefined : typeFilter, query: searchQuery || undefined })} />
+          <ExportButton onClick={() => onOpenExport({ transactionType: typeFilter === 'all' ? undefined : typeFilter, query: searchQuery || undefined, startDate: startDate || undefined, endDate: endDate || undefined })} />
         </div>
       </div>
 
@@ -217,9 +182,20 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
             </div>
 
             <div className="flex gap-1.5">
-              <AppSelect value={typeFilter} onChange={(value) => setTypeFilter(value as 'all' | 'in' | 'out')} options={[{value:'all',label:'All Entries'},{value:'in',label:'Cash In Only'},{value:'out',label:'Cash Out Only'}]} className="min-w-28" />
+              <AppSelect value={typeFilter} onChange={(value) => setTypeFilter(value as TransactionTypeFilter)} options={[{value:'all',label:'All Entries'},{value:'in',label:'Cash In Only'},{value:'out',label:'Cash Out Only'}]} className="min-w-28" />
 
-              <AppSelect value={sortBy} onChange={(value) => setSortBy(value as 'newest' | 'oldest' | 'highest')} options={[{value:'newest',label:'Newest First'},{value:'oldest',label:'Oldest First'},{value:'highest',label:'Highest Amount'}]} className="min-w-32" />
+              <AppSelect value={sortBy} onChange={(value) => setSortBy(value as TransactionListSort)} options={[{value:'newest',label:'Newest First'},{value:'oldest',label:'Oldest First'},{value:'highest',label:'Highest Amount'}]} className="min-w-32" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-[#6B7280]">
+                From
+                <input aria-label="From date" type="date" value={startDate} max={endDate || undefined} onChange={(event) => setStartDate(event.target.value)} className="mt-0.5 block w-full rounded-md border border-[#D8D3C5] bg-[#FAF9F5] px-2 py-1 text-[10px] font-normal tracking-normal text-[#121212] focus:outline-none focus:ring-1 focus:ring-[#121212]" />
+              </label>
+              <label className="text-[9px] font-bold uppercase tracking-wider text-[#6B7280]">
+                To
+                <input aria-label="To date" type="date" value={endDate} min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} className="mt-0.5 block w-full rounded-md border border-[#D8D3C5] bg-[#FAF9F5] px-2 py-1 text-[10px] font-normal tracking-normal text-[#121212] focus:outline-none focus:ring-1 focus:ring-[#121212]" />
+              </label>
             </div>
           </div>
 
@@ -229,7 +205,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
               <Clock className="w-5 h-5 text-[#9CA3AF] mx-auto mb-1" />
               <h3 className="text-xs font-bold text-[#121212]">No entries found</h3>
               <p className="text-[9px] text-[#6B7280] max-w-xs mx-auto mt-0.5">
-                {searchQuery || typeFilter !== 'all'
+                {hasListFilters
                   ? 'Try adjusting filters or search term'
                   : 'Record entries using Cash In or Cash Out below!'}
               </p>
@@ -306,7 +282,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Right Amount, Net Balance After Entry, & Delete Action */}
+                    {/* Right Amount, Net Balance After Entry, & Actions */}
                     <div className="flex items-center gap-1.5 shrink-0">
                       <div className="text-right">
                         <div
@@ -321,13 +297,36 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => setTransactionToDelete(tx)}
-                        title="Delete entry"
-                        className="p-0.5 text-[#9CA3AF] hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-80 group-hover:opacity-100"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          aria-label={`Actions for ${tx.remark}`}
+                          aria-expanded={openTransactionMenu === tx.id}
+                          onClick={() => setOpenTransactionMenu((current) => current === tx.id ? null : tx.id)}
+                          title="Entry actions"
+                          className="p-0.5 text-[#9CA3AF] hover:text-[#121212] hover:bg-[#EFECE3] rounded-md transition-colors opacity-80 group-hover:opacity-100"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                        {openTransactionMenu === tx.id && <div role="menu" className="absolute right-0 top-6 z-20 min-w-28 rounded-lg border border-[#E6E2D6] bg-white p-1 shadow-lg">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setOpenTransactionMenu(null); onEditTransaction(tx); }}
+                            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-[#121212] hover:bg-[#F7F5EE]"
+                          >
+                            <Pencil className="h-3 w-3" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setOpenTransactionMenu(null); setTransactionToDelete(tx); }}
+                            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3" /> Delete
+                          </button>
+                        </div>}
+                      </div>
                     </div>
                   </div>
                 );

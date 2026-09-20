@@ -9,6 +9,7 @@ import { diagnostic } from '../diagnostics';
 import { recordCacheRepair } from '../cacheRepair';
 import { saveOfflineFallback } from '../durablePersistence';
 import { affectedEntityIds, threeWayMergeSnapshot } from '../reconciliation';
+import { createUuid } from '../uuid';
 
 export type SnapshotRepositoryContext = {
   storageKey: string;
@@ -107,11 +108,11 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
     // render, so always use the newest durable revision before creating a
     // mutation. This prevents a rapid edit immediately after a successful
     // sync from being queued against an already-obsolete base revision.
-    const durableRevision = effectiveSnapshotRevision(await offlineStore.read<number>(`${context.storageKey}:revision`), revision);
-    const payload = context.workspaceId ? await snapshotPayload(context, value, durableRevision, previousValue) : null;
+    let durableRevision = effectiveSnapshotRevision(await offlineStore.read<number>(`${context.storageKey}:revision`), revision);
+    let payload = context.workspaceId ? await snapshotPayload(context, value, durableRevision, previousValue) : null;
     // Allocate before the first request so an ambiguous timeout can be
     // retried through the outbox with the same server receipt identity.
-    const mutationId = payload ? crypto.randomUUID() : null;
+    const mutationId = payload ? createUuid() : null;
     if (context.standalone) await offlineStore.write(context.storageKey, value);
     else if (canAttemptBackend()) {
       if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');
@@ -140,6 +141,12 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
           diagnostic('local-write-queued', { app: context.domain, workspaceId: context.workspaceId, operation: 'snapshot', reason: 'earlier-mutation-unresolved' });
           return 'saved locally';
         }
+        // The preceding flush may have acknowledged an older mutation and
+        // advanced the server revision. Re-read both durable baseline layers
+        // before submitting the new value; the render-time revision is no
+        // longer authoritative after awaited network I/O.
+        durableRevision = effectiveSnapshotRevision(await offlineStore.read<number>(`${context.storageKey}:revision`), durableRevision);
+        payload = await snapshotPayload(context, value, durableRevision, previousValue);
       }
       try {
         diagnostic('online-save-attempt', { app: context.domain, workspaceId: context.workspaceId, operation: 'snapshot' });
@@ -166,9 +173,18 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
             { key: confirmedRevisionKey(context.storageKey), value: result.revision },
           ]);
         } catch (cacheError) {
-          // Supabase already accepted this mutation. Never route a cache-only
-          // failure through the offline queue, which could replay the write.
-          await recordCacheRepair(context.userId ?? context.storageKey.split(':')[0] ?? 'unknown', context.workspaceId, payload.domain);
+          // Supabase already accepted this mutation. A cache-only failure
+          // must preserve the exact
+          // receipt identity in the durable outbox when the local C/P/E
+          // commit fails; the next worker pass receives the same receipt and
+          // can complete local acknowledgement without duplicating the write.
+          const queueUserId = context.userId ?? context.storageKey.split(':')[0] ?? 'unknown';
+          await recordCacheRepair(queueUserId, context.workspaceId, payload.domain);
+          await saveOfflineFallback({
+            mutationId, userId: queueUserId, companyId: context.workspaceId,
+            entityType: 'app_state_snapshot', entityId: payload.domain, baseRevision: durableRevision,
+            table: 'app_state_snapshots', operation: 'upsert', payload: { ...payload, mutation_id: mutationId },
+          }, [{ key: context.storageKey, value }]);
           throw cacheError;
         }
         diagnostic('online-save-success', { app: context.domain, workspaceId: context.workspaceId, operation: 'snapshot' });

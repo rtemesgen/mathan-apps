@@ -1,15 +1,31 @@
 import { supabase } from './supabase';
-import { claimQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
+import { acknowledgeSnapshotMutation, claimQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
 import { offlineStore } from './localStore';
 import { reportPersistenceNotice } from './repositories/types';
-import { emitSyncConflict, emitSyncProgress, emitSyncStatus, type SyncStatus } from './toast';
+import { emitSyncConflict, emitSyncIssue, emitSyncProgress, emitSyncStatus, type SyncStatus } from './toast';
 import { withConnectionTimeout } from './connectivity';
 import { diagnostic } from './diagnostics';
+import { validateQueuedTransactionBatch } from './truckBatchPolicy';
+import { validateTruckBatchResponse } from './truckBatch';
+import { createUuid } from './uuid';
 
 export type { SyncStatus } from './toast';
 
 function reportTruckMutationStatus(status: 'sync pending' | 'sync conflict') {
   reportPersistenceNotice({ app: 'truck', state: status });
+}
+
+function openTruckSyncIssue(mutation: QueuedMutation) {
+  emitSyncIssue({
+    table: mutation.table,
+    entityId: mutation.entityId,
+    mutationId: mutation.mutationId,
+    state: 'needs_attention',
+    message: mutation.errorMessage ?? mutation.lastError ?? 'This saved Truck change conflicts with a newer server version.',
+    updatedAt: mutation.updatedAt,
+    workspaceId: mutation.companyId || String(mutation.payload.workspace_id ?? ''),
+    operation: mutation.operation,
+  });
 }
 
 function reportSnapshotMutationStatus(domain: unknown, status: 'sync pending' | 'sync conflict') {
@@ -52,7 +68,9 @@ function diagnoseSyncError(workspaceId: string, table: string, error: { code?: s
 
 export function orderQueuedMutations(queue: QueuedMutation[]) {
   const rank = (item: QueuedMutation) => item.entityType.includes('transaction') || item.table.includes('transaction') ? 3 : item.entityType.includes('owner') || item.entityType.includes('membership') ? 2 : 1;
-  return [...queue].sort((a, b) => rank(a) - rank(b) || a.queuedAt.localeCompare(b.queuedAt));
+  return [...queue].sort((a, b) => rank(a) - rank(b)
+    || (a.localSequence ?? Number.MAX_SAFE_INTEGER) - (b.localSequence ?? Number.MAX_SAFE_INTEGER)
+    || a.queuedAt.localeCompare(b.queuedAt));
 }
 
 /** Apply a Truck row directly while the app is online. Offline writes use the
@@ -85,6 +103,20 @@ export async function writeTruckMutationOnline(workspaceId: string, table: strin
   return result.data as Record<string, unknown>;
 }
 
+export async function writeTruckTransactionBatchOnline(workspaceId: string, batchId: string, rows: Array<Record<string, unknown>>) {
+  const { data, error } = await withConnectionTimeout(supabase.rpc('write_truck_transaction_batch', {
+    target_workspace: workspaceId,
+    target_batch_id: batchId,
+    target_rows: rows,
+  }));
+  if (error) throw error;
+  const result = (data as Array<{ status: string; batch_id: string; rows: Record<string, unknown>[] }> | null)?.[0];
+  if (!result || !['written', 'already_applied'].includes(result.status)) {
+    throw new Error('The Truck transaction batch was not accepted by the server.');
+  }
+  return validateTruckBatchResponse(batchId, rows, result);
+}
+
 /** Flush queued changes for one or more workspaces in a single pass. */
 let activeSync: Promise<void> = Promise.resolve();
 const workspaceSyncs = new Map<string, Promise<void>>();
@@ -94,7 +126,7 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
   const workspaceIdList = Array.isArray(workspaceIds) ? workspaceIds : [workspaceIds];
   const allowed = new Set(workspaceIdList);
   if (!allowed.size) return;
-  const workerId = crypto.randomUUID();
+  const workerId = createUuid();
   const { queue, claimed } = await claimQueuedMutations(workspaceIdList, workerId);
   const claimedIds = new Set(claimed.map((mutation) => mutation.mutationId));
   const remaining: QueuedMutation[] = queue.filter((mutation) => !claimedIds.has(mutation.mutationId));
@@ -117,7 +149,50 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
   let errors = 0;
   const acknowledgedSnapshotRevisions = new Map<string, number>();
   const blockedSnapshotEntities = new Set<string>();
-  for (const mutation of ordered) {
+  const batchGroups = new Map<string, QueuedMutation[]>();
+  const orderedSingles = ordered.filter((mutation) => {
+    const batchId = String(mutation.payload.batch_id ?? '');
+    if (!batchId) return true;
+    const key = `${mutation.companyId}:${batchId}`;
+    const group = batchGroups.get(key) ?? [];
+    group.push(mutation);
+    batchGroups.set(key, group);
+    return false;
+  });
+  for (const members of batchGroups.values()) {
+    const validation = validateQueuedTransactionBatch(members);
+    const workspaceId = members[0].companyId || String(members[0].payload.workspace_id ?? '');
+    if (!validation.ok) {
+      conflict = true;
+      errors += members.length;
+      reportTruckMutationStatus('sync conflict');
+      remaining.push(...members.map((mutation) => ({ ...mutation, syncStatus: 'error' as const, syncStartedAt: null, syncAttemptId: null, leaseExpiresAt: null, errorCode: 'BATCH_INTEGRITY', errorMessage: validation.reason, lastError: validation.reason })));
+      continue;
+    }
+    try {
+      await writeTruckTransactionBatchOnline(workspaceId, validation.batchId, validation.members.map((mutation) => ({ ...mutation.payload, mutation_id: mutation.mutationId, workspace_id: workspaceId })));
+      completed += members.length;
+      emitSyncProgress({ workspaceId, total: ordered.length, completed, pending: ordered.length - completed, errors, status: 'syncing' });
+    } catch (reason) {
+      const error = reason as { code?: string; message?: string };
+      diagnoseSyncError(workspaceId, 'truck_transactions', error);
+      const permanent = permanentError(error);
+      if (permanent) { conflict = true; errors += members.length; reportTruckMutationStatus('sync conflict'); }
+      else { failed = true; reportTruckMutationStatus('sync pending'); }
+      remaining.push(...members.map((mutation) => ({
+        ...mutation,
+        syncStatus: permanent ? 'error' as const : 'retrying' as const,
+        retryCount: permanent ? mutation.retryCount : mutation.retryCount + 1,
+        syncStartedAt: null,
+        syncAttemptId: null,
+        leaseExpiresAt: null,
+        errorCode: error.code,
+        errorMessage: error.message,
+        lastError: error.message ?? 'Truck transaction batch synchronization failed',
+      })));
+    }
+  }
+  for (const mutation of orderedSingles) {
     const workspaceId = mutation.companyId || String(mutation.payload.workspace_id ?? '');
     const attemptAt = mutation.syncStartedAt ?? new Date().toISOString();
     const attempted = { ...mutation, lastAttemptAt: attemptAt, updatedAt: attemptAt, syncStatus: 'syncing' as const };
@@ -174,15 +249,15 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
       blockedSnapshotEntities.add(snapshotEntityKey);
       if (permanentError(error)) { errors += 1; blockedSnapshotEntities.add(snapshotEntityKey); reportSnapshotMutationStatus(mutation.payload.domain, 'sync conflict'); remaining.push({ ...attempted, ...released, syncStatus: 'error', errorCode: error?.code, errorMessage: error?.message, lastError: error?.message ?? 'Synchronization failed' }); }
       else { reportSnapshotMutationStatus(mutation.payload.domain, 'sync pending'); failed = true; remaining.push({ ...attempted, ...released, syncStatus: 'retrying', retryCount: mutation.retryCount + 1, errorCode: error?.code, errorMessage: error?.message, lastError: error?.message ?? 'Synchronization failed' }); }
-    } else if (result.status === 'written' && result.payload !== undefined) {
+    } else if (['written', 'already_applied'].includes(result.status) && result.payload !== undefined) {
       acknowledgedSnapshotRevisions.set(snapshotEntityKey, result.revision);
       const storageKey = `${mutation.userId}:${workspaceId}:${String(mutation.payload.domain ?? mutation.entityId)}`;
-      await offlineStore.writeAtomic([
-        { key: storageKey, value: result.payload },
-        { key: `${storageKey}:revision`, value: result.revision },
-        { key: `${storageKey}:confirmed`, value: result.payload },
-        { key: `${storageKey}:confirmed:revision`, value: result.revision },
-      ]);
+      await acknowledgeSnapshotMutation(mutation.mutationId, result.payload, result.revision, {
+        effectiveKey: storageKey,
+        revisionKey: `${storageKey}:revision`,
+        confirmedKey: `${storageKey}:confirmed`,
+        confirmedRevisionKey: `${storageKey}:confirmed:revision`,
+      });
     }
     } catch (error) {
       if (mutation.table !== 'app_state_snapshots') reportTruckMutationStatus('sync pending');
@@ -202,7 +277,12 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
   // submit the stale base revision and leave the newer offline data stranded
   // behind a conflict.
   await replaceQueue(remaining, ordered.map((mutation) => mutation.mutationId), acknowledgedSnapshotRevisions);
-  if (conflict) { report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length }); emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'conflicted' }); }
+  if (conflict) {
+    report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length });
+    emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'conflicted' });
+    const truckConflict = remaining.find((mutation) => mutation.syncStatus === 'conflicted' && mutation.table !== 'app_state_snapshots');
+    if (truckConflict) openTruckSyncIssue(truckConflict);
+  }
   else if (failed || remaining.some((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')))) {
     report('retry', remaining.length);
     emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'retry' });

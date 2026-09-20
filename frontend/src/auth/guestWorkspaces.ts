@@ -1,4 +1,5 @@
 import { offlineStore } from '../lib/localStore';
+import { createUuid } from '../lib/uuid';
 
 const CACHE_KEY = 'mathan_erp_guest_workspaces_v1';
 export const GUEST_DATA_DOMAINS = [
@@ -34,7 +35,7 @@ export interface GuestWorkspaceExport {
   truck: { trucks: unknown[]; owners: unknown[]; transactions: unknown[] };
 }
 
-const makeWorkspace = (name = 'Guest Company'): GuestWorkspace => ({ id: crypto.randomUUID(), name, accent_color: '#10b981', createdAt: new Date().toISOString() });
+const makeWorkspace = (name = 'Guest Company'): GuestWorkspace => ({ id: createUuid(), name, accent_color: '#10b981', createdAt: new Date().toISOString() });
 
 function persist(cache: GuestWorkspaceCache) {
   localStorage.setItem(CACHE_KEY, JSON.stringify({ ...cache, cachedAt: new Date().toISOString() }));

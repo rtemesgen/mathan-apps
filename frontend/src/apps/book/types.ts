@@ -12,6 +12,7 @@ export interface Transaction {
   attachmentUrl?: string; // base64 or blob/file URL
   attachmentName?: string; // file name
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Book {

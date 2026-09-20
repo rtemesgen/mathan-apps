@@ -14,9 +14,13 @@ const plan = planSplitStoreRecovery(
     ['user-a:workspace-a:cash_book:state', cashState],
     ['truck:user-a:workspace-a', truckState],
   ]),
+  { formatVersion: 2, queueGeneration: 4, nextLocalSequence: 8 },
 );
 assert.equal(plan.recoveredMutationCount, 2);
-assert.deepEqual(plan.entries.find((entry) => entry.key === 'sync-queue-v1')?.value, [newer, truck]);
+const recoveredQueue = plan.entries.find((entry) => entry.key === 'sync-queue-v1')?.value as Array<Record<string, unknown>>;
+assert.deepEqual(recoveredQueue.map((mutation) => mutation.mutationId), ['cash-1', 'truck-1']);
+assert.deepEqual(recoveredQueue.map((mutation) => mutation.localSequence), [8, 9]);
+assert.deepEqual(plan.entries.find((entry) => entry.key === 'sync-queue-meta-v2')?.value, { formatVersion: 2, queueGeneration: 5, nextLocalSequence: 10 });
 assert.deepEqual(plan.entries.find((entry) => entry.key === 'user-a:workspace-a:cash_book:state')?.value, cashState);
 assert.deepEqual(plan.entries.find((entry) => entry.key === 'truck:user-a:workspace-a')?.value, truckState);
 

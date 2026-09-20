@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadTruckData, loadTruckWorkspaceMembers, synchronizeTruckData } from './truckRepository';
 import type { Customer, Owner, Transaction, Truck } from './types';
 import { canAttemptBackend } from '../../lib/connectivity';
@@ -15,6 +15,7 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
   // durable Truck cache is being read after an offline restart.
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  const refreshGeneration = useRef(0);
 
   const applyData = useCallback((data: Awaited<ReturnType<typeof loadTruckData>>) => {
     setTrucks(data.trucks);
@@ -26,12 +27,14 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
 
   const refresh = useCallback(async () => {
     if (!workspaceId) return;
+    const generation = ++refreshGeneration.current;
     setLoading(true);
     try {
       // Online sessions use the synchronized cloud view. Offline sessions use
       // the durable local cache; queued local changes are protected from a
       // cloud refresh by the repository.
       const data = await loadTruckData(workspaceId, !canAttemptBackend(), userId);
+      if (generation !== refreshGeneration.current) return;
       applyData(data);
       setDataError('');
     } catch (reason) {
@@ -43,13 +46,20 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
 
   const synchronize = useCallback(() => {
     if (!workspaceId || isGuest || !canAttemptBackend()) return;
-    void synchronizeTruckData(workspaceId, userId).then((data) => { applyData(data); setDataError(''); }).catch((reason) => {
+    const generation = ++refreshGeneration.current;
+    void synchronizeTruckData(workspaceId, userId).then((data) => {
+      if (generation !== refreshGeneration.current) return;
+      applyData(data); setDataError('');
+    }).catch((reason) => {
+      if (generation !== refreshGeneration.current) return;
       // The browser can report itself online for the first render while the
       // backend request is already unreachable. Fall back to the durable
       // Truck cache without toggling the already-hydrated dashboard back into
       // a loading state.
       setDataError(`Could not refresh Truck data from the server. Cached data was retained${reason instanceof Error && reason.message ? `: ${reason.message}` : '.'}`);
-      void loadTruckData(workspaceId, true, userId).then(applyData).catch(() => undefined);
+      void loadTruckData(workspaceId, true, userId).then((data) => {
+        if (generation === refreshGeneration.current) applyData(data);
+      }).catch(() => undefined);
     });
   }, [workspaceId, userId, isGuest, applyData]);
 
@@ -60,9 +70,10 @@ export function useTruckData(workspaceId: string | undefined, isGuest: boolean, 
     // must therefore become visible without waiting for the network timeout.
     if (!workspaceId) { setLoading(false); return () => { active = false; }; }
     setLoading(true);
+    const generation = ++refreshGeneration.current;
     void loadTruckData(workspaceId, true, userId)
       .then((data) => {
-        if (!active) return;
+        if (!active || generation !== refreshGeneration.current) return;
         applyData(data);
         setLoading(false);
         // Do not race cloud hydration against the local read: an older cache

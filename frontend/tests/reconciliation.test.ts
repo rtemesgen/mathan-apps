@@ -26,6 +26,17 @@ assert.equal(merged.books.find((item) => item.id === 'book-a')?.name, 'Offline r
 assert.deepEqual(new Set(merged.transactions.map((item) => item.id)), new Set(['tx-remote', 'tx-local']), 'a local delete is replayed without deleting unrelated remote rows');
 assert.deepEqual(new Set(affectedEntityIds(base, local)), new Set(['book-a', 'book-local', 'tx-old', 'tx-local']));
 
+const topLevelBase = [{ id: 'book-a', name: 'Original' }];
+const topLevelRemote = [{ id: 'book-a', name: 'Original' }, { id: 'book-remote', name: 'Remote book' }];
+const topLevelLocal = [{ id: 'book-a', name: 'Offline rename' }, { id: 'book-local', name: 'Offline book' }];
+const topLevelMerged = threeWayMergeSnapshot(topLevelBase, topLevelRemote, topLevelLocal);
+assert.ok(Array.isArray(topLevelMerged), 'top-level identified snapshot payloads must remain arrays');
+assert.deepEqual(topLevelMerged, [
+  { id: 'book-a', name: 'Offline rename' },
+  { id: 'book-remote', name: 'Remote book' },
+  { id: 'book-local', name: 'Offline book' },
+]);
+
 const replayed = replayRowMutations(
   [{ id: 'server', amount: 10 }, { id: 'deleted', amount: 5 }],
   [

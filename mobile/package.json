@@ -6,6 +6,7 @@
   "scripts": {
     "build": "npm --prefix ../frontend run build -- --mode mobile && node scripts/write-build-provenance.mjs && cap sync android",
     "build:debug": "VITE_ENABLE_OFFLINE_DIAGNOSTICS=true npm --prefix ../frontend run build -- --mode mobile && VITE_ENABLE_OFFLINE_DIAGNOSTICS=true node scripts/write-build-provenance.mjs && cap sync android",
+    "build:instrumentation": "VITE_ENABLE_OFFLINE_DIAGNOSTICS=true VITE_ANDROID_INSTRUMENTATION=true npm --prefix ../frontend run build -- --mode mobile && VITE_ENABLE_OFFLINE_DIAGNOSTICS=true VITE_ANDROID_INSTRUMENTATION=true node scripts/write-build-provenance.mjs && cap sync android",
     "android": "npm run build && cap run android",
     "open": "cap open android",
     "sync": "cap sync android",

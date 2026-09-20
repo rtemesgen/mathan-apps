@@ -21,6 +21,7 @@ android {
         versionCode buildVersionCode
         versionName buildVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments clearPackageData: 'true'
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -50,6 +51,14 @@ android {
     }
 }
 
+tasks.register('printDebugApplicationId') {
+    doLast {
+        def variant = android.applicationVariants.find { it.name == 'debug' }
+        if (variant == null) throw new GradleException('Debug application variant is unavailable.')
+        println(variant.applicationId)
+    }
+}
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
@@ -65,6 +74,8 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    androidTestImplementation "androidx.test:runner:1.6.2"
+    androidTestImplementation "androidx.test:rules:1.6.1"
     implementation project(':capacitor-cordova-android-plugins')
 }
 

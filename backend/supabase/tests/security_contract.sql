@@ -1,5 +1,5 @@
 begin;
-select plan(48);
+select plan(50);
 
 select has_function('public', 'can_view_workspace_app', ARRAY['uuid', 'text']);
 select has_function('public', 'can_edit_workspace_app', ARRAY['uuid', 'text']);
@@ -49,6 +49,8 @@ select has_column('public', 'trucks', 'last_mutation_id', 'trucks persist mutati
 select has_column('public', 'truck_owners', 'last_mutation_id', 'truck owners persist mutation receipts');
 select has_column('public', 'truck_customers', 'last_mutation_id', 'truck customers persist mutation receipts');
 select has_column('public', 'truck_transactions', 'last_mutation_id', 'truck transactions persist mutation receipts');
+select ok(to_regclass('public.truck_transaction_batch_receipts') is not null, 'Truck batch receipts table exists');
+select ok(has_function_privilege('authenticated', 'public.write_truck_transaction_batch(uuid,uuid,jsonb)', 'EXECUTE'), 'authenticated users can execute Truck batch RPC');
 
 select * from finish();
 rollback;

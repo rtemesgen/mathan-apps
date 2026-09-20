@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createBook, createTransaction, removeBook, saveImportedBooks, saveNewBook, saveNewTransaction, saveNewTransactionAndTouchBook, saveRemovedBook } from '../src/apps/book/cashBookRepository';
+import { createBook, createTransaction, removeBook, saveImportedBooks, saveNewBook, saveNewTransaction, saveNewTransactionAndTouchBook, saveRemovedBook, updateTransaction } from '../src/apps/book/cashBookRepository';
 import { addEmployee, addRaise, removeEmployee, saveEmployee, savePayrollTransaction, saveRemovedEmployee } from '../src/apps/payroll/payrollRepository';
 import type { Book, Transaction as BookTransaction } from '../src/apps/book/types';
 import type { Employee, SalaryChange, Transaction as PayrollTransaction } from '../src/apps/payroll/types';
@@ -26,6 +26,13 @@ const createdBook = createBook({ name: 'New', currency: 'USD' }, '2026-01-02T00:
 assert.equal(createdBook.createdAt, '2026-01-02T00:00:00.000Z');
 assert.match(createdBook.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, 'offline-created records use stable UUIDs');
 assert.equal(createTransaction('b1', 'out', { amount: 5, remark: 'fuel', dateTime: '2026-01-02T00:00' }).data.type, 'out');
+const edited = updateTransaction(bookTx, { amount: 25, remark: 'edited sale', category: 'Other Income', paymentMode: 'Cash', dateTime: '2026-01-02T00:00' }, '2026-01-02T01:00:00.000Z').data;
+assert.equal(edited.id, bookTx.id, 'editing must preserve the transaction identity');
+assert.equal(edited.bookId, bookTx.bookId);
+assert.equal(edited.amount, 25);
+assert.equal(edited.remark, 'edited sale');
+assert.equal(edited.createdAt, bookTx.createdAt, 'editing must preserve the original creation timestamp');
+assert.equal(edited.updatedAt, '2026-01-02T01:00:00.000Z');
 assert.deepEqual(removeBook('b1', [book], [bookTx]).data, { books: [], transactions: [] });
 assert.equal(addEmployee(employee, []).data[0].id, 'e1');
 assert.equal(addRaise('e1', raise, [employee]).data[0].salaryHistory[0].newMonthlySalary, 1100);

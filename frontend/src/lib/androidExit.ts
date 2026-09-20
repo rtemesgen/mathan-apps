@@ -1,5 +1,5 @@
 import { offlineStore, readDurableOffline } from './localStore';
-import { getQueuedMutations, waitForQueueIdle, type QueuedMutation } from './syncQueue';
+import { getDurableQueuedMutations, waitForQueueIdle, type QueuedMutation } from './syncQueue';
 import { createPersistenceActivityTracker, persistenceActivity } from './persistenceActivity';
 
 export { createPersistenceActivityTracker, persistenceActivity } from './persistenceActivity';
@@ -114,7 +114,7 @@ export async function prepareForAndroidExit(dependencies: AndroidExitDependencie
   // first activity wait is settling. Require a second stable idle boundary
   // before bypassing memory and validating native storage.
   await persistenceActivity.waitForIdle(Math.max(0, deadline - Date.now()));
-  const queue = await beforeExitDeadline((dependencies.readQueue ?? (async () => (await readDurableOffline<QueuedMutation[]>('sync-queue-v1')) ?? getQueuedMutations()))(), deadline);
+  const queue = await beforeExitDeadline((dependencies.readQueue ?? getDurableQueuedMutations)(), deadline);
   const readRecord = dependencies.readDurableRecord ?? ((key: string) => readDurableOffline(key));
   return beforeExitDeadline(verifyPendingMutationRecords(queue, readRecord), deadline);
 }

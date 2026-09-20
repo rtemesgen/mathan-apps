@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { DATABASE_VERSION, evaluateNativeDatabaseHealth, migrateLegacyRecords, verifyMigratedEntries, type LegacyEntry, type MigrationStore } from '../src/lib/sqliteStore';
+import { DATABASE_VERSION, evaluateNativeDatabaseHealth, migrateLegacyRecords, shouldBootstrapNativeSchema, verifyMigratedEntries, type LegacyEntry, type MigrationStore } from '../src/lib/sqliteStore';
 
 const records: LegacyEntry[] = [{ key: 'cash_book:user:workspace:books', value: [{ id: 'book-1' }] }];
 const metadata: LegacyEntry[] = [{ key: 'sync:workspace', value: { pendingCount: 0 } }];
@@ -81,5 +81,18 @@ const partialSchema = evaluateNativeDatabaseHealth({
 });
 assert.equal(partialSchema.partialMigration, true, 'a version bump without a completion record is detected as partial');
 assert.equal(partialSchema.healthy, false);
+
+assert.equal(shouldBootstrapNativeSchema({
+  actualVersion: 0,
+  missingTables: ['records', 'metadata', 'schema_migrations'],
+}), true, 'only an empty version-zero database may be bootstrapped');
+assert.equal(shouldBootstrapNativeSchema({
+  actualVersion: DATABASE_VERSION,
+  missingTables: ['records'],
+}), false, 'a damaged current-version database must not be silently repaired');
+assert.equal(shouldBootstrapNativeSchema({
+  actualVersion: 1,
+  missingTables: ['schema_migrations'],
+}), false, 'an old or partially upgraded database must go through the upgrade path');
 
 console.log('SQLite migration verification tests passed.');

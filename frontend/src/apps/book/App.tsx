@@ -3,7 +3,7 @@ import { Book, Transaction, TransactionType } from './types';
 import { Header } from './components/Header';
 import { CashBookViewContent } from './components/CashBookViewContent';
 import { AddBookModal } from './components/AddBookModal';
-import { TransactionModal } from './components/TransactionModal';
+import { TransactionModal, type TransactionFormData } from './components/TransactionModal';
 import { CashBookSidebar } from './components/Sidebar';
 import { useAndroidBackHandler } from '../../hooks/useAndroidBackButton';
 import { ImportBookModal } from './components/ImportBookModal';
@@ -31,15 +31,17 @@ export default function App() {
   const [bookForMembers, setBookForMembers] = useState<Book | null>(null);
   const [transactionModalType, setTransactionModalType] = useState<TransactionType | null>(null);
   const [targetBookForTransaction, setTargetBookForTransaction] = useState<Book | null>(null);
+  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
   const [exportOpen, setExportOpen] = useState(false);
-  const [exportFilters, setExportFilters] = useState<{ transactionType?: string; query?: string }>({});
+  const [exportFilters, setExportFilters] = useState<{ transactionType?: string; query?: string; startDate?: string; endDate?: string }>({});
   const openExport = (filters: typeof exportFilters = {}) => { setExportFilters(filters); setExportOpen(true); };
 
   useAndroidBackHandler(() => {
-    if (transactionModalType) {
+    if (transactionModalType || transactionToEdit) {
       setTransactionModalType(null);
       setTargetBookForTransaction(null);
+      setTransactionToEdit(null);
       return true;
     }
     if (isAddBookOpen) {
@@ -62,7 +64,7 @@ export default function App() {
       return true;
     }
     return false;
-  }, [transactionModalType, isAddBookOpen, isImportBookOpen, bookToRename, bookToDelete, bookForMembers, isSidebarOpen, activeBookId]);
+  }, [transactionModalType, transactionToEdit, isAddBookOpen, isImportBookOpen, bookToRename, bookToDelete, bookForMembers, isSidebarOpen, activeBookId]);
 
   // Active book object if selected
   const activeBook = books.find(b => b.id === activeBookId) || null;
@@ -113,18 +115,15 @@ export default function App() {
   };
 
   // Save Transaction Handler
-  const handleSaveTransaction = async (data: {
-    amount: number;
-    remark: string;
-    category: string;
-    paymentMode: 'Cash' | 'Bank Transfer' | 'UPI / Online' | 'Cheque';
-    dateTime: string;
-    attachmentUrl?: string;
-    attachmentName?: string;
-  }) => {
+  const handleSaveTransaction = async (data: TransactionFormData) => {
     if (!targetBookForTransaction || !transactionModalType) return;
 
     await actions.createTransaction(targetBookForTransaction.id, transactionModalType, data);
+  };
+
+  const handleSaveEditedTransaction = async (data: TransactionFormData) => {
+    if (!transactionToEdit) return;
+    await actions.updateTransaction(transactionToEdit.id, data);
   };
 
   // Delete Transaction Handler
@@ -160,6 +159,7 @@ export default function App() {
           onAddMembers={setBookForMembers}
           onOpenImport={() => setIsImportBookOpen(true)}
           onDeleteTransaction={handleDeleteTransaction}
+          onEditTransaction={setTransactionToEdit}
           onOpenExport={openExport}
         />
       </div>
@@ -196,17 +196,19 @@ export default function App() {
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} context={{ companyName: workspace?.name ?? 'Company', appName: 'Cash Book', reportName: activeBook ? `Current Book Report — ${activeBook.name}` : 'Cash Book Summary', report: buildCashBookExportReports({ books, transactions })[activeBook ? 1 : 0], selectedEntity: activeBook ? { value: activeBook.id, label: activeBook.name } : undefined, activeFilters: { ...exportFilters, ...(activeBook ? { entityId: activeBook.id } : {}) }, availableDetailLevels: activeBook ? ['condensed', 'detailed', 'full'] : ['condensed'], availableTransactionTypes: activeBook ? [{ value: '', label: 'All transactions' }, { value: 'in', label: 'Cash In only' }, { value: 'out', label: 'Cash Out only' }] : undefined, availableEntities: activeBook ? undefined : books.map(book => ({ value: book.id, label: book.name })) }} />
 
       {/* Cash In / Cash Out Transaction Modal */}
-      {transactionModalType && targetBookForTransaction && (
+      {(transactionModalType && targetBookForTransaction || transactionToEdit) && (
         <TransactionModal
-          isOpen={!!transactionModalType}
-          type={transactionModalType}
-          bookName={targetBookForTransaction.name}
-          currencySymbol={targetBookForTransaction.currency}
+          isOpen={!!transactionModalType || !!transactionToEdit}
+          type={transactionToEdit?.type ?? transactionModalType!}
+          bookName={transactionToEdit ? (books.find((book) => book.id === transactionToEdit.bookId)?.name ?? 'Cash Book') : targetBookForTransaction!.name}
+          currencySymbol={transactionToEdit ? books.find((book) => book.id === transactionToEdit.bookId)?.currency : targetBookForTransaction!.currency}
+          initialTransaction={transactionToEdit ?? undefined}
           onClose={() => {
             setTransactionModalType(null);
             setTargetBookForTransaction(null);
+            setTransactionToEdit(null);
           }}
-          onSave={handleSaveTransaction}
+          onSave={transactionToEdit ? handleSaveEditedTransaction : handleSaveTransaction}
         />
       )}
     </div>
