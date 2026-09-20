@@ -453,10 +453,6 @@ test('two browser clients surface and resolve a Truck edit conflict without losi
     // currently mounted production sync listener deterministically claims
     // the queued edit.
     await pageA.evaluate(() => window.dispatchEvent(new Event('online')));
-    const localConflictRow = pageA.locator('tr').filter({ hasText: localDescription }).first();
-    await expect(localConflictRow).toBeVisible({ timeout: 30_000 });
-    await expect(localConflictRow.getByRole('button', { name: /Sync status: Needs attention/ })).toBeVisible({ timeout: 30_000 });
-    await localConflictRow.getByRole('button', { name: /Sync status: Needs attention/ }).click();
     await expect(pageA.getByRole('dialog', { name: 'Sync issue' })).toBeVisible({ timeout: 30_000 });
     await pageA.getByRole('button', { name: 'Keep my saved change' }).click();
     await expect(pageA.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);

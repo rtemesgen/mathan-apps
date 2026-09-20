@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import { acknowledgeSnapshotMutation, claimQueuedMutations, replaceQueue, type QueuedMutation } from './syncQueue';
 import { offlineStore } from './localStore';
 import { reportPersistenceNotice } from './repositories/types';
-import { emitSyncConflict, emitSyncProgress, emitSyncStatus, type SyncStatus } from './toast';
+import { emitSyncConflict, emitSyncIssue, emitSyncProgress, emitSyncStatus, type SyncStatus } from './toast';
 import { withConnectionTimeout } from './connectivity';
 import { diagnostic } from './diagnostics';
 import { validateQueuedTransactionBatch } from './truckBatchPolicy';
@@ -12,6 +12,19 @@ export type { SyncStatus } from './toast';
 
 function reportTruckMutationStatus(status: 'sync pending' | 'sync conflict') {
   reportPersistenceNotice({ app: 'truck', state: status });
+}
+
+function openTruckSyncIssue(mutation: QueuedMutation) {
+  emitSyncIssue({
+    table: mutation.table,
+    entityId: mutation.entityId,
+    mutationId: mutation.mutationId,
+    state: 'needs_attention',
+    message: mutation.errorMessage ?? mutation.lastError ?? 'This saved Truck change conflicts with a newer server version.',
+    updatedAt: mutation.updatedAt,
+    workspaceId: mutation.companyId || String(mutation.payload.workspace_id ?? ''),
+    operation: mutation.operation,
+  });
 }
 
 function reportSnapshotMutationStatus(domain: unknown, status: 'sync pending' | 'sync conflict') {
@@ -263,7 +276,12 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
   // submit the stale base revision and leave the newer offline data stranded
   // behind a conflict.
   await replaceQueue(remaining, ordered.map((mutation) => mutation.mutationId), acknowledgedSnapshotRevisions);
-  if (conflict) { report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length }); emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'conflicted' }); }
+  if (conflict) {
+    report('conflicted', remaining.length, { conflictCount: remaining.filter((item) => item.syncStatus === 'conflicted').length });
+    emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'conflicted' });
+    const truckConflict = remaining.find((mutation) => mutation.syncStatus === 'conflicted' && mutation.table !== 'app_state_snapshots');
+    if (truckConflict) openTruckSyncIssue(truckConflict);
+  }
   else if (failed || remaining.some((mutation) => allowed.has(mutation.companyId || String(mutation.payload.workspace_id ?? '')))) {
     report('retry', remaining.length);
     emitSyncProgress({ workspaceId: Array.isArray(workspaceIds) ? undefined : workspaceIds, total: ordered.length, completed, pending: remaining.length, errors, status: 'retry' });
