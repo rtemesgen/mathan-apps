@@ -136,6 +136,13 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - A host-level ADB retry starts successfully but reports no attached device. The local `android-35/google_apis_ps16k/x86_64` directory is only a 12 KB installer stub, and the configured AVD cannot load its missing system image. Therefore no new 16 KB runtime evidence was obtained.
 - The plan remains open for the same explicit gates: genuine deferred/two-device browser race coverage, 16 KB runtime behavior, signed-release APK replacement, broader queue/peak-memory capacity measurements, production/staging pilot execution, and native reproduction of the original phone error.
 
+## Current audit continuation — 2026-09-20 (latest CI and device check)
+
+- GitHub Actions run `35495018504` for commit `f9ff3ed632a2348c78612c0698e7b749ef3fe26c` passed all required gates: frontend, database legacy-upgrade/security checks, browser E2E, Android/SQLite instrumentation with the disposable backend, and required-gates aggregation. The Node 20 and Ubuntu image notices are warnings only.
+- The Android job completed the application/SQLite instrumentation tests and uploaded reports; this confirms the current CI path remains green after the Supabase reset-command documentation correction.
+- A host-level ADB check was retried after the CI run. The ADB server started, but `adb devices -l` returned no attached device. No new physical-device evidence was obtained.
+- The plan therefore remains open. Current unverified gates are the true two-device/deferred browser race matrix, 16 KB runtime behavior, signed-release APK replacement, broader large-queue/peak-memory capacity measurements, pilot/staging execution, and native reproduction of the original phone error.
+
 ## Release decision
 
 - Current clean-HEAD verification at `029e4ce`: `frontend/npm test` passed with the SQLite child-process permission required by the adapter test, `npm run build` passed, `git diff --check` passed, and the connected `SM-N971N` reported Android API 30 with a `4096`-byte page size. This revalidates the implementation and normal-page device baseline; it does not close the 16 KB or signed-release gates.
