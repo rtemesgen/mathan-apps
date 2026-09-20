@@ -99,6 +99,10 @@ public class OfflineSQLiteInstrumentedTest {
         Assume.assumeTrue("prepare".equals(processDeathPhase()));
         save("process-death-workspace", "payroll", "process-death-entry", 42, "host force-stop");
         assertEquals(1, array(js("return await api.recoverQueue()", false)).length());
+        if (!skipBackendIntegration()) {
+            JSONObject queued = object(js("return await api.backendOfflineTruckRoundTrip()", false));
+            assertEquals(1, queued.getInt("queued"));
+        }
     }
 
     /** Verify the entry after the host, rather than the app, killed the app. */
@@ -108,6 +112,11 @@ public class OfflineSQLiteInstrumentedTest {
         assertEquals(1, recovered.length());
         assertEquals("process-death-entry", recovered.getJSONObject(0).getString("mutationId"));
         assertEntry("process-death-workspace", "payroll", "process-death-entry");
+        if (!skipBackendIntegration()) {
+            JSONObject synced = object(js("return await api.backendProcessDeathVerify()", false));
+            assertEquals(1, synced.getInt("serverCount"));
+            assertEquals(0, synced.getInt("queued"));
+        }
     }
 
     @Test public void releasedSchemaAndInterruptedMigrationResumeIdempotently() throws Exception {

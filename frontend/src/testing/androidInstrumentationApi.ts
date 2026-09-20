@@ -9,6 +9,7 @@ type Entry = { id: string; amount: number; note: string };
 const instrumentationEnv = import.meta.env as Record<string, string | undefined>;
 const key = (workspace: string, domain: string) => `instrumentation:${workspace}:${domain}`;
 const attachmentCapacityKey = 'instrumentation:attachment-capacity';
+const processDeathBackendKey = 'instrumentation:process-death-backend';
 const configuredSupabaseEndpoint = () => (supabase as unknown as { supabaseUrl?: string }).supabaseUrl ?? 'unknown';
 
 /** Test-only API compiled into emulator builds by mobile:build:instrumentation.
@@ -209,7 +210,24 @@ export function installAndroidInstrumentationApi() {
         markBackendReachable();
       }
       const queued = (await getQueuedMutations()).filter((mutation) => mutation.entityId === transaction.id).length;
+      await offlineStore.writeAtomic([{
+        key: processDeathBackendKey,
+        value: { workspaceId, transactionId: transaction.id },
+      }]);
+      await offlineStore.flush();
       return { workspaceId, transactionId: transaction.id, queued };
+    },
+    async backendProcessDeathVerify() {
+      const scenario = await offlineStore.read<{ workspaceId?: string; transactionId?: string }>(processDeathBackendKey);
+      if (!scenario?.workspaceId || !scenario.transactionId) throw new Error('Android process-death backend scenario was not preserved.');
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) throw sessionError ?? new Error('Android backend instrumentation session is unavailable after process death.');
+      await synchronizeTruckData(scenario.workspaceId, sessionData.session.user.id);
+      const { data: serverRow, error: rowError } = await supabase.from('truck_transactions')
+        .select('id').eq('workspace_id', scenario.workspaceId).eq('id', scenario.transactionId).maybeSingle();
+      if (rowError) throw rowError;
+      const remaining = (await getQueuedMutations()).filter((mutation) => mutation.entityId === scenario.transactionId).length;
+      return { serverCount: serverRow ? 1 : 0, queued: remaining };
     },
     async backendSyncQueuedTruck(workspaceId: string, transactionId: string) {
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
