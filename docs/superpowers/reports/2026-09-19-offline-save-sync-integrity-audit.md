@@ -2,7 +2,7 @@
 
 Date: 2026-09-19  
 Branch: `fix-andriod`  
-Audited implementation checkpoint: `fix-andriod` at `6db8d68` after the Android API 30 lifecycle fix, physical-device run, release-artifact checks, and CI run `35477217574`.
+Audited implementation checkpoint: `fix-andriod` at `0daaa3d` after the snapshot acknowledgement fix, Android API 30 lifecycle/physical-device run, release-artifact checks, and CI run `35479612578`.
 
 This audit compares the implementation with `docs/superpowers/plans/2026-09-19-offline-save-sync-integrity.md`. A passing unit test is counted only for the behavior that test actually exercises.
 
@@ -28,7 +28,8 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | Stale asynchronous state protection | Truck refresh generations and snapshot online-resync epochs prevent older async results from overwriting newer local state; focused TypeScript and repository tests pass | Implemented; Truck browser confirmation now passes |
 | Android force-stop test source | `OfflineSQLiteInstrumentedTest.java` uses target package plus `am force-stop` before relaunch; the helper now drains the shell command and waits for `pidof` to clear before starting the new Activity; the backend scenario queues a production Truck transaction while reachability is unavailable, restarts the process, synchronizes, and repeats the sync assertion | Runtime-proven in CI run `35460969456`: the ordinary suite completed with 0 failures and the external prepare/force-stop/verify boundary completed successfully |
 | Android WebView recreation and stale SQLite connection recovery | CI run `35452984181` isolated the remaining failure to SQLCipher `database is locked` after `ActivityThread` relaunched the activity during `BEGIN`/`COMMIT`; the first replacement-connection recovery was insufficient because the new plugin instance cannot close the old instance's private connection. The current fix rolls back any active transaction and closes the native connection from the old Activity's `onPause` while the old plugin still owns it, then reopens it safely in the next WebView | CI run `35456076515` proved the native close executed but left one pooled connection in use; three Android tests still failed with `database is locked`. Explicit native rollback was added in `fa1acb7`; a fresh CI run is required |
-| Android WebView recreation and stale SQLite connection recovery | `MainActivity.onPause()` now schedules cleanup on Capacitor's worker without blocking the Android lifecycle thread, rolls back only an active transaction, and treats an already-absent connection as normal teardown | Physical API 30 full instrumentation suite passed: 12 reported tests, 2 intentional process-death boundary skips, 0 failures; CI run `35477217574` also passed Android |
+| Android WebView recreation and stale SQLite connection recovery | `MainActivity.onPause()` now schedules cleanup on Capacitor's worker without blocking the Android lifecycle thread, rolls back only an active transaction, and treats an already-absent connection as normal teardown | Physical API 30 full instrumentation suite passed: 12 reported tests, 2 intentional process-death boundary skips, 0 failures; CI run `35479612578` also passed Android |
+| Snapshot acknowledgement preserves remote fields and delayed-receipt ordering | `syncQueue.ts` rebases only eligible same-domain successors, three-way merges successor intent, and prevents confirmed-revision downgrade; `snapshot-sync.test.ts` covers remote-field preservation and delayed acknowledgement | Implemented, focused tests pass, pushed in `0daaa3d` |
 
 ## Partial or not yet proven
 
@@ -57,7 +58,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - `backend`: `supabase test db` — passed 75 assertions across security and Truck batch RPC tests.
 - `mobile/android`: `./gradlew testDebugUnitTest` — passed.
 - `mobile/android`: `./gradlew compileDebugAndroidTestJavaWithJavac` — passed.
-- Local `adb devices` could not start an ADB daemon in this environment; physical/emulator runtime results therefore remain unverified.
+- Connected physical-device setup: `adb devices -l` found `SM-N971N` (`SM-N971N`, API 30). After seeding disposable Supabase and rebuilding with test-only values, the full instrumentation suite and external prepare/host `am force-stop`/verify boundary passed. Page size was `4096`; WebView reported `151.0.7922.199`. Normal-page runtime evidence passes; 16 KB runtime evidence remains unverified.
 - Full elevated browser run before the final Payroll reconnect correction: 27/28 passed. The sole failure was the ordinary Payroll process-restart server assertion; it passed in a targeted rerun after waiting for the authenticated Payroll UI before replaying `online`. The combined multimodule flow, both Cash Book/Payroll reload flows, and legacy split-Payroll migration/restart all pass in targeted reruns.
 - Focused verification after the harness corrections: `npm run test:unit`, `npm run lint`, `npm run test:snapshot-sync`, `npm run test:snapshot-save`, `npm run test:truck`, `npm run build`, the affected Cash Book/Payroll regressions (2/2), the combined multimodule flow (1/1), the legacy split-Payroll migration/restart flow (1/1), and the final ordinary Payroll process-restart flow (1/1) — passed. The dedicated Truck restart and customer-projection scenarios pass.
 - Fresh `npx supabase test db` passed all 75 database/security assertions. The reconnect helper now replays the online event after a persistent page reload, and restart-heavy tests have explicit cold-start budgets/selectors.
@@ -80,7 +81,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - CI run `35456880898` reached the emulator and reported 10/10 instrumentation tests passing before the wrapper failed with `sh: Syntax error: end of file (expecting "fi")`. The reactivecircus runner executes each multiline `script` line independently, so the conditional process-death flow was moved to `.github/scripts/run-android-instrumentation.sh` in `f7261a4`; `bash -n` passes and a fresh CI run is required to evaluate the rollback fix.
 - Latest local verification after explicit rollback: `mobile/android` `./gradlew testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestJavaWithJavac` passed. No local emulator was attached for connected execution.
 
-## Current verification checkpoint — commit `6db8d68`
+## Current verification checkpoint — commit `0daaa3d`
 
 - Physical device `SM-N971N`, Android API 30, page size `4096`: focused activity-recreation test passed, then the full instrumentation suite passed with 0 failures. The two process-death boundary tests were intentionally skipped in the ordinary invocation; the hosted API 35 CI run covers the external force-stop boundary.
 - `frontend`: `npm test` passed with TypeScript and the complete unit suite, including SQLite adapter, recovery, queue, snapshot, conflict, batch, and architecture tests.
@@ -98,6 +99,14 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - CI run `35460969456` passed all required gates: frontend, database, E2E, Android, and the required-gates aggregation. Android reported page size `4096`; this proves process-death durability on the API 35 emulator but does not prove 16 KB runtime behavior.
 - CI run `35461876727` passed all required gates again for the current branch HEAD `5f6a61c`; this was an audit-report-only rerun and introduces no new product evidence beyond the implementation run above.
 - Commit `0d0cafb` adds active-session scope validation and transactional snapshot “use server” conflict resolution. Frontend `npm test` and `npm run build` pass locally; the pushed CI run also passed frontend/database/E2E/Android.
+- Commit `0daaa3d` preserves remote snapshot fields during delayed acknowledgement/rebase. CI run `35479612578` passed frontend, database, browser E2E, Android, and required-gates aggregation.
+
+## Latest connected-device verification — commit `0daaa3d`
+
+- `mobile`: `npm run build:instrumentation` completed from the current commit with the test-only disposable-backend configuration.
+- `mobile/android`: `bash ../../.github/scripts/run-android-instrumentation.sh` completed successfully on physical `SM-N971N`, Android API 30, normal `4096`-byte page size. The normal connected run reported 12 tests, including 2 intentional process-death boundary skips, with 0 failures; the script's host-driven prepare/force-stop/verify phase passed both boundary tests.
+- The backend-dependent production Truck tests used the seeded local Supabase fixture and passed, including offline queueing, activity recreation, synchronization, and repeat-idempotency checks.
+- This run does not establish 16 KB compatibility, signed APK replacement, or attachment-capacity limits; those remain explicit release gates.
 
 ## Release decision
 
