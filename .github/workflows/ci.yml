@@ -225,11 +225,11 @@ jobs:
           # memory killer terminates those processes and instrumentation
           # reports a misleading "Process crashed" before SQLite assertions
           # execute.  3072M still killed Chrome during the first test, while
-          # 3584M can still trigger the guest low-memory killer before the
-          # WebView/SQLite test starts. Use 4096M with one emulator core so
-          # the 16 KB guest can keep WebView alive while Gradle and Supabase
-          # remain active on the hosted runner.
-          ram-size: 4096M
+          # 3584M and 4096M can still trigger the guest low-memory killer
+          # during WebView/SQLite activity recreation. Use 6144M with one
+          # emulator core so the 16 KB guest can keep WebView alive while
+          # Gradle and Supabase remain active on the hosted runner.
+          ram-size: 6144M
           cores: 1
           emulator-boot-timeout: 600
           emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
