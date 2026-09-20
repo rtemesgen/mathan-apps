@@ -129,6 +129,13 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - After rebuilding the instrumentation bundle, the focused physical `SM-N971N` run passed, and the existing single-attachment restart test also passed. The matrix result was: source `4,900,000` bytes, encoded `6,533,334` bytes, 3 attachments, serialized `6,533,402` bytes, 2 queued copies, approximately `13,066,804` duplicated queue-payload bytes, `1,515 ms` write, and `1,842 ms` restart read.
 - The implementation uses the same encrypted SQLite-backed `offlineStore.writeAtomic`/outbox transaction path as the application and removes only the test entity type during cleanup. This is a capacity baseline, not a claim that all attachment sizes, queue depths, memory conditions, or 16 KB runtimes are safe.
 
+## Current audit continuation — 2026-09-20 (post-CI and native access check)
+
+- Commit `e506907` removes the obsolete Supabase CLI `--sql-paths` invocation from the upgrade-test documentation. The supported sequence is reset with `--no-seed`, load the legacy fixture with `psql --file`, then run migrations and the contract tests. No `--sql-paths` use remains in the repository.
+- GitHub Actions run `35494085383` passed all production-critical gates: frontend tests/build, database legacy-upgrade and fresh-schema checks, browser E2E, Android/SQLite instrumentation, and the required-gates aggregation. The Node 20 messages are action deprecation warnings, not failures.
+- A host-level ADB retry starts successfully but reports no attached device. The local `android-35/google_apis_ps16k/x86_64` directory is only a 12 KB installer stub, and the configured AVD cannot load its missing system image. Therefore no new 16 KB runtime evidence was obtained.
+- The plan remains open for the same explicit gates: genuine deferred/two-device browser race coverage, 16 KB runtime behavior, signed-release APK replacement, broader queue/peak-memory capacity measurements, production/staging pilot execution, and native reproduction of the original phone error.
+
 ## Release decision
 
 - Current clean-HEAD verification at `029e4ce`: `frontend/npm test` passed with the SQLite child-process permission required by the adapter test, `npm run build` passed, `git diff --check` passed, and the connected `SM-N971N` reported Android API 30 with a `4096`-byte page size. This revalidates the implementation and normal-page device baseline; it does not close the 16 KB or signed-release gates.
