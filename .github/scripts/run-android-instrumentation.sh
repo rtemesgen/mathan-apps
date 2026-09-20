@@ -5,6 +5,31 @@ set +e
 adb reverse tcp:54321 tcp:54321
 echo "Android page size: $(adb shell getconf PAGE_SIZE | tr -d '\r')"
 adb shell dumpsys package com.google.android.webview | grep -m1 versionName || true
+
+if [ "${ANDROID_16KB_MEMORY_MODE:-}" = "true" ]; then
+  # The Google 16 KB image starts many optional services which consume the
+  # guest's limited RAM before the WebView-based instrumentation app launches.
+  # Stop only nonessential services; keep WebView, Chrome, Play services, and
+  # Android framework packages available to the application under test.
+  for package_name in \
+    com.google.android.googlequicksearchbox \
+    com.google.android.inputmethod.latin \
+    com.google.android.tts \
+    com.google.android.apps.wellbeing \
+    com.google.android.as \
+    com.google.android.as.oss \
+    com.google.android.onetimeinitializer \
+    com.google.android.ext.services \
+    com.google.android.settings.intelligence \
+    com.google.android.federatedcompute \
+    com.google.android.ondevicepersonalization.services \
+    com.google.android.apps.wallpaper \
+    com.google.android.apps.messaging; do
+    adb shell am force-stop "$package_name" >/dev/null 2>&1 || true
+    adb shell pm disable-user --user 0 "$package_name" >/dev/null 2>&1 || true
+  done
+fi
+
 adb logcat -c
 
 ./gradlew connectedDebugAndroidTest --stacktrace
