@@ -14,7 +14,9 @@ import {
   Download,
   Paperclip,
   FileText,
-  X
+  X,
+  MoreVertical,
+  Pencil,
 } from 'lucide-react';
 import { ExportButton } from '../../../components/ExportButton';
 import { DeleteConfirmModal } from '../../../components/DeleteConfirmModal';
@@ -29,6 +31,7 @@ interface BookDetailViewProps {
   onOpenCashInModal: () => void;
   onOpenCashOutModal: () => void;
   onDeleteTransaction: (id: string) => void | Promise<void>;
+  onEditTransaction: (transaction: Transaction) => void;
   onOpenExport: (filters?: { transactionType?: string; query?: string; startDate?: string; endDate?: string }) => void;
 }
 
@@ -39,6 +42,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   onOpenCashInModal,
   onOpenCashOutModal,
   onDeleteTransaction,
+  onEditTransaction,
   onOpenExport,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,6 +52,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
   const [endDate, setEndDate] = useState('');
   const [previewAttachment, setPreviewAttachment] = useState<{ url: string; name: string } | null>(null);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+  const [openTransactionMenu, setOpenTransactionMenu] = useState<string | null>(null);
 
   // Book Statistics
   const bookTransactions = useMemo(() => {
@@ -277,7 +282,7 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Right Amount, Net Balance After Entry, & Delete Action */}
+                    {/* Right Amount, Net Balance After Entry, & Actions */}
                     <div className="flex items-center gap-1.5 shrink-0">
                       <div className="text-right">
                         <div
@@ -292,13 +297,36 @@ export const BookDetailView: React.FC<BookDetailViewProps> = ({
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => setTransactionToDelete(tx)}
-                        title="Delete entry"
-                        className="p-0.5 text-[#9CA3AF] hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-80 group-hover:opacity-100"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          aria-label={`Actions for ${tx.remark}`}
+                          aria-expanded={openTransactionMenu === tx.id}
+                          onClick={() => setOpenTransactionMenu((current) => current === tx.id ? null : tx.id)}
+                          title="Entry actions"
+                          className="p-0.5 text-[#9CA3AF] hover:text-[#121212] hover:bg-[#EFECE3] rounded-md transition-colors opacity-80 group-hover:opacity-100"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                        {openTransactionMenu === tx.id && <div role="menu" className="absolute right-0 top-6 z-20 min-w-28 rounded-lg border border-[#E6E2D6] bg-white p-1 shadow-lg">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setOpenTransactionMenu(null); onEditTransaction(tx); }}
+                            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-[#121212] hover:bg-[#F7F5EE]"
+                          >
+                            <Pencil className="h-3 w-3" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setOpenTransactionMenu(null); setTransactionToDelete(tx); }}
+                            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3" /> Delete
+                          </button>
+                        </div>}
+                      </div>
                     </div>
                   </div>
                 );

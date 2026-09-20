@@ -5,7 +5,8 @@ import { createUuid } from '../../lib/uuid';
 
 export type NewBook = Omit<Book, 'id' | 'createdAt' | 'updatedAt'>;
 export type BookUpdate = Pick<Book, 'name' | 'openingBalance'>;
-export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | 'type'>;
+export type NewTransaction = Omit<Transaction, 'id' | 'bookId' | 'createdAt' | 'updatedAt' | 'type'>;
+export type TransactionUpdate = NewTransaction;
 type Persist<T> = (next: T) => Promise<PersistenceState>;
 type PersistUpdate<T> = (update: (current: T) => T) => Promise<PersistenceState>;
 export type CashBookImport = { book: NewBook; transactions: Omit<Transaction, 'id' | 'bookId' | 'createdAt'>[] };
@@ -85,6 +86,17 @@ export function useCashBookRepository() {
         const persistence = await updateState((value) => ({ ...value, transactions: value.transactions.filter((transaction) => transaction.id !== transactionId) }));
         return { ...result, persistence };
       },
+      updateTransaction: async (transactionId: string, input: TransactionUpdate) => {
+        const transaction = current.transactions.find((item) => item.id === transactionId);
+        if (!transaction) return Promise.resolve(undefined);
+        const result = updateTransaction(transaction, input);
+        const touchedAt = now();
+        const persistence = await updateState((value) => ({
+          books: value.books.map((book) => book.id === transaction.bookId ? { ...book, updatedAt: touchedAt } : book),
+          transactions: value.transactions.map((item) => item.id === transactionId ? result.data : item),
+        }));
+        return { ...result, persistence };
+      },
       importBooks: async (input: CashBookImport[]) => {
         const timestamp = now();
         const importedBooks = input.map(({ book }) => ({ ...book, id: createUuid(), createdAt: timestamp, updatedAt: timestamp }));
@@ -114,6 +126,10 @@ export function updateBook(book: Book, changes: BookUpdate, timestamp = now()): 
 
 export function createTransaction(bookId: string, type: Transaction['type'], input: NewTransaction, timestamp = now()): RepositoryResult<Transaction> {
   return { data: { ...input, type, id: id('tx'), bookId, createdAt: timestamp }, persistence: 'saving' };
+}
+
+export function updateTransaction(transaction: Transaction, input: TransactionUpdate, timestamp = now()): RepositoryResult<Transaction> {
+  return { data: { ...transaction, ...input, updatedAt: timestamp }, persistence: 'saving' };
 }
 
 export function removeBook(bookId: string, books: Book[], transactions: Transaction[]): RepositoryResult<{ books: Book[]; transactions: Transaction[] }> {

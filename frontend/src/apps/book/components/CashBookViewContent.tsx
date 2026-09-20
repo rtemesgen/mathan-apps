@@ -18,6 +18,7 @@ type CashBookViewContentProps = {
   onAddMembers: (book: Book) => void;
   onOpenImport: () => void;
   onDeleteTransaction: (transactionId: string) => Promise<void>;
+  onEditTransaction: (transaction: Transaction) => void;
   onOpenExport: (filters?: { transactionType?: string; query?: string; startDate?: string; endDate?: string }) => void;
 };
 
@@ -36,6 +37,7 @@ export function CashBookViewContent({
   onAddMembers,
   onOpenImport,
   onDeleteTransaction,
+  onEditTransaction,
   onOpenExport,
 }: CashBookViewContentProps) {
   return <main className="mobile-content-safe flex-1 min-w-0 pb-16 sm:pb-6">
@@ -48,6 +50,7 @@ export function CashBookViewContent({
       onOpenCashInModal={() => onOpenCashIn(activeBook)}
       onOpenCashOutModal={() => onOpenCashOut(activeBook)}
       onDeleteTransaction={onDeleteTransaction}
+      onEditTransaction={onEditTransaction}
       onOpenExport={onOpenExport}
     /> : <DashboardView
       books={books}
