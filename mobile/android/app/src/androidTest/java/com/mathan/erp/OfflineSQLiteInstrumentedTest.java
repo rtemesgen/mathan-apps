@@ -156,6 +156,24 @@ public class OfflineSQLiteInstrumentedTest {
         assertEquals(0, repeated.getInt("queued"));
     }
 
+    @Test public void embeddedAttachmentCapacitySurvivesReadAndActivityRecreation() throws Exception {
+        int[] sourceBytes = {1_048_576, 3_145_728, 4_900_000};
+        for (int sourceByteCount : sourceBytes) {
+            JSONObject written = object(js("return await api.writeAttachmentCapacity(" + sourceByteCount + ")", false));
+            System.out.println("ATTACHMENT_CAPACITY " + written);
+            assertEquals(sourceByteCount, written.getInt("sourceBytes"));
+            assertTrue(written.getInt("serializedBytes") > sourceByteCount);
+            assertEquals(written.getInt("serializedBytes"), object(js("return await api.readAttachmentCapacity()", false)).getInt("serializedBytes"));
+
+            recreateApplication();
+            JSONObject restarted = object(js("return await api.readAttachmentCapacity()", false));
+            System.out.println("ATTACHMENT_CAPACITY_RESTART " + restarted);
+            assertEquals(sourceByteCount, restarted.getInt("sourceBytes"));
+            assertEquals(written.getInt("serializedBytes"), restarted.getInt("serializedBytes"));
+            js("return await api.clearAttachmentCapacity()", true);
+        }
+    }
+
     private void save(String workspace, String domain, String id, int amount, String note) throws Exception {
         js("return await api.save(" + JSONObject.quote(workspace) + "," + JSONObject.quote(domain) + "," +
                 new JSONObject().put("id", id).put("amount", amount).put("note", note) + ")", true);

@@ -8,6 +8,7 @@ import { createTruckTransaction, refreshTruckDataFromCloud, synchronizeTruckData
 type Entry = { id: string; amount: number; note: string };
 const instrumentationEnv = import.meta.env as Record<string, string | undefined>;
 const key = (workspace: string, domain: string) => `instrumentation:${workspace}:${domain}`;
+const attachmentCapacityKey = 'instrumentation:attachment-capacity';
 const configuredSupabaseEndpoint = () => (supabase as unknown as { supabaseUrl?: string }).supabaseUrl ?? 'unknown';
 
 /** Test-only API compiled into emulator builds by mobile:build:instrumentation.
@@ -46,6 +47,30 @@ export function installAndroidInstrumentationApi() {
       // backup CryptoKey is one example) in IndexedDB, while application
       // snapshots/outbox commits must be JSON-safe for SQLite.
       await offlineStore.writeAtomic([{ key: 'instrumentation:failed-write', value: { unsupported: BigInt(1) } }]);
+    },
+    async writeAttachmentCapacity(sourceBytes: number) {
+      if (!Number.isInteger(sourceBytes) || sourceBytes <= 0) throw new Error('Attachment capacity input must be a positive integer.');
+      // A base64 payload is about 4/3 the original file size. Repeating one
+      // character keeps this deterministic while exercising the same JSON and
+      // SQLite row-size path as an embedded attachment.
+      const encodedBytes = Math.ceil(sourceBytes * 4 / 3);
+      const attachment = 'A'.repeat(encodedBytes);
+      const value = { sourceBytes, attachment };
+      const serializedBytes = JSON.stringify(value).length;
+      const startedAt = performance.now();
+      await offlineStore.writeAtomic([{ key: attachmentCapacityKey, value }]);
+      await offlineStore.flush();
+      return { sourceBytes, encodedBytes: attachment.length, serializedBytes, writeMs: Math.round(performance.now() - startedAt) };
+    },
+    async readAttachmentCapacity() {
+      const startedAt = performance.now();
+      const value = await offlineStore.read<{ sourceBytes?: number; attachment?: string }>(attachmentCapacityKey);
+      if (!value || typeof value.sourceBytes !== 'number' || typeof value.attachment !== 'string') throw new Error('Attachment capacity record was not readable.');
+      return { sourceBytes: value.sourceBytes, encodedBytes: value.attachment.length, serializedBytes: JSON.stringify(value).length, readMs: Math.round(performance.now() - startedAt) };
+    },
+    async clearAttachmentCapacity() {
+      await offlineStore.delete(attachmentCapacityKey);
+      await offlineStore.flush();
     },
     async logout(workspace: string) {
       for (const recordKey of await offlineStore.listKeys()) {
