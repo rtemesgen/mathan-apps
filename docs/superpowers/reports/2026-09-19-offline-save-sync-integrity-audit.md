@@ -123,4 +123,6 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 
 ## Release decision
 
+- Current clean-HEAD verification at `029e4ce`: `frontend/npm test` passed with the SQLite child-process permission required by the adapter test, `npm run build` passed, `git diff --check` passed, and the connected `SM-N971N` reported Android API 30 with a `4096`-byte page size. This revalidates the implementation and normal-page device baseline; it does not close the 16 KB or signed-release gates.
+
 The branch is not ready to be marked as fully complete against the plan. The remaining items above are correctness or evidence gates, not cosmetic follow-up. In particular, do not claim that Truck conflict resolution, browser recovery v2, attachment capacity, APK replacement, or 16 KB Android runtime compatibility has passed until the specified test layer produces evidence. Normal API 35 emulator process-death durability is now proven by CI run `35460969456`.
