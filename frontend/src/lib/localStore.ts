@@ -7,6 +7,8 @@ import type { OfflineFlushResult } from './androidExit';
 import { planSplitStoreRecovery, type RecoverableQueuedMutation } from './splitStoreRecovery';
 import { createRetryableSingleFlight } from './retryableSingleFlight';
 import { createRecoveryBatch, createRecoveryDeleteBatch, parseRecoveryRecord, selectRecoveredValue, type RecoveryReceipt, type RecoveryRecord } from './recoveryJournal';
+import { createUuid } from './uuid';
+import { safeIndexedDbVersion } from './indexedDbVersion';
 
 const DB_NAME = 'mathan-erp-offline';
 const STORE_NAME = 'records';
@@ -63,7 +65,7 @@ type AtomicRecoveryRecord = RecoveryRecord;
 
 function newRecoveryCommitId() {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
+    ? createUuid()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
@@ -171,18 +173,32 @@ function queueWrite<T>(keys: string[], operation: () => Promise<T>) {
   return result.finally(() => uniqueKeys.forEach((key) => { if (writeTails.get(key) === tail) writeTails.delete(key); }));
 }
 
-function getDatabase() {
+function ensureObjectStores(database: IDBDatabase) {
+  if (!database.objectStoreNames.contains(STORE_NAME)) database.createObjectStore(STORE_NAME);
+  if (!database.objectStoreNames.contains(META_STORE_NAME)) database.createObjectStore(META_STORE_NAME);
+}
+
+function openIndexedDbAtSafeVersion() {
   return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const database = request.result;
-      if (!database.objectStoreNames.contains(STORE_NAME)) database.createObjectStore(STORE_NAME);
-      if (!database.objectStoreNames.contains(META_STORE_NAME)) database.createObjectStore(META_STORE_NAME);
+    const probe = indexedDB.open(DB_NAME);
+    probe.onerror = () => reject(probe.error);
+    probe.onsuccess = () => {
+      const existing = probe.result;
+      const needsStores = !existing.objectStoreNames.contains(STORE_NAME) || !existing.objectStoreNames.contains(META_STORE_NAME);
+      const requestedVersion = safeIndexedDbVersion(existing.version, DB_VERSION, needsStores);
+      existing.close();
+      const request = indexedDB.open(DB_NAME, requestedVersion);
+      request.onupgradeneeded = () => ensureObjectStores(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error(`IndexedDB upgrade is blocked for ${DB_NAME}. Close other app tabs and retry.`));
+      request.onsuccess = () => resolve(request.result);
     };
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
+    probe.onupgradeneeded = () => ensureObjectStores(probe.result);
+    probe.onblocked = () => reject(new Error(`IndexedDB initialization is blocked for ${DB_NAME}. Close other app tabs and retry.`));
   });
 }
+
+function getDatabase() { return openIndexedDbAtSafeVersion(); }
 
 function getStore(mode: IDBTransactionMode, storeName = STORE_NAME) {
   return getDatabase().then((database) => database.transaction(storeName, mode).objectStore(storeName));

@@ -1,6 +1,7 @@
 import type { Book, Transaction } from './types';
 import type { PersistenceState, RepositoryResult } from '../../lib/repositories/types';
 import { useSnapshotRepository } from '../../lib/repositories/useSnapshotRepository';
+import { createUuid } from '../../lib/uuid';
 
 export type NewBook = Omit<Book, 'id' | 'createdAt' | 'updatedAt'>;
 export type BookUpdate = Pick<Book, 'name' | 'openingBalance'>;
@@ -86,8 +87,8 @@ export function useCashBookRepository() {
       },
       importBooks: async (input: CashBookImport[]) => {
         const timestamp = now();
-        const importedBooks = input.map(({ book }) => ({ ...book, id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp }));
-        const importedTransactions = input.flatMap(({ transactions: rows }, index) => rows.map((transaction) => ({ ...transaction, id: crypto.randomUUID(), bookId: importedBooks[index].id, createdAt: timestamp })));
+        const importedBooks = input.map(({ book }) => ({ ...book, id: createUuid(), createdAt: timestamp, updatedAt: timestamp }));
+        const importedTransactions = input.flatMap(({ transactions: rows }, index) => rows.map((transaction) => ({ ...transaction, id: createUuid(), bookId: importedBooks[index].id, createdAt: timestamp })));
         const persistence = await updateState((value) => ({ books: [...importedBooks, ...value.books], transactions: [...importedTransactions, ...value.transactions] }));
         return { data: { books: [...importedBooks, ...current.books], transactions: [...importedTransactions, ...current.transactions] }, persistence };
       },
@@ -96,7 +97,7 @@ export function useCashBookRepository() {
 }
 
 const now = () => new Date().toISOString();
-const id = (_prefix: string) => crypto.randomUUID();
+const id = (_prefix: string) => createUuid();
 
 
 export function createBook(input: NewBook, timestamp = now()): RepositoryResult<Book> {
@@ -186,10 +187,10 @@ export async function saveRemovedTransaction(transactionId: string, transactions
 
 export async function saveImportedBooks(importedBooks: CashBookImport[], books: Book[], transactions: Transaction[], persistBooks: Persist<Book[]>, persistTransactions: Persist<Transaction[]>, updateBooks?: PersistUpdate<Book[]>, updateTransactions?: PersistUpdate<Transaction[]>) {
   const timestamp = now();
-  const newBooks = importedBooks.map(({ book }) => ({ ...book, id: crypto.randomUUID(), createdAt: timestamp, updatedAt: timestamp }));
+  const newBooks = importedBooks.map(({ book }) => ({ ...book, id: createUuid(), createdAt: timestamp, updatedAt: timestamp }));
   const newTransactions = importedBooks.flatMap(({ transactions: importedTransactions }, index) => importedTransactions.map((transaction, transactionIndex) => ({
     ...transaction,
-    id: crypto.randomUUID(),
+    id: createUuid(),
     bookId: newBooks[index].id,
     createdAt: timestamp,
   })));

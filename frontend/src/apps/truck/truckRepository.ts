@@ -9,6 +9,7 @@ import { recordCacheRepair } from '../../lib/cacheRepair';
 import { saveOfflineFallback } from '../../lib/durablePersistence';
 import { replayRowMutations } from '../../lib/reconciliation';
 import type { Customer, Owner, Transaction, Truck } from './types';
+import { createUuid } from '../../lib/uuid';
 
 export type TruckPersistenceStatus = 'saving' | 'saved' | 'saved locally' | 'offline saved' | 'sync pending' | 'storage error' | 'sync conflict';
 const TRUCK_TABLES = ['trucks', 'truck_owners', 'truck_customers', 'truck_transactions'];
@@ -111,7 +112,7 @@ async function persistTruckChange(workspaceId: string, update: (cache: TruckCach
       // Allocate identities before the first network attempt. If PostgreSQL
       // commits but the response is lost, the fallback queue must retry with
       // the same ID that the server row already acknowledges.
-      const durableWrites = writes.map((write) => ({ ...write, mutationId: crypto.randomUUID() }));
+      const durableWrites = writes.map((write) => ({ ...write, mutationId: createUuid() }));
       if (localOnly || !canAttemptBackend() || !writes.length) {
         if (localOnly || !writes.length) await offlineStore.write(storageKey, next);
         else {
@@ -296,10 +297,10 @@ export async function resolveTruckConflict(mutationId: string, decision: 'keep-l
   });
   const selectedIds = new Set(unit.map((mutation) => mutation.mutationId));
   const currentEffectiveQueue = queue.filter((mutation) => !selectedIds.has(mutation.mutationId));
-  const replacementBatchId = batchId ? crypto.randomUUID() : undefined;
+  const replacementBatchId = batchId ? createUuid() : undefined;
   const replacements = decision === 'keep-local'
     ? unit.map((mutation, index) => {
-      const replacementId = crypto.randomUUID();
+      const replacementId = createUuid();
       const { mutation_id: _transportMutationId, ...rowPayload } = mutation.payload;
       return {
         ...mutation,
@@ -332,21 +333,21 @@ export async function resolveTruckConflict(mutationId: string, decision: 'keep-l
 }
 
 export async function createTruck(workspaceId: string, v: Omit<Truck, 'id'>, localOnly = false, userId?: string) {
-  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, name: v.name.trim(), unit_number: v.unitNumber.trim(), make_model: v.makeModel.trim(), vin: v.vin.trim(), cash_on_hand: v.cashOnHand, license_plate: v.licensePlate.trim() };
+  const row = { id: createUuid(), workspace_id: workspaceId, name: v.name.trim(), unit_number: v.unitNumber.trim(), make_model: v.makeModel.trim(), vin: v.vin.trim(), cash_on_hand: v.cashOnHand, license_plate: v.licensePlate.trim() };
   const truck = truckFromDb(row);
   await persistTruckChange(workspaceId, (cache) => ({ ...cache, trucks: [...cache.trucks.filter((item) => item.id !== truck.id), truck] }), [{ table: 'trucks', payload: row, operation: 'create' }], localOnly, userId);
   return truck;
 }
 
 export async function createTruckOwner(workspaceId: string, v: Omit<Owner, 'id'> & { userId?: string | null }, localOnly = false, userId?: string) {
-  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, user_id: v.userId ?? null, name: v.name, start_date: v.startDate, equity_percentage: v.equityPercentage, monthly_draw_rate: v.monthlyDrawRate, avatar_color: v.avatarColor };
+  const row = { id: createUuid(), workspace_id: workspaceId, truck_id: v.truckId, user_id: v.userId ?? null, name: v.name, start_date: v.startDate, equity_percentage: v.equityPercentage, monthly_draw_rate: v.monthlyDrawRate, avatar_color: v.avatarColor };
   const owner = ownerFromDb(row);
   await persistTruckChange(workspaceId, (cache) => ({ ...cache, owners: [...cache.owners.filter((item) => item.id !== owner.id), owner] }), [{ table: 'truck_owners', payload: row, operation: 'create' }], localOnly, userId);
   return owner;
 }
 
 export async function createTruckCustomer(workspaceId: string, v: Omit<Customer, 'id'>, localOnly = false, userId?: string) {
-  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, name: v.name.trim(), phone: v.phone?.trim() || null, address: v.address?.trim() || null, notes: v.notes?.trim() || null };
+  const row = { id: createUuid(), workspace_id: workspaceId, truck_id: v.truckId, name: v.name.trim(), phone: v.phone?.trim() || null, address: v.address?.trim() || null, notes: v.notes?.trim() || null };
   const customer = customerFromDb(row);
   await persistTruckChange(workspaceId, (cache) => ({ ...cache, customers: [...cache.customers.filter((item) => item.id !== customer.id), customer] }), [{ table: 'truck_customers', payload: row, operation: 'create' }], localOnly, userId);
   return customer;
@@ -383,7 +384,7 @@ export async function deleteTruck(workspaceId: string, id: string, localOnly = f
 }
 
 export async function createTruckTransaction(workspaceId: string, v: Omit<Transaction, 'id'>, localOnly = false, userId?: string) {
-  const row = { id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null, created_at: new Date().toISOString() };
+  const row = { id: createUuid(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null, created_at: new Date().toISOString() };
   const transaction = transactionFromDb(row);
   await persistTruckChange(workspaceId, (cache) => ({ ...cache, transactions: [...cache.transactions.filter((item) => item.id !== transaction.id), transaction] }), [{ table: 'truck_transactions', payload: row, operation: 'create' }], localOnly, userId);
   return transaction;
@@ -392,8 +393,8 @@ export async function createTruckTransaction(workspaceId: string, v: Omit<Transa
 export async function createTruckTransactionBatch(workspaceId: string, values: Omit<Transaction, 'id'>[], localOnly = false, userId?: string) {
   if (!values.length) return [];
   const createdAt = new Date().toISOString();
-  const batchId = crypto.randomUUID();
-  const rows = values.map((v) => ({ id: crypto.randomUUID(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null, created_at: createdAt }));
+  const batchId = createUuid();
+  const rows = values.map((v) => ({ id: createUuid(), workspace_id: workspaceId, truck_id: v.truckId, owner_id: v.ownerId ?? null, customer_id: v.customerId ?? null, occurred_on: v.date, transaction_type: v.type, category: v.category, amount: v.amount, description: v.description, reference_no: v.referenceNo ?? null, counterparty_type: v.counterpartyType ?? null, counterparty_name: v.counterpartyName ?? null, settles_transaction_id: v.settlesTransactionId ?? null, created_at: createdAt }));
   const transactions = rows.map((row) => transactionFromDb(row));
   await persistTruckChange(workspaceId, (cache) => ({ ...cache, transactions: [...transactions, ...cache.transactions] }), rows.map((payload, batchIndex) => ({ table: 'truck_transactions', payload, operation: 'create', batchId, batchIndex, batchSize: rows.length })), localOnly, userId);
   return transactions;

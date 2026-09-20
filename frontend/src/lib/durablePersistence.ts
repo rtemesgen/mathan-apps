@@ -1,4 +1,5 @@
 import { enqueueMutationsAtomic, type QueuedMutationInput } from './syncQueue';
+import { createUuid } from './uuid';
 
 /**
  * Shared durable fallback contract for every business repository.
@@ -17,6 +18,6 @@ export async function saveOfflineFallback(
   records: Array<{ key: string; value: unknown }>,
 ) {
   const list = Array.isArray(mutations) ? mutations : [mutations];
-  await enqueueMutationsAtomic(list.map((mutation) => ({ ...mutation, mutationId: mutation.mutationId ?? crypto.randomUUID() })), records);
+  await enqueueMutationsAtomic(list.map((mutation) => ({ ...mutation, mutationId: mutation.mutationId ?? createUuid() })), records);
   return 'offline saved' as const;
 }

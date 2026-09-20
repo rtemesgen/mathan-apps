@@ -7,6 +7,7 @@ import { withConnectionTimeout } from './connectivity';
 import { diagnostic } from './diagnostics';
 import { validateQueuedTransactionBatch } from './truckBatchPolicy';
 import { validateTruckBatchResponse } from './truckBatch';
+import { createUuid } from './uuid';
 
 export type { SyncStatus } from './toast';
 
@@ -125,7 +126,7 @@ async function flushWorkspaceQueues(workspaceIds: string | string[]) {
   const workspaceIdList = Array.isArray(workspaceIds) ? workspaceIds : [workspaceIds];
   const allowed = new Set(workspaceIdList);
   if (!allowed.size) return;
-  const workerId = crypto.randomUUID();
+  const workerId = createUuid();
   const { queue, claimed } = await claimQueuedMutations(workspaceIdList, workerId);
   const claimedIds = new Set(claimed.map((mutation) => mutation.mutationId));
   const remaining: QueuedMutation[] = queue.filter((mutation) => !claimedIds.has(mutation.mutationId));

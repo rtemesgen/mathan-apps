@@ -9,6 +9,7 @@ import { diagnostic } from '../diagnostics';
 import { recordCacheRepair } from '../cacheRepair';
 import { saveOfflineFallback } from '../durablePersistence';
 import { affectedEntityIds, threeWayMergeSnapshot } from '../reconciliation';
+import { createUuid } from '../uuid';
 
 export type SnapshotRepositoryContext = {
   storageKey: string;
@@ -111,7 +112,7 @@ export async function persistSnapshot<T>(context: SnapshotRepositoryContext, val
     let payload = context.workspaceId ? await snapshotPayload(context, value, durableRevision, previousValue) : null;
     // Allocate before the first request so an ambiguous timeout can be
     // retried through the outbox with the same server receipt identity.
-    const mutationId = payload ? crypto.randomUUID() : null;
+    const mutationId = payload ? createUuid() : null;
     if (context.standalone) await offlineStore.write(context.storageKey, value);
     else if (canAttemptBackend()) {
       if (!payload || !context.workspaceId) throw new Error('A workspace is required to save this record.');

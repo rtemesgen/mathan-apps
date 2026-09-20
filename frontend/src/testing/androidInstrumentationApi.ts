@@ -4,6 +4,7 @@ import { getNativeDatabaseHealth, migrateLegacyRecords } from '../lib/sqliteStor
 import { supabase } from '../lib/supabase';
 import { markBackendReachable, markBackendUnreachable } from '../lib/connectivity';
 import { createTruckTransaction, refreshTruckDataFromCloud, synchronizeTruckData } from '../apps/truck/truckRepository';
+import { createUuid } from '../lib/uuid';
 
 type Entry = { id: string; amount: number; note: string };
 const instrumentationEnv = import.meta.env as Record<string, string | undefined>;
@@ -161,7 +162,7 @@ export function installAndroidInstrumentationApi() {
       const { data: trucks, error: truckError } = await supabase.from('trucks').select('id').eq('workspace_id', workspaceId).is('deleted_at', null).limit(1);
       if (truckError || !trucks?.[0]?.id) throw truckError ?? new Error('No Android instrumentation truck is available.');
       const transaction = await createTruckTransaction(workspaceId, {
-        truckId: String(trucks[0].id), date: new Date().toISOString(), type: 'INCOME', category: 'Android instrumentation', amount: 1, description: `android-${crypto.randomUUID()}`,
+        truckId: String(trucks[0].id), date: new Date().toISOString(), type: 'INCOME', category: 'Android instrumentation', amount: 1, description: `android-${createUuid()}`,
       }, false, userId);
       const { data: serverRow, error: rowError } = await supabase.from('truck_transactions').select('id').eq('workspace_id', workspaceId).eq('id', transaction.id).maybeSingle();
       if (rowError) throw rowError;
@@ -202,7 +203,7 @@ export function installAndroidInstrumentationApi() {
       let transaction: Awaited<ReturnType<typeof createTruckTransaction>>;
       try {
         transaction = await createTruckTransaction(workspaceId, {
-          truckId: String(trucks[0].id), date: new Date().toISOString(), type: 'INCOME', category: 'Android offline instrumentation', amount: 1, description: `android-offline-${crypto.randomUUID()}`,
+          truckId: String(trucks[0].id), date: new Date().toISOString(), type: 'INCOME', category: 'Android offline instrumentation', amount: 1, description: `android-offline-${createUuid()}`,
         }, false, userId);
       } finally {
         if (onlineDescriptor) Object.defineProperty(window.navigator, 'onLine', onlineDescriptor);

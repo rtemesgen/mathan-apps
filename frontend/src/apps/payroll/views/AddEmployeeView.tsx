@@ -11,6 +11,7 @@ import {
   Calculator
 } from 'lucide-react';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
+import { createUuid } from '../../../lib/uuid';
 
 interface AddEmployeeViewProps {
   onAddEmployee: (employee: Employee) => void;
@@ -50,7 +51,7 @@ export const AddEmployeeView: React.FC<AddEmployeeViewProps> = ({
     if (!name.trim() || !startDate || !initialSalary) return;
 
     const newEmp: Employee = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       name: name.trim(),
       startDate,
       initialSalary: monthlySalaryNum,

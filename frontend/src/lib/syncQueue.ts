@@ -4,6 +4,7 @@ import { emitSyncProgress } from './toast';
 import { supabase } from './supabase';
 import { withConnectionTimeout } from './connectivity';
 import { threeWayMergeSnapshot, affectedEntityIds } from './reconciliation';
+import { createUuid } from './uuid';
 
 export interface QueuedMutation {
   formatVersion?: 2;
@@ -98,7 +99,7 @@ function withQueueLock<T>(operation: () => Promise<T>) {
 export async function waitForQueueIdle() { await queueTail; }
 
 function queuedMutation(mutation: QueuedMutationInput, localSequence: number): QueuedMutation {
-  const mutationId = mutation.mutationId ?? crypto.randomUUID();
+  const mutationId = mutation.mutationId ?? createUuid();
   const companyId = mutation.companyId ?? String(mutation.payload.workspace_id ?? '');
   const entityId = mutation.entityId ?? String(mutation.payload.id ?? mutation.payload.client_id ?? mutation.payload.domain ?? '');
   const now = new Date().toISOString();
@@ -543,7 +544,7 @@ export async function resolveSnapshotConflict(mutationId: string, decision: 'kee
   if (base === undefined) throw new Error('This snapshot has no recorded baseline; whole-snapshot replacement requires explicit review.');
   const local = target.payload.payload;
   const merged = threeWayMergeSnapshot(base, remote.payload, local);
-  const nextMutationId = crypto.randomUUID();
+  const nextMutationId = createUuid();
   const next: QueuedMutation = {
     ...target,
     formatVersion: 2,

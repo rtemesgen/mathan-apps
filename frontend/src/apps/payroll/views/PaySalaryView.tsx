@@ -18,6 +18,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
+import { createUuid } from '../../../lib/uuid';
 
 interface PaySalaryViewProps {
   employees: Employee[];
@@ -74,7 +75,7 @@ export const PaySalaryView: React.FC<PaySalaryViewProps> = ({
     if (!selectedEmp || numAmount <= 0) return;
 
     const newTx: Transaction = {
-      id: crypto.randomUUID(),
+      id: createUuid(),
       employeeId: selectedEmp.id,
       employeeName: selectedEmp.name,
       amount: numAmount,
