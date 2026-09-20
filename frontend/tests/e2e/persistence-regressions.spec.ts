@@ -233,3 +233,149 @@ test('durable snapshot conflict can keep the local change and synchronize it fro
     if (error) throw error;
   }
 });
+
+async function seedTruckConflict(page: import('playwright/test').Page) {
+  const status = localSupabaseStatus();
+  const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: users, error: usersError } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (usersError) throw usersError;
+  const admin = (users.users as Array<{ id: string; email?: string }>).find((user) => user.email === 'admin@mathan-e2e.local');
+  expect(admin).toBeTruthy();
+  const { data: workspace, error: workspaceError } = await service.from('workspaces').select('id').eq('name', 'Admin Company').single();
+  if (workspaceError || !workspace) throw workspaceError ?? new Error('Admin Company fixture is missing.');
+  const { data: truck, error: truckError } = await service.from('trucks').select('id').eq('workspace_id', workspace.id).limit(1).single();
+  if (truckError || !truck) throw truckError ?? new Error('Truck fixture is missing.');
+  const transactionId = crypto.randomUUID();
+  const remoteDescription = `Truck remote conflict ${Date.now()}`;
+  const localDescription = `${remoteDescription} local`;
+  const { data: inserted, error: insertError } = await service.from('truck_transactions').insert({
+    id: transactionId,
+    workspace_id: workspace.id,
+    truck_id: truck.id,
+    occurred_on: '2026-09-20',
+    transaction_type: 'INCOME',
+    category: 'Conflict test',
+    amount: 111,
+    description: remoteDescription,
+  }).select('*').single();
+  if (insertError || !inserted) throw insertError ?? new Error('Could not seed Truck conflict row.');
+
+  await signIn(page, 'admin');
+  await page.goto('/truck');
+  await expect(page.getByText('DASHBOARD')).toBeVisible();
+  const storageKey = `truck:${admin!.id}:${workspace.id}`;
+  const mutationId = crypto.randomUUID();
+  const updatedAt = new Date().toISOString();
+  const localPayload = { ...inserted, amount: 222, description: localDescription, mutation_id: mutationId };
+  const mutation = {
+    formatVersion: 2,
+    id: mutationId,
+    mutationId,
+    userId: admin!.id,
+    companyId: workspace.id,
+    entityType: 'truck_transactions',
+    entityId: transactionId,
+    table: 'truck_transactions',
+    operation: 'update',
+    payload: localPayload,
+    queuedAt: updatedAt,
+    updatedAt,
+    baseServerUpdatedAt: inserted.updated_at,
+    lastAttemptAt: updatedAt,
+    syncStartedAt: null,
+    syncAttemptId: null,
+    leaseExpiresAt: null,
+    syncStatus: 'conflicted',
+    retryCount: 1,
+    errorCode: 'CONFLICT',
+    errorMessage: 'Remote revision changed',
+    lastError: 'Remote revision changed',
+    localSequence: 1,
+  };
+
+  await page.evaluate(({ storageKey: key, transactionId: id, localPayload: payload, queued }) => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('mathan-erp-offline', 2);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction('records', 'readwrite');
+      const store = transaction.objectStore('records');
+      const cacheRequest = store.get(key);
+      cacheRequest.onsuccess = () => {
+        const cache = (cacheRequest.result ?? { trucks: [], owners: [], customers: [], transactions: [] }) as { trucks: unknown[]; owners: unknown[]; customers: unknown[]; transactions: Array<Record<string, unknown>> };
+        store.put({ ...cache, transactions: cache.transactions.map((row) => row.id === id ? { ...row, amount: payload.amount, description: payload.description } : row) }, key);
+        store.put([queued], 'sync-queue-v1');
+        store.put({ formatVersion: 2, queueGeneration: 1, nextLocalSequence: 2 }, 'sync-queue-meta-v2');
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      cacheRequest.onerror = () => reject(cacheRequest.error);
+    };
+  }), { storageKey, transactionId, localPayload, queued: mutation });
+
+  await page.evaluate(({ mutationId: id, workspaceId }) => {
+    window.dispatchEvent(new CustomEvent('mathan:open-sync-issue', {
+      detail: { table: 'truck_transactions', entityId: 'truck-conflict', mutationId: id, state: 'needs_attention', workspaceId, operation: 'update', updatedAt: new Date().toISOString(), message: 'Truck conflict test' },
+    }));
+  }, { mutationId, workspaceId: workspace.id });
+
+  return { service, workspaceId: workspace.id, transactionId, remoteDescription, localDescription, storageKey };
+}
+
+test('Truck conflict can use the current server row from the production UI', async ({ page }) => {
+  const { service, workspaceId, transactionId, remoteDescription, localDescription, storageKey } = await seedTruckConflict(page);
+  try {
+    await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: 'Use server version' }).click();
+    await expect(page.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
+    await expect.poll(async () => {
+      const { data, error } = await service.from('truck_transactions').select('amount,description').eq('id', transactionId).single();
+      if (error) throw error;
+      return data;
+    }).toEqual({ amount: 111, description: remoteDescription });
+    await expect.poll(() => page.evaluate(() => new Promise<unknown[]>((resolve, reject) => {
+      const request = indexedDB.open('mathan-erp-offline', 2);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('records', 'readonly');
+        const result = transaction.objectStore('records').get('sync-queue-v1');
+        transaction.oncomplete = () => { database.close(); resolve((result.result as unknown[] | undefined) ?? []); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    }))).toEqual([]);
+    expect(storageKey).toContain(workspaceId);
+    expect(localDescription).not.toBe(remoteDescription);
+  } finally {
+    await service.from('truck_transactions').delete().eq('id', transactionId);
+  }
+});
+
+test('Truck conflict can keep local changes against a fresh server timestamp from the production UI', async ({ page }) => {
+  const { service, transactionId, remoteDescription, localDescription } = await seedTruckConflict(page);
+  try {
+    await expect(page.getByRole('dialog', { name: 'Sync issue' })).toBeVisible();
+    await page.getByRole('button', { name: 'Keep my saved change' }).click();
+    await expect(page.getByRole('dialog', { name: 'Sync issue' })).toHaveCount(0);
+    await expect.poll(async () => {
+      const { data, error } = await service.from('truck_transactions').select('amount,description').eq('id', transactionId).single();
+      if (error) throw error;
+      const queue = await page.evaluate(() => new Promise<unknown>((resolve, reject) => {
+        const request = indexedDB.open('mathan-erp-offline', 2);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction('records', 'readonly');
+          const result = transaction.objectStore('records').get('sync-queue-v1');
+          transaction.oncomplete = () => { database.close(); resolve(result.result); };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      }));
+      return { data, queue };
+    }).toEqual({ data: { amount: 222, description: localDescription }, queue: [] });
+    expect(localDescription).not.toBe(remoteDescription);
+  } finally {
+    await service.from('truck_transactions').delete().eq('id', transactionId);
+  }
+});

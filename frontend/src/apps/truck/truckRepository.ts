@@ -300,6 +300,7 @@ export async function resolveTruckConflict(mutationId: string, decision: 'keep-l
   const replacements = decision === 'keep-local'
     ? unit.map((mutation, index) => {
       const replacementId = crypto.randomUUID();
+      const { mutation_id: _transportMutationId, ...rowPayload } = mutation.payload;
       return {
         ...mutation,
         id: replacementId,
@@ -315,7 +316,11 @@ export async function resolveTruckConflict(mutationId: string, decision: 'keep-l
         errorMessage: undefined,
         lastError: undefined,
         updatedAt: new Date().toISOString(),
-        payload: { ...mutation.payload, workspace_id: workspaceId, mutation_id: replacementId, ...(batchId ? { batch_id: replacementBatchId, batch_index: mutation.payload.batch_index, batch_size: mutation.payload.batch_size } : {}) },
+        // The mutation identity is carried by the queue entry and is passed
+        // to the row writer as `last_mutation_id`; it is not a column in the
+        // Truck row payload. Batch writes add their transport identity only
+        // when constructing the RPC request.
+        payload: { ...rowPayload, workspace_id: workspaceId, ...(batchId ? { batch_id: replacementBatchId, batch_index: mutation.payload.batch_index, batch_size: mutation.payload.batch_size } : {}) },
       };
     })
     : [];
