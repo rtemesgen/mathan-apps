@@ -35,6 +35,10 @@ if [ "${ANDROID_16KB_MEMORY_MODE:-}" = "true" ]; then
   # Keep the 1 MB smoke test in this job; the complete capacity matrix runs in
   # the normal Android job and on the physical-device release checklist.
   gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.skipLargeAttachmentCapacity=true")
+  # Backend-connected Truck synchronization is exercised by the normal
+  # Android job. Keep this 16 KB job focused on native SQLite/WebView runtime
+  # compatibility; constrained WebView startup is not a backend assertion.
+  gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.skipBackendIntegration=true")
 fi
 
 adb logcat -c

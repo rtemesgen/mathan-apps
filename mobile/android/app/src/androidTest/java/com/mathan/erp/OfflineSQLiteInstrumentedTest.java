@@ -136,6 +136,7 @@ public class OfflineSQLiteInstrumentedTest {
     }
 
     @Test public void productionTruckRepositoryReachesBackendAndSurvivesActivityRecreation() throws Exception {
+        Assume.assumeFalse("Backend integration runs in the normal Android job.", skipBackendIntegration());
         JSONObject created = object(js("return await api.backendTruckRoundTrip()", false));
         assertEquals(1, created.getInt("serverCount"));
         recreateApplication();
@@ -145,6 +146,7 @@ public class OfflineSQLiteInstrumentedTest {
     }
 
     @Test public void offlineProductionTruckSaveSurvivesActivityRecreationAndSyncsExactlyOnce() throws Exception {
+        Assume.assumeFalse("Backend integration runs in the normal Android job.", skipBackendIntegration());
         JSONObject queued = object(js("return await api.backendOfflineTruckRoundTrip()", false));
         assertEquals(1, queued.getInt("queued"));
         recreateApplication();
@@ -214,6 +216,10 @@ public class OfflineSQLiteInstrumentedTest {
 
     private boolean skipLargeAttachmentCapacity() {
         return "true".equals(InstrumentationRegistry.getArguments().getString("skipLargeAttachmentCapacity", "false"));
+    }
+
+    private boolean skipBackendIntegration() {
+        return "true".equals(InstrumentationRegistry.getArguments().getString("skipBackendIntegration", "false"));
     }
 
     private void awaitApi() throws Exception {
