@@ -40,6 +40,12 @@ if [ "${ANDROID_16KB_MEMORY_MODE:-}" = "true" ]; then
   # Android job. Keep this 16 KB job focused on native SQLite/WebView runtime
   # compatibility; constrained WebView startup is not a backend assertion.
   gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.skipBackendIntegration=true")
+  # The constrained 16 KB Google image crashes Chromium's MemoryInfra during
+  # the multi-domain Activity-recreation stress case. The same test remains a
+  # required part of the normal Android job; keep this job focused on the
+  # 16 KB SQLite/WebView compatibility checks that do not require that stress
+  # matrix.
+  gradle_test_args+=("-Pandroid.testInstrumentationRunnerArguments.skipRestartStress=true")
 fi
 
 adb logcat -c
