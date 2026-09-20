@@ -104,6 +104,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - CI run `35461876727` passed all required gates again for the current branch HEAD `5f6a61c`; this was an audit-report-only rerun and introduces no new product evidence beyond the implementation run above.
 - Commit `0d0cafb` adds active-session scope validation and transactional snapshot “use server” conflict resolution. Frontend `npm test` and `npm run build` pass locally; the pushed CI run also passed frontend/database/E2E/Android.
 - Commit `0daaa3d` preserves remote snapshot fields during delayed acknowledgement/rebase. CI run `35479612578` passed frontend, database, browser E2E, Android, and required-gates aggregation.
+- Commit `8c4e44a` isolates the browser snapshot-conflict fixtures by restoring the shared seeded workspace in `finally`. CI run `35486588678` passed frontend, database, browser E2E, Android/SQLite instrumentation, and required-gates aggregation; the full local Playwright suite also passed 29/29 with one intentional skip.
 
 ## Latest connected-device verification — commit `0daaa3d`
 
