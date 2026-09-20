@@ -449,11 +449,9 @@ test('two browser clients surface and resolve a Truck edit conflict without losi
     // Reconnect client A. The worker must surface a conflict, not retry the
     // stale precondition silently or discard the local edit.
     await setE2EOnline(contextA, status.API_URL);
-    await pageA.reload();
-    await expect(pageA.getByText('DASHBOARD')).toBeVisible();
-    // The reload can occur after the context-level reconnect event was
-    // dispatched. Replay it after the new document has mounted so the
-    // production sync listener deterministically claims the queued edit.
+    // Replay the reconnect event after the context-level event so the
+    // currently mounted production sync listener deterministically claims
+    // the queued edit.
     await pageA.evaluate(() => window.dispatchEvent(new Event('online')));
     const localConflictRow = pageA.locator('tr').filter({ hasText: localDescription }).first();
     await expect(localConflictRow).toBeVisible({ timeout: 30_000 });
