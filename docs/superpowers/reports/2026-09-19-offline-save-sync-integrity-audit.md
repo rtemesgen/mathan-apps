@@ -44,7 +44,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 | True process-death execution | CI run `35460969456` completed the ordinary instrumentation suite with 0 failures, then passed direct `processDeathPrepareBoundary`, host `am force-stop`, and `processDeathVerifyBoundary` invocations | Passed on the API 35 emulator; not a 16 KB runtime result |
 | Attachment capacity | Attachments remain base64 in snapshot payloads with a 5 MB UI limit; no physical-device SQLite capacity result exists | Unverified |
 | 16 KB page-size release evidence | Locally built `app-release-unsigned.apk` passed `zipalign -c -P 16 -v 4`; all bundled `libsqlcipher.so` ELF `LOAD` segments report `0x4000` alignment | Static artifact evidence passes; device/runtime evidence unverified |
-| APK replacement/data preservation | No supported old-APK-to-new-APK instrumentation run is recorded | Missing |
+| APK replacement/data preservation | Physical `SM-N971N` test installed the previous supported debug APK from `6db8d68`, wrote a durable record/queue entry, installed the current debug APK with the same application ID/signing key, and passed the current test APK's post-replacement verification. A signed-release replacement remains unverified. | Debug replacement passed; signed-release gate remains open |
 | Deployment, rollback, mixed-client, and pilot handoff | [offline-sync-rollout.md](../../offline-sync-rollout.md) records additive order, stop-ship triggers, rollback restrictions, and required evidence; pilot/device artifacts remain pending | Documented; evidence pending |
 
 ## Verification run for this audit
@@ -106,6 +106,7 @@ This audit compares the implementation with `docs/superpowers/plans/2026-09-19-o
 - `mobile`: `npm run build:instrumentation` completed from the current commit with the test-only disposable-backend configuration.
 - `mobile/android`: `bash ../../.github/scripts/run-android-instrumentation.sh` completed successfully on physical `SM-N971N`, Android API 30, normal `4096`-byte page size. The normal connected run reported 12 tests, including 2 intentional process-death boundary skips, with 0 failures; the script's host-driven prepare/force-stop/verify phase passed both boundary tests.
 - The backend-dependent production Truck tests used the seeded local Supabase fixture and passed, including offline queueing, activity recreation, synchronization, and repeat-idempotency checks.
+- APK replacement/data preservation passed for the supported debug test artifacts: old `6db8d68` target APK → current `0daaa3d` target APK using `adb install -r`, with the old durable record and pending queue verified by the new instrumentation APK. The release-signed replacement path remains unverified because no supported release keystore/artifact is available in this workspace.
 - This run does not establish 16 KB compatibility, signed APK replacement, or attachment-capacity limits; those remain explicit release gates.
 
 ## Release decision
